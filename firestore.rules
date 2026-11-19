@@ -46,7 +46,9 @@ service cloud.firestore {
     // Bodega: artículos y movimientos.
     match /articulos/{id} {
       allow read: if esDemo();
-      allow write: if esBodega();
+      // La cantidad nunca queda negativa (si dos personas sacan al tiempo lo último, la segunda recibe un error).
+      allow create, update: if esBodega() && nuevo().cantidad is number && nuevo().cantidad >= 0;
+      allow delete: if esJefe();
     }
     match /movimientos/{id} {
       allow read: if esDemo();
@@ -70,21 +72,27 @@ service cloud.firestore {
         || (esDemo() && nuevo().pideRol == rol() && nuevo().estado == 'pedido')
         || (esBodega() && nuevo().estado == 'sin-autorizar');
       allow update: if esJefe()
-        // Autorizar o rechazar: quien autoriza compras, y nunca un pedido suyo.
+        // Autorizar o rechazar: quien autoriza compras, y nunca un pedido suyo. No puede cambiar cantidad ni valor.
         || (esDemo() && rol() == 'compras' && antes().estado == 'pedido'
             && antes().get('pideRol', '') != 'compras'
-            && nuevo().estado in ['autorizado', 'rechazado'])
-        // Comprar y recibir: la bodega, solo después de autorizada.
-        || (esBodega() && antes().estado in ['autorizado', 'comprado']
-            && nuevo().estado in ['comprado', 'recibido']);
+            && nuevo().estado in ['autorizado', 'rechazado']
+            && soloCambia(['estado', 'autoriza', 'motivoRechazo', 'historial']))
+        // Comprar (autorizada -> comprada) y recibir (comprada -> recibida): la bodega, sin tocar lo autorizado.
+        || (esBodega() && antes().estado == 'autorizado' && nuevo().estado == 'comprado'
+            && soloCambia(['estado', 'proveedor', 'valorReal', 'fechaCompra', 'factura', 'historial']))
+        || (esBodega() && antes().estado == 'comprado' && nuevo().estado == 'recibido'
+            && soloCambia(['estado', 'entregadoA', 'historial']));
       allow delete: if esJefe();
     }
 
-    // Avisos de la campana: cualquiera los crea; cada quien solo cambia la marca de leído.
+    // Avisos de la campana: cualquiera los crea; cada quien solo cambia SU marca de leído.
+    // La Jefe puede reescribirlos (al cargar o reiniciar los datos de prueba se reemplazan los avisos de ejemplo).
     match /avisos/{id} {
       allow read: if esDemo();
       allow create: if esDemo();
-      allow update: if esDemo() && soloCambia(['leido']);
+      allow update: if esJefe()
+        || (esDemo() && soloCambia(['leido'])
+            && nuevo().leido.diff(antes().get('leido', {})).affectedKeys().hasOnly([rol()]));
       allow delete: if esJefe();
     }
 

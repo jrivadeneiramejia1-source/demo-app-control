@@ -25,7 +25,7 @@
       'auth/invalid-api-key': 'La configuración de config.js no es válida. Vuelve a copiarla desde Firebase.',
       'auth/api-key-not-valid.-please-pass-a-valid-api-key.': 'La configuración de config.js no es válida. Vuelve a copiarla desde Firebase.',
       'auth/clave-distinta': 'Esta cuenta de prueba ya existe en Firebase con otra clave. Bórrala en Authentication y vuelve a entrar.',
-      'permission-denied': 'Firebase no deja leer ni guardar: falta pegar las reglas de firestore.rules en Firestore Database, pestaña Reglas.',
+      'permission-denied': 'Firebase no dejó hacer este cambio. Puede que otra persona ya lo cambió (revisa la lista otra vez) o que falte pegar las reglas de firestore.rules en Firestore Database, pestaña Reglas.',
       'unavailable': 'Sin conexión con la base de datos. Lo que hagas se guarda cuando vuelva la señal.',
       'not-found': 'Ese registro ya no existe. Puede que otra persona lo haya borrado.',
       'sin-sdk': 'Firebase no alcanzó a cargar. Revisa la conexión a internet y toca Reintentar arriba.',

@@ -21,8 +21,8 @@
   const SINGULAR = { unidades: 'unidad', pares: 'par', cajas: 'caja', resmas: 'resma', rollos: 'rollo', galones: 'galón', paquetes: 'paquete' };
   const EST_ART = { agotado: ['Agotado', 's-peligro', 'peligro'], bajo: ['Bajo del mínimo', 's-warn', 'org'], bien: ['Bien', 's-disco', 'disco'] };
   const EST_CO = {
-    pedido: ['Por autorizar', 's-org', 'org'], autorizado: ['Autorizada, falta comprar', 's-listo', 'listo'], rechazado: ['Rechazada', 'none', 'pend'],
-    comprado: ['Comprada, falta recibir', 's-listo', 'listo'], recibido: ['Recibida', 's-disco', 'disco'], 'sin-autorizar': ['Sin autorizar', 's-peligro', 'peligro']
+    pedido: ['Por autorizar', 's-org', 'org'], autorizado: ['Falta comprar', 's-listo', 'listo'], rechazado: ['Rechazada', 'none', 'pend'],
+    comprado: ['Falta recibir', 's-listo', 'listo'], recibido: ['Recibida', 's-disco', 'disco'], 'sin-autorizar': ['Sin autorizar', 's-peligro', 'peligro']
   };
   const EST_SOL = { pendiente: ['En espera', 's-org', 'org'], entregada: ['Entregado', 's-disco', 'disco'], rechazada: ['No se entregó', 's-peligro', 'peligro'] };
   const MOTIVO_MOV = { inicial: 'Cantidad inicial', compra: 'Compra recibida', entrega: 'Entrega', devolucion: 'Devolución', conteo: 'Ajuste por conteo', dano: 'Daño o pérdida' };
@@ -375,7 +375,8 @@
     return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'inventario', leido: {} }];
   }
   const movimiento = o => ['set', 'movimientos', window.nube.idNuevo('mo'), Object.assign({ persona: '', proyecto: '', nota: '', compraId: '', solicitudId: '', por: persona().nombre, porRol: persona().rol, fecha: ahora() }, o)];
-  const paso = (c, txt) => (Array.isArray(c.historial) ? c.historial : []).concat([{ fecha: ahora(), texto: txt, por: persona().nombre }]);
+  const historial = c => (Array.isArray(c.historial) ? c.historial : []).filter(h => h && typeof h === 'object');
+  const paso = (c, txt) => historial(c).concat([{ fecha: ahora(), texto: txt, por: persona().nombre }]);
 
   async function guardar() {
     if (guardando || !accion || !accion.ops) return;
@@ -479,9 +480,9 @@
   let fotoFactura = '';
   function leerFoto(archivo) {
     return new Promise((res, rej) => {
-      if (!archivo || !/^image\//.test(archivo.type)) { rej(new Error('tipo')); return; }
+      if (!archivo || !/^image\//.test(archivo.type) || /svg/i.test(archivo.type)) { rej(new Error('tipo')); return; }
       const url = URL.createObjectURL(archivo), img = new Image();
-      img.onload = () => {
+      img.onload = () => { try {
         const esc = Math.min(1, 1280 / Math.max(img.width, img.height)), cv = document.createElement('canvas');
         cv.width = Math.round(img.width * esc); cv.height = Math.round(img.height * esc);
         cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
@@ -489,7 +490,7 @@
         let q = 0.62, dato = cv.toDataURL('image/jpeg', q);
         while (dato.length > 700000 && q > 0.3) { q -= 0.1; dato = cv.toDataURL('image/jpeg', q); }
         if (dato.length > 900000) rej(new Error('grande')); else res(dato);
-      };
+      } catch (e) { URL.revokeObjectURL(url); rej(new Error('tipo')); } };
       img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('tipo')); };
       img.src = url;
     });
@@ -549,13 +550,13 @@
           return [['mezclar', 'compras', c.id, { estado: 'recibido', entregadoA: valor('acQuien'), historial: paso(c, `Entregado a ${valor('acQuien')}${valor('acNota') ? '. ' + valor('acNota') : ''}`) }],
             aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya llegó y se entregó a ${valor('acQuien')}.`)];
         }
-        const n = entero('acCant');
+        const n = entero('acCant'), hay = num((artPorId(a.id) || a).cantidad);
         if (!(n > 0)) return fallar('Escribe una cantidad entera mayor que 0.', 'acCant');
         const nota = [valor('acNota'), n < num(c.cantidad) ? `Llegaron ${n} de ${num(c.cantidad)}` : ''].filter(Boolean).join('. ');
         return [
           ['mezclar', 'compras', c.id, { estado: 'recibido', historial: paso(c, `Recibido en bodega: ${cantTxt(n, a.unidad)}${nota ? '. ' + nota : ''}`) }],
           ['update', 'articulos', a.id, { cantidad: window.nube.incremento(n) }],
-          movimiento({ articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: num(a.cantidad) + n, persona: c.proveedor || '', nota, compraId: c.id }),
+          movimiento({ articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: hay + n, persona: c.proveedor || '', nota, compraId: c.id }),
           c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya está en bodega.`) : null
         ];
       }
@@ -577,7 +578,7 @@
     if (c.estado === 'autorizado' && esBodega()) botones.push(boton('comprar', 'Registrar compra', 'carrito', ` data-id="${esH(c.id)}"`, 'primary small'));
     if (c.estado === 'comprado' && esBodega()) botones.push(boton('recibir', a ? 'Recibir en bodega' : 'Marcar como recibida', 'caja', ` data-id="${esH(c.id)}"`, 'primary small'));
     if (c.estado === 'sin-autorizar' && !c.revisada && persona().rol === 'jefe') botones.push(boton('revisada', 'Marcar como revisada', 'check', ` data-id="${esH(c.id)}"`, 'small'));
-    const hist = (Array.isArray(c.historial) ? c.historial : []).slice().sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)));
+    const hist = historial(c).sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)));
     abrirAccion({
       titulo: c.que, sub: `${cantTxt(c.cantidad, c.unidad)} · ${c.categoria}`,
       campos: `<div class="row">${App.pill(e[0], e[1])}${c.estado === 'pedido' ? App.pill('Le toca a ' + nombreRol(autorizadorDe(c)), 'none', 'persona') : ''}</div>
@@ -591,7 +592,7 @@
           ${c.motivoRechazo ? `<dt>Motivo</dt><dd>${esH(c.motivoRechazo)}</dd>` : ''}
           ${c.entregadoA ? `<dt>Entregado a</dt><dd>${esH(c.entregadoA)}</dd>` : ''}
         </dl>
-        ${/^data:image\/jpeg;base64,/.test(c.factura || '') ? `<div class="field"><span class="lbl">Foto de la factura</span><img class="factura" src="${esH(c.factura)}" alt="Foto de la factura de ${esH(c.que)}"></div>` : ''}
+        ${/^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(typeof c.factura === 'string' ? c.factura : '') ? `<div class="field"><span class="lbl">Foto de la factura</span><img class="factura" src="${esH(c.factura)}" alt="Foto de la factura de ${esH(c.que)}"></div>` : ''}
         ${botones.length ? `<div class="tarea-pie">${botones.join('')}</div>` : ''}
         <div class="section-label">Cómo va</div>
         <ol class="linea">${hist.length ? hist.map(h => `<li><b>${esH(h.texto)}</b><span class="meta">${esH(h.por)} · ${esH(App.hace(h.fecha))}</span></li>`).join('') : '<li><span class="meta">Sin historial.</span></li>'}</ol>`
@@ -759,15 +760,18 @@
     });
     return cargaXlsx;
   }
+  // Fecha y hora del teléfono (Colombia), no la hora universal en que se guardan.
+  const dosC = n => String(n).padStart(2, '0');
+  const fechaLocal = (iso, conHora) => { const d = new Date(iso); if (isNaN(d)) return ''; const f = `${d.getFullYear()}-${dosC(d.getMonth() + 1)}-${dosC(d.getDate())}`; return conHora ? `${f} ${dosC(d.getHours())}:${dosC(d.getMinutes())}` : f; };
   async function descargarExcel(b) {
     b.disabled = true;
     try {
       const X = await cargarXlsx(), d = D(), libro = X.utils.book_new();
       const hoja = (nombre, filas) => X.utils.book_append_sheet(libro, X.utils.json_to_sheet(filas.length ? filas : [{ Nota: 'Sin datos' }]), nombre);
       hoja('Existencias', articulos().map(a => ({ Artículo: a.nombre, Categoría: a.categoria, Cantidad: num(a.cantidad), Unidad: a.unidad, Mínimo: num(a.minimo), Máximo: num(a.maximo), Estado: EST_ART[estadoArt(a)][0], Ubicación: a.ubicacion, 'Precio aprox.': num(a.costo), 'Valor en bodega': num(a.cantidad) * num(a.costo), Proveedor: a.proveedor })));
-      hoja('Movimientos', d.movimientos.slice().sort((x, y) => String(y.fecha).localeCompare(String(x.fecha))).map(m => ({ Fecha: String(m.fecha).slice(0, 16).replace('T', ' '), Artículo: m.articulo, Tipo: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: num(m.cantidad), Saldo: num(m.saldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota })));
+      hoja('Movimientos', d.movimientos.slice().sort((x, y) => String(y.fecha).localeCompare(String(x.fecha))).map(m => ({ Fecha: fechaLocal(m.fecha, true), Artículo: m.articulo, Tipo: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: num(m.cantidad), Saldo: num(m.saldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota })));
       hoja('Compras', d.compras.map(c => ({ Qué: c.que, Cantidad: num(c.cantidad), Unidad: c.unidad, Categoría: c.categoria, Estado: (EST_CO[c.estado] || [c.estado])[0], Pidió: c.pide, Autoriza: c.autoriza, 'Valor aprox.': num(c.valorAprox), 'Valor pagado': num(c.valorReal), Proveedor: c.proveedor, 'Fecha pedido': c.fechaPedido, 'Fecha compra': c.fechaCompra, 'Para qué': c.paraQue })));
-      hoja('Pedidos de material', d.solicitudes.map(s => ({ Fecha: String(s.fecha).slice(0, 10), Artículo: s.articulo, Cantidad: num(s.cantidad), Pidió: s.pide, 'Para qué': s.paraQue, Proyecto: s.proyecto, Estado: (EST_SOL[s.estado] || [s.estado])[0], Entregó: s.entregadaPor, Motivo: s.motivo })));
+      hoja('Pedidos de material', d.solicitudes.map(s => ({ Fecha: fechaLocal(s.fecha, false), Artículo: s.articulo, Cantidad: num(s.cantidad), Pidió: s.pide, 'Para qué': s.paraQue, Proyecto: s.proyecto, Estado: (EST_SOL[s.estado] || [s.estado])[0], Entregó: s.entregadaPor, Motivo: s.motivo })));
       X.writeFile(libro, `Inventario demo ${A().hoyISO()}.xlsx`);
       A().toast('Listo: Excel descargado');
     } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }

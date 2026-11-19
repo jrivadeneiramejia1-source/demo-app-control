@@ -108,8 +108,9 @@
     mostrar('app');
     pintarTodo();
     if (cambio) toast(`Ahora eres ${p.nombre} (${p.rolTxt})`);
+    S.errorFijo = '';
     try { const sembro = await nube.sembrar(false, p.rol); if (mia === S.sesion && sembro) toast('Listo: se cargaron los datos de prueba'); }
-    catch (e) { if (mia === S.sesion) error(nube.explicar(e)); }
+    catch (e) { if (mia === S.sesion) { S.errorFijo = nube.explicar(e); error(S.errorFijo); } }
     if (mia === S.sesion) escucharTodo();
     if (window.Push && Push.estado() === 'activo') Push.actualizarRol(p.rol);
     pintarAvisoActivar();
@@ -124,7 +125,9 @@
     ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos', 'suscripciones'].forEach(col => {
       S.oyentes.push(nube.escuchar(col, lista => {
         S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
-        if (col !== 'avisos' || !$('avisoError').hidden) error('');
+        // El aviso de que faltan los datos de prueba (o de que no se pudieron cargar) se queda hasta que lleguen artículos.
+        if (S.errorFijo && col === 'articulos' && lista.length) S.errorFijo = '';
+        if (col !== 'avisos' || !$('avisoError').hidden) error(S.errorFijo || '');
         pintarTodo();
       }, e => { if (col === 'suscripciones') { S.llegaron.add(col); return; } error(nube.explicar(e)); }));
     });
@@ -458,7 +461,7 @@
       const b = $('btnReiniciar'); b.disabled = true;
       // Mientras se reinicia no se deja cambiar de persona: con Firebase real, lo que la persona anterior no alcanzó a enviar se queda esperando hasta que ella vuelva a entrar.
       S.entrando = true; document.querySelectorAll('#personaLista .persona-card').forEach(x => x.setAttribute('aria-disabled', 'true'));
-      try { await nube.sembrar(true, S.persona.rol); toast('Listo: datos de prueba reiniciados'); cerrarHoja('shPersona'); }
+      try { await nube.sembrar(true, S.persona.rol); S.errorFijo = ''; error(''); toast('Listo: datos de prueba reiniciados'); cerrarHoja('shPersona'); }
       catch (e) { toast(nube.explicar(e)); }
       finally { b.disabled = false; S.entrando = false; document.querySelectorAll('#personaLista .persona-card').forEach(x => x.removeAttribute('aria-disabled')); }
     };

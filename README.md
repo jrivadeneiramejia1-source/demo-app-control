@@ -9,10 +9,9 @@ Cada pantalla trae una etiqueta azul **Versión pagada**: al tocarla dice qué c
 |---|---|---|
 | 1. Preparación | Repositorio, diseño y piezas copiadas de Equipos y Entregas | Hecha |
 | 2. Base y entrada | Cuentas de prueba, cambio de persona, menú de los módulos, datos inventados, campana y etiquetas | Hecha |
-| 2b. Inventario (muestra) | Bodega de consumibles con las compras adentro: «Qué hay que hacer», Existencias y Pedir material | Muestra para aprobar |
 | 3. Equipos | Equipos y Entregas juntas | Pendiente |
 | 4. Vehículos | Hoja de vida, novedades con foto, entrega y recibo | Pendiente |
-| 5. Inventario completo | Movimientos, Pedidos de material, Compras (con foto de factura), Conteo físico, Resumen y permisos en las reglas | Pendiente |
+| 5. Inventario y compras | Bodega con las compras adentro: Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras (con foto de factura e historial), Conteo físico y Resumen con Excel. Permisos por rol en las reglas y avisos al teléfono | Hecha (va antes que 3 y 4, a pedido de los jefes) |
 | 6. Reuniones y agente | Worker de Cloudflare con Gemini y cuatro correos de ejemplo | Pendiente |
 | 7. Pulido | Modo presentación y guion | Pendiente |
 
@@ -29,6 +28,10 @@ Todas con la clave `demo-control-2026` (inventada y pública: la demo solo tiene
 
 ## Archivos
 - `index.html`, `app.js`, `demo.css`: la app. `inventario.js`: el módulo Inventario (bodega y compras).
+- `push.js`, `sw.js`, `manifest.webmanifest`, `iconos/control-*.png`: avisos al teléfono (Web Push) e instalación en la pantalla de inicio.
+- `avisos/worker.js`: servidor de avisos «avisos-demo» para Cloudflare Workers (gratis). Se pega a mano en Cloudflare con los secretos `VAPID_D` y `VAPID_PUB`.
+- `generar-llaves.html`: crea en el navegador el par de llaves de los avisos. La privada va solo en Cloudflare; la pública va en `config.js` (`window.AVISOS_DEMO`).
+- `lib/xlsx/`: SheetJS (Apache-2.0) para descargar el Excel del Resumen.
 - `nube.js`: conexión con Firebase (Authentication con correo y clave, y Firestore). Nuevo: no usa la clave compartida de las apps reales ni manda errores a Slack.
 - `config.js`: datos del proyecto de Firebase de la demo, ID `fir-app-control-d8494` (no son secretos).
 - `personas.js`: las cinco cuentas de prueba y sus permisos. `datos-demo.js`: los datos de ejemplo, con fechas relativas al día en que se cargan.
@@ -37,7 +40,12 @@ Todas con la clave `demo-control-2026` (inventada y pública: la demo solo tiene
 - `pruebas/`: Firebase falso (`firebase-*.js`) y pruebas con Playwright.
 
 ## Datos en Firestore
-Colecciones de primer nivel: `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `avisos` y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). La persona Jefe tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
+Colecciones de primer nivel: `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `avisos`, `suscripciones` (teléfonos con avisos activados; Reiniciar no las borra) y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). Solo la Jefe carga, actualiza y reinicia los datos de prueba (así lo piden las reglas): si otra persona entra primero, la app le dice que entre una vez como Ana. La Jefe tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
+
+## Permisos (los hace cumplir Firebase, no solo la pantalla)
+- Cualquiera pide material y pide compras a su nombre. Nadie autoriza su propio pedido: las de Luis las autoriza la Jefe.
+- Luis autoriza o rechaza sin poder cambiar cantidad ni valor. La bodega (Sofía) compra, recibe, entrega, registra entradas, salidas y conteos; la cantidad nunca queda negativa.
+- Cada quien marca como leídos solo sus avisos.
 
 ## Pruebas
 ```
