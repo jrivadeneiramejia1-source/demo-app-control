@@ -15,7 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], reuniones: [], avisos: [] },
+    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], reuniones: [], avisos: [], suscripciones: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     oyentes: [],
     filtro: { equipos: '', inventario: '', vehiculos: '', reuniones: '' },
@@ -99,6 +99,9 @@
     if (p.desconocido) { S.motivoSalida = 'Esa cuenta no es de la demo. Entra con una de las personas de prueba.'; S.persona = null; await nube.salir(); return; }
     const cambio = S.persona && S.persona.rol !== p.rol;
     S.persona = p;
+    // Enlace directo desde una notificación (./#inventario): abre ese módulo si la persona lo puede ver.
+    const pedida = (location.hash || '').slice(1);
+    if (VISTAS[pedida] && puedeVer(pedida)) { S.vista = pedida; try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {} }
     if (!puedeVer(S.vista) && S.vista !== 'inicio') S.vista = 'inicio';
     document.querySelectorAll('.tab[data-vista]').forEach(t => { t.dataset.vista === S.vista ? t.setAttribute('aria-current', 'page') : t.removeAttribute('aria-current'); });
     pintarPersona();
@@ -108,6 +111,8 @@
     try { const sembro = await nube.sembrar(false, p.rol); if (mia === S.sesion && sembro) toast('Listo: se cargaron los datos de prueba'); }
     catch (e) { if (mia === S.sesion) error(nube.explicar(e)); }
     if (mia === S.sesion) escucharTodo();
+    if (window.Push && Push.estado() === 'activo') Push.actualizarRol(p.rol);
+    pintarAvisoActivar();
   }
   // Los arreglos dañados (null, texto, mapa o con elementos null) se vuelven arreglos de objetos para que nada se rompa.
   const objetos = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
@@ -116,12 +121,12 @@
     reuniones: r => Object.assign({}, r, { necesidades: objetos(r.necesidades), asistentes: Array.isArray(r.asistentes) ? r.asistentes : [] })
   };
   function escucharTodo() {
-    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos'].forEach(col => {
+    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos', 'suscripciones'].forEach(col => {
       S.oyentes.push(nube.escuchar(col, lista => {
         S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
         if (col !== 'avisos' || !$('avisoError').hidden) error('');
         pintarTodo();
-      }, e => { error(nube.explicar(e)); }));
+      }, e => { if (col === 'suscripciones') { S.llegaron.add(col); return; } error(nube.explicar(e)); }));
     });
   }
 
@@ -141,7 +146,44 @@
     $('permNombre').textContent = p.nombre;
     $('permTabla').innerHTML = MODULOS.map(m => `<div><span>${esH(m.n)}</span>${pill(window.DEMO.PERMISO_TXT[permiso(m.k)], permiso(m.k) === 'no' ? 'none' : 's-disco')}</div>`).join('');
     $('ajustesJefe').hidden = p.rol !== 'jefe';
+    pintarAvisosTel();
     abrirHoja('shPersona');
+  }
+
+  /* ---------- avisos al teléfono ---------- */
+  const TXT_PUSH = {
+    'no-soportado': 'Este navegador no permite avisos. Usa Chrome en Android o en el computador.',
+    'sin-configurar': 'Los avisos al teléfono todavía no están conectados (falta el servidor de avisos). Mientras tanto llegan a la campana.',
+    'necesita-instalar': 'En iPhone primero instala la app: toca Compartir, luego Agregar a inicio, y ábrela desde el ícono.',
+    'negado': 'Los avisos están bloqueados en este navegador. Actívalos en los ajustes, en Notificaciones de este sitio.',
+    'activo': 'Activos: a este teléfono le llega lo que le toca a',
+    'inactivo': 'Apagados: lo que te toque solo llega a la campana de la app.'
+  };
+  const estadoPush = () => (window.Push ? Push.estado() : 'no-soportado');
+  function pintarAvisosTel() {
+    const e = estadoPush(), p = S.persona;
+    $('avisosTelTxt').textContent = e === 'activo' ? `${TXT_PUSH.activo} ${p.nombre}.` : TXT_PUSH[e] || '';
+    $('avisosTelBtns').innerHTML = e === 'inactivo' ? `<button class="btn small primary" type="button" data-push="activar">${ico('campana')}Activar avisos</button>`
+      : e === 'activo' ? `<button class="btn small" type="button" data-push="probar">${ico('enviar')}Mandarme uno de prueba</button><button class="btn small ghost" type="button" data-push="apagar">${ico('campanaNo')}Apagar</button>` : '';
+  }
+  function pintarAvisoActivar() {
+    let oculto = false; try { oculto = localStorage.getItem('demo_avisos_no') === '1'; } catch (e) {}
+    $('avisoActivar').hidden = !S.persona || oculto || estadoPush() !== 'inactivo';
+  }
+  async function accionPush(que, boton) {
+    if (boton) boton.disabled = true;
+    try {
+      if (que === 'activar') {
+        const r = await Push.activar(S.persona.rol);
+        toast(r.ok ? 'Listo: avisos activados en este teléfono' : r.motivo);
+      } else if (que === 'apagar') {
+        const r = await Push.desactivar(); toast(r.ok ? 'Avisos apagados en este teléfono' : r.motivo);
+      } else if (que === 'probar') {
+        const mias = S.datos.suscripciones.filter(x => x.rol === S.persona.rol);
+        const r = await Push.enviar(mias, { titulo: 'Aviso de prueba', texto: `Así le llega un aviso a ${S.persona.nombre}.`, url: './', etiqueta: 'prueba' });
+        toast(r.ok && r.enviados ? 'Listo: aviso de prueba enviado' : 'No se pudo mandar el aviso de prueba. Revisa la conexión del servidor de avisos.');
+      }
+    } finally { if (boton) boton.disabled = false; pintarAvisosTel(); pintarAvisoActivar(); }
   }
 
   /* ---------- vistas ---------- */
@@ -364,12 +406,12 @@
   /* ---------- versión pagada ---------- */
   const PAGADA = {
     entrada: ['Entrada y permisos', 'Cuentas de prueba y un botón para cambiar de persona en vivo.', 'Cuentas reales con el correo de cada persona. Cada una entra con su clave y solo ve lo suyo.'],
-    inicio: ['La app completa', 'Gratis, con datos de prueba y avisos solo dentro de la app.', 'Unos USD 20 a 28 al mes: el agente lee el correo real y los avisos llegan al teléfono.'],
+    inicio: ['La app completa', 'Gratis, con datos de prueba. Los avisos llegan a la campana y al teléfono.', 'Unos USD 20 a 28 al mes: el agente lee el correo real, cuentas con el correo de cada persona y fotos en un almacenamiento aparte.'],
     equipos: ['Equipos', 'Las fotos de las hojas se guardan comprimidas dentro de la base de datos.', 'Las fotos van a un almacenamiento aparte (Cloud Storage): más calidad y la base no se llena.'],
-    inventario: ['Inventario y compras', 'Cada persona ve lo que le toca al abrir la app, y la campana avisa dentro de la app.', 'Aviso al teléfono de quien autoriza, de quien compra y de quien entrega, apenas le toca algo.'],
+    inventario: ['Inventario y compras', 'Todo funciona: pedir, autorizar, comprar con foto de la factura, recibir, entregar y contar. Avisos a la campana y al teléfono.', 'Las fotos de facturas van a un almacenamiento aparte (más calidad y la base no se llena), avisos también por correo o Teams, y cuentas con el correo real de cada persona.'],
     vehiculos: ['Vehículos', 'Los vencimientos del SOAT y la técnico-mecánica se ven en rojo y amarillo dentro de la app.', 'Avisos automáticos al teléfono antes de que venza el SOAT o la revisión.'],
     reuniones: ['Reuniones y agente', 'Correos de ejemplo pegados en la app; Gemini gratis los lee.', 'El agente lee solo el buzón real de Outlook, con n8n y el permiso de TI.'],
-    avisos: ['Avisos', 'Una campana dentro de la app.', 'Avisos al teléfono, por correo o por Teams.']
+    avisos: ['Avisos', 'La campana dentro de la app y notificaciones al teléfono (gratis, con un servidor pequeño de Cloudflare).', 'Además, avisos por correo o por Teams.']
   };
   function abrirPagada(k) {
     const x = PAGADA[k] || PAGADA.inicio;
@@ -444,6 +486,9 @@
     });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarArriba(); });
     $('btnReintentar').onclick = () => location.reload();
+    $('avisosTelBtns').addEventListener('click', e => { const b = e.target.closest('[data-push]'); if (b) accionPush(b.dataset.push, b); });
+    $('btnActivarSi').onclick = e => accionPush('activar', e.currentTarget);
+    $('btnActivarNo').onclick = () => { try { localStorage.setItem('demo_avisos_no', '1'); } catch (e) {} pintarAvisoActivar(); };
     const red = () => { $('avisoOff').hidden = navigator.onLine !== false; };
     addEventListener('online', red); addEventListener('offline', red); red();
   }

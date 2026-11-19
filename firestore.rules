@@ -1,9 +1,11 @@
 rules_version = '2';
-// Reglas de la DEMO (proyecto demo-app-control). Se pegan en Firebase > Firestore Database > Reglas (Rules) > Publicar (Publish).
-// Solo entran las cinco cuentas de prueba de personas.js. Cualquier otra cuenta (o alguien sin cuenta) no puede leer ni escribir nada.
-// Fases 1 y 2: todas las cuentas de prueba pueden leer y escribir las colecciones de la demo.
-// Muestra del inventario: articulos, movimientos y solicitudes con el mismo acceso.
-// Con el módulo completo se agregan los permisos por rol (por ejemplo, solo "Autoriza compras" aprueba una compra).
+// Reglas de la DEMO (proyecto fir-app-control-d8494). Se pegan en Firebase > Firestore Database > Reglas (Rules) > Publicar (Publish).
+// Solo entran las cinco cuentas de prueba de personas.js. Cualquier otra cuenta, o alguien sin cuenta, no puede leer ni escribir nada.
+// Cada persona solo puede hacer lo que le toca (lo cumple Firebase, no solo la pantalla):
+//   Jefe (Ana): carga y reinicia los datos de prueba, ve todo y autoriza las compras que pide Luis.
+//   Autoriza compras (Luis): autoriza o rechaza compras; nunca las que pidió él.
+//   Asistente (Sofía, encargada de bodega): entradas, salidas, conteos, entregas, registra y recibe compras.
+//   Todos: piden material y piden compras a su nombre, y marcan sus avisos como leídos.
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -22,11 +24,75 @@ service cloud.firestore {
         && request.auth.token.email is string
         && request.auth.token.email in cuentas();
     }
+    function rol() { return cuentas()[request.auth.token.email]; }
+    function esJefe() { return esDemo() && rol() == 'jefe'; }
+    function esBodega() { return esDemo() && (rol() == 'asistente' || rol() == 'jefe'); }
+    function nuevo() { return request.resource.data; }
+    function antes() { return resource.data; }
+    function soloCambia(campos) { return nuevo().diff(antes()).affectedKeys().hasOnly(campos); }
 
-    // Colecciones de los módulos. No se permiten subcolecciones ni otras colecciones.
+    // Marca de los datos de prueba: solo la Jefe los carga o reinicia.
+    match /demo/{id} {
+      allow read: if esDemo();
+      allow write: if esJefe();
+    }
+
+    // Módulos que en esta fase solo se ven: los escribe la Jefe al cargar los datos de prueba.
     match /{col}/{id} {
-      allow read: if esDemo() && col in ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos', 'demo'];
-      allow write: if esDemo() && col in ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos', 'demo'];
+      allow read: if esDemo() && col in ['equipos', 'vehiculos', 'reuniones'];
+      allow write: if esJefe() && col in ['equipos', 'vehiculos', 'reuniones'];
+    }
+
+    // Bodega: artículos y movimientos.
+    match /articulos/{id} {
+      allow read: if esDemo();
+      allow write: if esBodega();
+    }
+    match /movimientos/{id} {
+      allow read: if esDemo();
+      allow create: if esJefe() || (esBodega() && nuevo().por is string && nuevo().porRol == rol());
+      allow update, delete: if esJefe();
+    }
+
+    // Pedidos de material: cada quien pide a su nombre; la bodega los entrega o los cierra.
+    match /solicitudes/{id} {
+      allow read: if esDemo();
+      allow create: if esDemo() && (nuevo().pideRol == rol() || esJefe()) && (nuevo().estado == 'pendiente' || esJefe());
+      allow update: if esBodega();
+      allow delete: if esJefe();
+    }
+
+    // Compras.
+    match /compras/{id} {
+      allow read: if esDemo();
+      // Pedir: a su propio nombre y en estado "pedido". La bodega también registra compras hechas sin autorización.
+      allow create: if esJefe()
+        || (esDemo() && nuevo().pideRol == rol() && nuevo().estado == 'pedido')
+        || (esBodega() && nuevo().estado == 'sin-autorizar');
+      allow update: if esJefe()
+        // Autorizar o rechazar: quien autoriza compras, y nunca un pedido suyo.
+        || (esDemo() && rol() == 'compras' && antes().estado == 'pedido'
+            && antes().get('pideRol', '') != 'compras'
+            && nuevo().estado in ['autorizado', 'rechazado'])
+        // Comprar y recibir: la bodega, solo después de autorizada.
+        || (esBodega() && antes().estado in ['autorizado', 'comprado']
+            && nuevo().estado in ['comprado', 'recibido']);
+      allow delete: if esJefe();
+    }
+
+    // Avisos de la campana: cualquiera los crea; cada quien solo cambia la marca de leído.
+    match /avisos/{id} {
+      allow read: if esDemo();
+      allow create: if esDemo();
+      allow update: if esDemo() && soloCambia(['leido']);
+      allow delete: if esJefe();
+    }
+
+    // Teléfonos con avisos activados (para mandar la notificación al teléfono de cada persona).
+    match /suscripciones/{id} {
+      allow read: if esDemo();
+      allow create, update: if esDemo() && nuevo().rol == rol();
+      allow delete: if esDemo();
     }
   }
 }

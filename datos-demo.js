@@ -103,10 +103,12 @@
     };
 
     // ---------- COMPRAS ----------
+    // Rol de quien pide (sirve para que nadie autorice su propio pedido). Mismos nombres de personas.js.
+    const ROL_DE = { 'Ana Pérez': 'jefe', 'Luis Rodríguez': 'compras', 'Marta Gómez': 'carros', 'Carlos Pinto': 'conductor', 'Sofía Herrera': 'asistente' };
     function compra(que, cantidad, unidad, categoria, valorAprox, paraQue, pide, autoriza, estado, extra) {
       return Object.assign({
-        que, cantidad, unidad, categoria, valorAprox, paraQue, pide, autoriza, estado,
-        proveedor: '', valorReal: 0, fechaPedido: '', fechaCompra: '', entregadoA: '', motivoRechazo: '', articuloId: ''
+        que, cantidad, unidad, categoria, valorAprox, paraQue, pide, pideRol: ROL_DE[pide] || '', autoriza, estado,
+        proveedor: '', valorReal: 0, fechaPedido: '', fechaCompra: '', entregadoA: '', motivoRechazo: '', articuloId: '', factura: '', revisada: false, historial: []
       }, extra);
     }
     const compras = {
@@ -132,6 +134,19 @@
         'Sofía Herrera', '', 'sin-autorizar',
         { fechaPedido: dias(-5), proveedor: 'Distribuidora Agua Clara', valorReal: 96000, fechaCompra: dias(-5) })
     };
+    // Historial de cada compra (cómo va), armado según su estado. Las horas son de oficina y nunca quedan en el futuro.
+    const desfase = f => Math.round((new Date(f + 'T12:00:00') - new Date(dias(0) + 'T12:00:00')) / 86400000);
+    Object.values(compras).forEach(c => {
+      const h = [];
+      const paso = (fecha, hora, texto, por) => h.push({ fecha: iso(desfase(fecha), hora, 0), texto, por });
+      if (c.estado === 'sin-autorizar') paso(c.fechaCompra, 10, `Compró en ${c.proveedor} sin pedir autorización`, c.pide);
+      else paso(c.fechaPedido, 9, 'Pidió la compra', c.pide);
+      if (['autorizado', 'comprado', 'recibido'].includes(c.estado)) paso(c.fechaPedido, 15, 'Autorizó la compra', c.autoriza);
+      if (c.estado === 'rechazado') paso(c.fechaPedido, 16, `Rechazó la compra: ${c.motivoRechazo}`, c.autoriza);
+      if (['comprado', 'recibido'].includes(c.estado)) paso(c.fechaCompra, 11, `Compró en ${c.proveedor}`, 'Sofía Herrera');
+      if (c.estado === 'recibido') paso(c.fechaCompra, 16, c.articuloId ? 'Recibido en bodega' : `Entregado a ${c.entregadoA}`, 'Sofía Herrera');
+      c.historial = h;
+    });
 
     // ---------- ARTÍCULOS DE BODEGA ----------
     function articulo(nombre, categoria, unidad, cantidad, minimo, maximo, ubicacion, costo, proveedor) {
@@ -306,5 +321,5 @@
     return { equipos, compras, vehiculos, reuniones, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 2, generar });
+  window.DatosDemo = Object.freeze({ VERSION: 3, generar });
 })();

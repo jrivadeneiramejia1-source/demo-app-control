@@ -28,7 +28,9 @@
       'permission-denied': 'Firebase no deja leer ni guardar: falta pegar las reglas de firestore.rules en Firestore Database, pestaña Reglas.',
       'unavailable': 'Sin conexión con la base de datos. Lo que hagas se guarda cuando vuelva la señal.',
       'not-found': 'Ese registro ya no existe. Puede que otra persona lo haya borrado.',
-      'sin-sdk': 'Firebase no alcanzó a cargar. Revisa la conexión a internet y toca Reintentar arriba.'
+      'sin-sdk': 'Firebase no alcanzó a cargar. Revisa la conexión a internet y toca Reintentar arriba.',
+      'falta-sembrar': 'Todavía no hay datos de prueba. Entra una vez como Ana Pérez (Jefe) para cargarlos.',
+      'datos-viejos': 'Hay una versión nueva de los datos de prueba. Entra una vez como Ana Pérez (Jefe) para actualizarlos.'
     };
     return t[c] || ('Algo salió mal con Firebase' + (c ? ' (' + c + ')' : '') + '. Vuelve a intentar.');
   }
@@ -90,6 +92,8 @@
       // Se siembra si la base está vacía o si los datos guardados son de una versión anterior de la demo.
       const s = await FS.getDoc(estadoRef);
       if (s.exists() && Number(s.data().version) >= window.DatosDemo.VERSION) return false;
+      // Solo la Jefe carga o actualiza los datos de prueba (así lo piden las reglas).
+      if (rol !== 'jefe') { const e = new Error('Faltan datos'); e.code = s.exists() ? 'datos-viejos' : 'falta-sembrar'; throw e; }
       if (s.exists()) forzar = true;
     }
     const datos = window.DatosDemo.generar(new Date());

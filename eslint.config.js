@@ -2,7 +2,7 @@
 import js from '@eslint/js';
 import globals from 'globals';
 
-const compartidos = { ico: 'readonly', llenarIconos: 'readonly', UI: 'readonly', nube: 'readonly', Codigos: 'readonly', DEMO: 'readonly', DatosDemo: 'readonly' };
+const compartidos = { ico: 'readonly', llenarIconos: 'readonly', UI: 'readonly', nube: 'readonly', Push: 'readonly', XLSX: 'readonly', Codigos: 'readonly', DEMO: 'readonly', DatosDemo: 'readonly' };
 const reglas = {
   'no-unused-vars': ['error', { args: 'none', caughtErrors: 'none', varsIgnorePattern: '^_' }],
   'no-empty': ['error', { allowEmptyCatch: true }],
@@ -17,6 +17,15 @@ export default [
     files: ['*.js'],
     ignores: ['eslint.config.js'],
     languageOptions: { ecmaVersion: 2023, sourceType: 'script', globals: { ...globals.browser, ...compartidos } },
+    rules: reglas
+  },
+  {
+    files: ['sw.js'],
+    languageOptions: { globals: { ...globals.serviceworker } }
+  },
+  {
+    files: ['avisos/**/*.js'],
+    languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: { ...globals.serviceworker } },
     rules: reglas
   },
   {

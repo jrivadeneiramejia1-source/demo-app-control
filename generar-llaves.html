@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0A5A4E">
+<title>Generar llaves de avisos · Control (demo)</title>
+<script>try { var t = localStorage.getItem('cp_tema'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
+<link rel="stylesheet" href="comun.css?v=1">
+<style>
+  .llave { font-family: var(--f-mono, ui-monospace, Consolas, monospace); font-size: .82rem; word-break: break-all; user-select: all; background: var(--field); border: 1.5px solid var(--line); border-radius: 12px; padding: 12px; }
+  .privada .llave { border-color: var(--danger); }
+  .fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .copiado { font-size: .84rem; color: var(--listo); font-weight: 650; }
+</style>
+</head>
+<body>
+<main id="contenido" tabindex="-1">
+  <h1 class="titulo-vista">Llaves para los avisos del teléfono</h1>
+  <div class="note">Esta página crea un par de llaves nuevas <b>en tu navegador</b>. No usa internet y nada se envía a ningún lado. Si la recargas, salen llaves distintas; usa un solo par.</div>
+  <div class="aviso warn" id="error" role="alert" hidden><span id="errorTxt"></span></div>
+
+  <section class="card" aria-labelledby="tPub">
+    <h2 id="tPub" style="margin:0 0 6px">Llave pública</h2>
+    <p class="note" style="margin:0 0 10px">Esta va en <b>config.js</b>, no es secreta, pásasela a Claude. También se pega en Cloudflare como secreto <b>VAPID_PUB</b>.</p>
+    <div class="llave" id="pub" aria-live="polite">Generando...</div>
+    <div class="fila" style="margin-top:10px">
+      <button class="btn primary" type="button" id="cpPub" disabled>Copiar la pública</button>
+      <span class="copiado" id="okPub" role="status"></span>
+    </div>
+  </section>
+
+  <section class="card privada" aria-labelledby="tPriv">
+    <h2 id="tPriv" style="margin:0 0 6px">Llave privada (d)</h2>
+    <div class="aviso warn" style="margin-bottom:10px"><span><b>Pégala solo en Cloudflare</b> como secreto <b>VAPID_D</b> y también la pública como <b>VAPID_PUB</b>. <b>No se la pases a nadie, ni a Claude.</b> No la escribas en ningún archivo ni la mandes por chat.</span></div>
+    <div class="llave" id="priv" aria-live="polite">Generando...</div>
+    <div class="fila" style="margin-top:10px">
+      <button class="btn" type="button" id="cpPriv" disabled>Copiar la privada</button>
+      <span class="copiado" id="okPriv" role="status"></span>
+    </div>
+  </section>
+
+  <button class="btn ghost" type="button" id="otra">Generar otro par (las anteriores dejan de servir)</button>
+</main>
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const b64u = buf => btoa(String.fromCharCode.apply(null, new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const deB64u = s => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), c => c.charCodeAt(0));
+  let pub = '', priv = '';
+
+  async function generar() {
+    $('error').hidden = true;
+    ['cpPub', 'cpPriv'].forEach(i => { $(i).disabled = true; });
+    $('pub').textContent = $('priv').textContent = 'Generando...';
+    $('okPub').textContent = $('okPriv').textContent = '';
+    try {
+      if (!(window.crypto && crypto.subtle)) throw new Error('Este navegador no tiene WebCrypto (o la página no es segura). Abre esta página con https.');
+      const par = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+      const j = await crypto.subtle.exportKey('jwk', par.privateKey);
+      const x = deB64u(j.x), y = deB64u(j.y);
+      const bytes = new Uint8Array(65); bytes[0] = 4; bytes.set(x, 1); bytes.set(y, 33);   // sin comprimir: 04 + x + y
+      pub = b64u(bytes); priv = j.d;
+      $('pub').textContent = pub; $('priv').textContent = priv;
+      ['cpPub', 'cpPriv'].forEach(i => { $(i).disabled = false; });
+    } catch (e) {
+      $('pub').textContent = $('priv').textContent = '';
+      $('errorTxt').textContent = 'No se pudieron generar las llaves: ' + (e.message || e);
+      $('error').hidden = false;
+    }
+  }
+
+  async function copiar(texto, aviso) {
+    let hecho = false;
+    try { await navigator.clipboard.writeText(texto); hecho = true; } catch (e) {}
+    if (!hecho) {   // plan B para navegadores sin portapapeles moderno
+      const t = document.createElement('textarea');
+      t.value = texto; t.setAttribute('readonly', ''); t.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(t); t.select(); t.setSelectionRange(0, texto.length);
+      try { hecho = document.execCommand('copy'); } catch (e) {}
+      t.remove();
+    }
+    aviso.textContent = hecho ? 'Copiada' : 'No se pudo copiar: mantén presionada la llave, selecciónala y copia';
+    setTimeout(() => { aviso.textContent = ''; }, 4000);
+  }
+
+  $('cpPub').addEventListener('click', () => copiar(pub, $('okPub')));
+  $('cpPriv').addEventListener('click', () => copiar(priv, $('okPriv')));
+  $('otra').addEventListener('click', generar);
+  generar();
+})();
+</script>
+</body>
+</html>

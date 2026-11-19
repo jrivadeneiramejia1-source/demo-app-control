@@ -7,11 +7,18 @@
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0D3B37">
 <meta name="description" content="Demo de la app de control: equipos, inventario y compras, vehículos y reuniones, con datos de prueba">
 <meta name="robots" content="noindex">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="iconos/control-192.png">
+<link rel="apple-touch-icon" href="iconos/control-180.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Control">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Control · demo</title>
 <link rel="preload" href="fuentes/bricolage.woff2" as="font" type="font/woff2" crossorigin>
 <script>try { var t = localStorage.getItem('cp_tema'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
 <link rel="stylesheet" href="comun.css?v=1">
-<link rel="stylesheet" href="demo.css?v=2">
+<link rel="stylesheet" href="demo.css?v=3">
 </head>
 <body>
 <a class="saltar" href="#contenido">Saltar al contenido</a>
@@ -64,6 +71,7 @@
       <h2 class="titulo-vista" id="tInicio">Hola</h2>
       <p class="meta" id="inicioSub"></p>
     </div>
+    <div class="aviso info" id="avisoActivar" hidden><span id="avisoActivarTxt">Activa los avisos para que te llegue una notificación al teléfono cuando algo te toque.</span><span class="row"><button class="btn small ghost" type="button" id="btnActivarNo">Ahora no</button><button class="btn small primary" type="button" id="btnActivarSi"><span data-ico="campana"></span>Activar</button></span></div>
     <div class="section-label" id="pendT">Lo pendiente</div>
     <div class="summary" id="sumInicio"></div>
     <div class="section-label">Módulos</div>
@@ -86,12 +94,14 @@
   <section class="view" id="vInventario" aria-labelledby="tInventario" hidden>
     <div class="vista-cab"><h2 class="titulo-vista" id="tInventario">Inventario</h2><span class="pill s-pend" id="permInventario"></span></div>
     <div class="summary cuatro" id="sumInventario"></div>
-    <button class="btn primary big" type="button" id="btnPedirMaterial"><span data-ico="mas"></span>Pedir material de bodega</button>
+    <div class="dos-botones">
+      <button class="btn primary big" type="button" id="btnPedirMaterial"><span data-ico="caja"></span>Pedir material</button>
+      <button class="btn big" type="button" id="btnPedirCompra"><span data-ico="carrito"></span>Pedir una compra</button>
+    </div>
     <div class="chips secciones" id="invSecciones" role="group" aria-label="Partes del inventario"></div>
     <input class="search" id="qInventario" type="search" placeholder="Buscar artículo, categoría o ubicación" autocomplete="off" aria-label="Buscar artículo" hidden>
     <div id="invContenido" class="inv-contenido" tabindex="-1"></div>
-    <div class="note fase"><b>Muestra:</b> ya funcionan «Qué hay que hacer», «Existencias» y «Pedir material». Movimientos, Solicitudes, Compras, Conteo y Resumen se arman cuando apruebes el estilo.</div>
-    <button class="pagada" type="button" data-pagada="inventario"><span data-ico="pagada"></span>Versión pagada: aviso al teléfono de quien autoriza y de quien entrega</button>
+    <button class="pagada" type="button" data-pagada="inventario"><span data-ico="pagada"></span>Versión pagada: fotos de facturas en un almacenamiento aparte y avisos también por correo o Teams</button>
   </section>
 
   <!-- VEHÍCULOS -->
@@ -134,6 +144,11 @@
     <div class="list" id="personaLista"></div>
     <div class="section-label">Permisos de <span id="permNombre"></span></div>
     <div class="permisos" id="permTabla"></div>
+    <div class="card ajustes" id="avisosTel">
+      <b>Avisos en este teléfono</b>
+      <span class="meta" id="avisosTelTxt"></span>
+      <div class="row" id="avisosTelBtns"></div>
+    </div>
     <div class="card ajustes" id="ajustesJefe" hidden>
       <b>Datos de prueba</b>
       <span class="meta">Borra lo que se haya cambiado y vuelve a poner los datos de ejemplo con las fechas de hoy. Úsalo antes de presentar.</span>
@@ -153,7 +168,7 @@
     <h2 id="shAvisosT">Avisos</h2>
     <p class="sub" id="shAvisosSub"></p>
     <div class="list" id="avisosLista"></div>
-    <button class="pagada" type="button" data-pagada="avisos"><span data-ico="pagada"></span>Versión pagada: avisos al teléfono, por correo o por Teams</button>
+    <button class="pagada" type="button" data-pagada="avisos"><span data-ico="pagada"></span>Versión pagada: avisos también por correo o por Teams</button>
     <div class="sheet-actions"><div class="row"><button class="btn" type="button" data-cerrar>Cerrar</button></div></div>
   </div>
 </div>
@@ -178,7 +193,7 @@
     <div class="err" id="acErr" role="alert" hidden></div>
     <div class="sheet-actions">
       <button class="btn danger" type="button" id="acSecundario" hidden></button>
-      <div class="row"><button class="btn" type="button" data-cerrar>Cancelar</button><button class="btn primary" type="submit" id="acPrimario"></button></div>
+      <div class="row"><button class="btn" type="button" data-cerrar id="acCerrar">Cancelar</button><button class="btn primary" type="submit" id="acPrimario"></button></div>
     </div>
   </form>
 </div>
@@ -194,13 +209,14 @@
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
-<script src="iconos.js?v=2"></script>
+<script src="iconos.js?v=3"></script>
 <script src="comun.js?v=1"></script>
-<script src="config.js?v=1"></script>
-<script src="personas.js?v=2"></script>
-<script src="datos-demo.js?v=2"></script>
-<script src="nube.js?v=2"></script>
-<script src="inventario.js?v=1"></script>
-<script src="app.js?v=2"></script>
+<script src="config.js?v=2"></script>
+<script src="personas.js?v=3"></script>
+<script src="datos-demo.js?v=3"></script>
+<script src="nube.js?v=3"></script>
+<script src="push.js?v=1"></script>
+<script src="inventario.js?v=2"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
