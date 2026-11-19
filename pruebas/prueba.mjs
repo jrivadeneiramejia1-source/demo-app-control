@@ -23,6 +23,7 @@ const srv = http.createServer((req, res) => {
 });
 await new Promise(r => srv.listen(0, '127.0.0.1', r));
 const URL = `http://127.0.0.1:${srv.address().port}/`;
+const SIN_CONFIG = 'window.FIREBASE_CONFIG = { apiKey: "PEGA_AQUI", projectId: "demo-app-control", appId: "PEGA_AQUI" };';
 const CONFIG = 'window.FIREBASE_CONFIG = { apiKey: "clave-de-prueba", authDomain: "demo.firebaseapp.com", projectId: "demo-app-control", appId: "1:1:web:1" };';
 
 let ok = 0, mal = 0;
@@ -33,7 +34,8 @@ const b = await chromium.launch(process.env.CHROME ? { executablePath: process.e
 async function telefono({ conConfig = true, ancho = 412, oscuro = false } = {}) {
   const ctx = await b.newContext({ viewport: { width: ancho, height: 860 }, colorScheme: oscuro ? 'dark' : 'light', locale: 'es-CO' });
   const errores = [];
-  if (conConfig) await ctx.route(/\/config\.js/, r => r.fulfill({ body: CONFIG, contentType: 'text/javascript' }));
+  // Siempre se reemplaza config.js: con datos de prueba, o con el texto de ejemplo para probar la pantalla "Falta conectar Firebase".
+  await ctx.route(/\/config\.js/, r => r.fulfill({ body: conConfig ? CONFIG : SIN_CONFIG, contentType: 'text/javascript' }));
   await ctx.route(/gstatic\.com\/firebasejs\//, r => {
     const n = r.request().url().split('/').pop();
     return r.fulfill({ body: fs.readFileSync(path.join(RAIZ, 'pruebas', n)), contentType: 'text/javascript', headers: { 'access-control-allow-origin': '*' } });
