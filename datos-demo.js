@@ -106,31 +106,103 @@
     function compra(que, cantidad, unidad, categoria, valorAprox, paraQue, pide, autoriza, estado, extra) {
       return Object.assign({
         que, cantidad, unidad, categoria, valorAprox, paraQue, pide, autoriza, estado,
-        proveedor: '', valorReal: 0, fechaPedido: '', fechaCompra: '', entregadoA: '', motivoRechazo: ''
+        proveedor: '', valorReal: 0, fechaPedido: '', fechaCompra: '', entregadoA: '', motivoRechazo: '', articuloId: ''
       }, extra);
     }
     const compras = {
       'co-001': compra('Botas de seguridad', 10, 'pares', 'EPP', 850000, 'Para la cuadrilla de campo',
-        'Sofía Herrera', '', 'pedido', { fechaPedido: dias(-1) }),
+        'Sofía Herrera', '', 'pedido', { fechaPedido: dias(-1), articuloId: 'ar-001' }),
       'co-002': compra('Mouse inalámbrico', 6, 'unidades', 'Accesorios', 180000, 'Para los portátiles de campo',
-        'Ana Pérez', '', 'pedido', { fechaPedido: dias(0) }),
+        'Ana Pérez', '', 'pedido', { fechaPedido: dias(0), articuloId: 'ar-011' }),
       'co-003': compra('Resmas de papel carta', 8, 'resmas', 'Papelería', 224000, 'Para imprimir listas de asistencia',
-        'Sofía Herrera', 'Luis Rodríguez', 'autorizado', { fechaPedido: dias(-4) }),
+        'Sofía Herrera', 'Luis Rodríguez', 'autorizado', { fechaPedido: dias(-4), articuloId: 'ar-013' }),
       'co-004': compra('Cámara web con micrófono', 2, 'unidades', 'Cómputo', 390000, 'Para reuniones con equipos remotos',
         'Ana Pérez', 'Luis Rodríguez', 'rechazado',
         { fechaPedido: dias(-9), motivoRechazo: 'Ya hay cámaras en bodega, usa esas primero' }),
       'co-005': compra('Cables HDMI y adaptadores', 5, 'unidades', 'Accesorios', 140000, 'Para el proyector de las reuniones',
         'Sofía Herrera', 'Luis Rodríguez', 'comprado',
-        { fechaPedido: dias(-12), proveedor: 'Ferretería El Faro', valorReal: 152000, fechaCompra: dias(-8) }),
+        { fechaPedido: dias(-12), proveedor: 'Ferretería El Faro', valorReal: 152000, fechaCompra: dias(-8), articuloId: 'ar-010' }),
       'co-006': compra('Memorias USB de 64 GB', 10, 'unidades', 'Cómputo', 320000, 'Para entregar copias a los líderes',
         'Ana Pérez', 'Luis Rodríguez', 'comprado',
         { fechaPedido: dias(-7), proveedor: 'Papelería Central', valorReal: 305000, fechaCompra: dias(-3) }),
       'co-007': compra('Chalecos reflectivos', 12, 'unidades', 'EPP', 420000, 'Para la cuadrilla de campo',
         'Sofía Herrera', 'Luis Rodríguez', 'recibido',
-        { fechaPedido: dias(-25), proveedor: 'Ferretería El Faro', valorReal: 438000, fechaCompra: dias(-20), entregadoA: 'Jorge Ibarra' }),
+        { fechaPedido: dias(-25), proveedor: 'Ferretería El Faro', valorReal: 438000, fechaCompra: dias(-20), entregadoA: 'Jorge Ibarra', articuloId: 'ar-003' }),
       'co-008': compra('Garrafones de agua', 6, 'unidades', 'Refrigerios', 90000, 'Para la reunión de la semana pasada',
         'Sofía Herrera', '', 'sin-autorizar',
         { fechaPedido: dias(-5), proveedor: 'Distribuidora Agua Clara', valorReal: 96000, fechaCompra: dias(-5) })
+    };
+
+    // ---------- ARTÍCULOS DE BODEGA ----------
+    function articulo(nombre, categoria, unidad, cantidad, minimo, maximo, ubicacion, costo, proveedor) {
+      return { nombre, categoria, unidad, cantidad, minimo, maximo, ubicacion, costo, proveedor };
+    }
+    const BOD = 'Bodega Riohacha · ';
+    const articulos = {
+      'ar-001': articulo('Botas de seguridad talla 40', 'EPP', 'pares', 0, 4, 16, BOD + 'Estante A1', 85000, 'Ferretería El Faro'),
+      'ar-002': articulo('Botas de seguridad talla 42', 'EPP', 'pares', 6, 4, 16, BOD + 'Estante A1', 85000, 'Ferretería El Faro'),
+      'ar-003': articulo('Chalecos reflectivos', 'EPP', 'unidades', 15, 5, 25, BOD + 'Estante A2', 35000, 'Ferretería El Faro'),
+      'ar-004': articulo('Guantes de vaqueta', 'EPP', 'pares', 10, 6, 30, BOD + 'Estante A2', 12000, 'Ferretería El Faro'),
+      'ar-005': articulo('Cascos de seguridad', 'EPP', 'unidades', 9, 4, 15, BOD + 'Estante A3', 28000, 'Ferretería El Faro'),
+      'ar-006': articulo('Tapabocas', 'EPP', 'cajas', 7, 3, 12, BOD + 'Estante A3', 18000, 'Distribuidora Costa Salud'),
+      'ar-007': articulo('Extensión eléctrica de 5 m', 'Eléctricos', 'unidades', 8, 3, 12, BOD + 'Estante B1', 32000, 'Tecnoguajira Suministros'),
+      'ar-008': articulo('Multitoma de 6 puestos', 'Eléctricos', 'unidades', 5, 2, 10, BOD + 'Estante B1', 25000, 'Tecnoguajira Suministros'),
+      'ar-009': articulo('Cinta aislante', 'Eléctricos', 'rollos', 12, 5, 30, BOD + 'Estante B2', 4000, 'Tecnoguajira Suministros'),
+      'ar-010': articulo('Cable HDMI de 2 m', 'Cómputo', 'unidades', 2, 3, 10, BOD + 'Estante C1', 28000, 'Tecnoguajira Suministros'),
+      'ar-011': articulo('Mouse inalámbrico', 'Cómputo', 'unidades', 7, 3, 15, BOD + 'Estante C1', 30000, 'Tecnoguajira Suministros'),
+      'ar-012': articulo('Tóner para impresora', 'Papelería', 'unidades', 1, 2, 6, BOD + 'Estante C2', 185000, 'Papelería Central'),
+      'ar-013': articulo('Resmas de papel carta', 'Papelería', 'resmas', 3, 5, 20, BOD + 'Estante C3', 28000, 'Papelería Central'),
+      'ar-014': articulo('Jabón líquido', 'Aseo', 'galones', 4, 2, 8, BOD + 'Estante D1', 22000, 'Distribuidora Agua Clara'),
+      'ar-015': articulo('Papel higiénico', 'Aseo', 'paquetes', 10, 4, 20, BOD + 'Estante D1', 24000, 'Distribuidora Agua Clara'),
+      'ar-016': articulo('Café molido', 'Cafetería', 'paquetes', 0, 4, 12, BOD + 'Estante D2', 16000, 'Distribuidora Agua Clara'),
+      'ar-017': articulo('Vasos desechables', 'Cafetería', 'paquetes', 8, 3, 15, BOD + 'Estante D2', 7000, 'Distribuidora Agua Clara'),
+      'ar-018': articulo('Linterna recargable', 'Herramientas', 'unidades', 5, 2, 8, BOD + 'Estante E1', 38000, 'Ferretería El Faro')
+    };
+
+    // ---------- MOVIMIENTOS DE BODEGA ----------
+    // El saldo de cada movimiento es la cantidad del artículo justo después de registrarlo.
+    function mov(articuloId, tipo, motivo, cantidad, saldo, persona, proyecto, fecha, nota, extra) {
+      return Object.assign({
+        articuloId, articulo: articulos[articuloId].nombre, tipo, motivo, cantidad, saldo, persona, proyecto,
+        por: 'Sofía Herrera', porRol: 'asistente', fecha, nota, compraId: '', solicitudId: ''
+      }, extra);
+    }
+    const movimientos = {
+      'mo-001': mov('ar-001', 'entrada', 'inicial', 6, 6, '', '', iso(-28, 8, 30), 'Existencias al empezar el inventario'),
+      'mo-002': mov('ar-003', 'entrada', 'inicial', 5, 5, '', '', iso(-28, 8, 40), 'Existencias al empezar el inventario'),
+      'mo-003': mov('ar-004', 'entrada', 'inicial', 14, 14, '', '', iso(-28, 8, 50), 'Existencias al empezar el inventario'),
+      'mo-004': mov('ar-005', 'entrada', 'inicial', 10, 10, '', '', iso(-28, 9, 0), 'Existencias al empezar el inventario'),
+      'mo-005': mov('ar-013', 'entrada', 'inicial', 10, 10, '', '', iso(-28, 9, 10), 'Existencias al empezar el inventario'),
+      'mo-006': mov('ar-014', 'entrada', 'inicial', 6, 6, '', '', iso(-28, 9, 20), 'Existencias al empezar el inventario'),
+      'mo-007': mov('ar-003', 'entrada', 'compra', 12, 17, 'Ferretería El Faro', '', iso(-18, 10, 15), 'Llegó la compra de chalecos',
+        { compraId: 'co-007' }),
+      'mo-008': mov('ar-003', 'salida', 'entrega', 2, 15, 'Jorge Ibarra', 'Proyecto Costa Norte', iso(-14, 14, 0), 'Para el trabajo de campo'),
+      'mo-009': mov('ar-014', 'salida', 'dano', 2, 4, '', '', iso(-12, 11, 30), 'Se derramaron dos galones al mover las cajas'),
+      'mo-010': mov('ar-013', 'salida', 'entrega', 7, 3, 'Paola Ríos', 'Proyecto Costa Norte', iso(-10, 9, 45), 'Para imprimir las listas de asistencia'),
+      'mo-011': mov('ar-001', 'salida', 'entrega', 6, 0, 'Andrés Mendoza', 'Proyecto Ruta Alta', iso(-9, 15, 10), 'Botas para la cuadrilla de la ruta alta'),
+      'mo-012': mov('ar-004', 'salida', 'entrega', 4, 10, 'Jorge Ibarra', 'Proyecto Costa Norte', iso(-6, 10, 0), 'Guantes para el trabajo de campo',
+        { solicitudId: 'so-004' }),
+      'mo-013': mov('ar-005', 'ajuste', 'conteo', -1, 9, '', '', iso(-3, 16, 20), 'Conteo físico: faltaba un casco en el estante')
+    };
+
+    // ---------- SOLICITUDES DE MATERIAL ----------
+    function solicitud(articuloId, cantidad, pide, pideRol, paraQue, proyecto, estado, fecha, extra) {
+      return Object.assign({
+        articuloId, articulo: articulos[articuloId].nombre, cantidad, pide, pideRol, paraQue, proyecto, estado, fecha,
+        entregadaPor: '', fechaEntrega: '', motivo: ''
+      }, extra);
+    }
+    const solicitudes = {
+      'so-001': solicitud('ar-003', 2, 'Carlos Pinto', 'conductor', 'Para el viaje a la Comunidad Ejemplo Norte',
+        'Proyecto Costa Norte', 'pendiente', iso(-1, 16, 30)),
+      'so-002': solicitud('ar-018', 1, 'Marta Gómez', 'carros', 'Para revisar los carros de noche',
+        'Proyecto Costa Norte', 'pendiente', iso(-1, 17, 5)),
+      'so-003': solicitud('ar-002', 8, 'Jorge Ibarra', '', 'Botas para la cuadrilla nueva de campo',
+        'Proyecto Costa Norte', 'pendiente', iso(-2, 9, 20)),
+      'so-004': solicitud('ar-004', 4, 'Jorge Ibarra', '', 'Guantes para el trabajo de campo',
+        'Proyecto Costa Norte', 'entregada', iso(-7, 15, 0), { entregadaPor: 'Sofía Herrera', fechaEntrega: iso(-6, 10, 0) }),
+      'so-005': solicitud('ar-017', 20, 'Andrés Mendoza', '', 'Para una reunión con la comunidad',
+        'Proyecto Ruta Alta', 'rechazada', iso(-4, 11, 15), { motivo: 'Es mucho para una sola reunión, pide máximo 5 paquetes' })
     };
 
     // ---------- VEHÍCULOS ----------
@@ -223,15 +295,16 @@
       return { para, titulo, texto, en, modulo, leido: {} };
     }
     const avisos = {
-      'av-001': aviso('compras', 'Compras por autorizar', 'Tienes 2 compras por autorizar.', iso(0, 8, 15), 'compras'),
-      'av-002': aviso('jefe', 'Compra sin autorización', 'Se compró algo sin autorización: garrafones de agua.', iso(-5, 17, 40), 'compras'),
+      'av-001': aviso('compras', 'Compras por autorizar', 'Tienes 2 compras por autorizar: botas de seguridad talla 40, que están agotadas, y mouse inalámbrico.', iso(0, 8, 15), 'inventario'),
+      'av-002': aviso('jefe', 'Compra sin autorización', 'Se compró algo sin autorización: garrafones de agua.', iso(-5, 17, 40), 'inventario'),
       'av-003': aviso('carros', 'SOAT por vencer', 'El SOAT del ABC 123 vence en 12 días.', iso(-1, 7, 30), 'vehiculos'),
       'av-004': aviso('jefe', 'Novedad en un carro', 'Carlos Pinto reportó un rayón en el ABC 123.', iso(-2, 18, 10), 'vehiculos'),
-      'av-005': aviso('todos', 'Bienvenido a la demo', 'Bienvenido a la demo. Aquí todos los datos son inventados, puedes probar todo con calma.', iso(0, 7, 0), 'inicio')
+      'av-005': aviso('todos', 'Bienvenido a la demo', 'Bienvenido a la demo. Aquí todos los datos son inventados, puedes probar todo con calma.', iso(0, 7, 0), 'inicio'),
+      'av-006': aviso('asistente', 'Pedidos de material por entregar', 'Tienes 3 pedidos de material por entregar.', iso(-1, 17, 10), 'inventario')
     };
 
-    return { equipos, compras, vehiculos, reuniones, avisos };
+    return { equipos, compras, vehiculos, reuniones, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 1, generar });
+  window.DatosDemo = Object.freeze({ VERSION: 2, generar });
 })();

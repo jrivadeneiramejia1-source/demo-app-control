@@ -44,11 +44,23 @@ function operacion(fn) {
 const copia = (x) => structuredClone(x);
 const esPlano = (x) => Object.prototype.toString.call(x) === '[object Object]';
 
+// increment(n): como el de Firebase, suma n al número guardado (o lo pone en n si no había número).
+export function increment(n) { return { __incremento: Number(n) }; }
+const esIncremento = (x) => esPlano(x) && Object.keys(x).length === 1 && typeof x.__incremento === 'number';
+const sumar = (actual, inc) => (typeof actual === 'number' ? actual : 0) + inc.__incremento;
+// Cambia los increment() que queden en un objeto nuevo (set sin merge) por su número.
+function resolver(x) {
+  if (esIncremento(x)) return x.__incremento;
+  if (esPlano(x)) { for (const k of Object.keys(x)) x[k] = resolver(x[k]); }
+  return x;
+}
+
 // Mezcla profunda: objetos planos se mezclan; arrays y valores se reemplazan.
 function mezclar(destino, origen) {
   for (const k of Object.keys(origen)) {
-    if (esPlano(origen[k]) && esPlano(destino[k])) mezclar(destino[k], origen[k]);
-    else destino[k] = origen[k];
+    if (esIncremento(origen[k])) destino[k] = sumar(destino[k], origen[k]);
+    else if (esPlano(origen[k]) && esPlano(destino[k])) mezclar(destino[k], origen[k]);
+    else destino[k] = resolver(origen[k]);
   }
   return destino;
 }
@@ -115,7 +127,7 @@ function aplicarSet(datos, ref, data, opciones) {
   const col = (datos[ref.parent.id] = datos[ref.parent.id] || {});
   const nuevo = copia(data);
   if (opciones && opciones.merge && esPlano(col[ref.id])) col[ref.id] = mezclar(col[ref.id], nuevo);
-  else col[ref.id] = nuevo;
+  else col[ref.id] = resolver(nuevo);
 }
 
 function aplicarUpdate(datos, ref, data) {
@@ -130,7 +142,8 @@ function aplicarUpdate(datos, ref, data) {
       if (!esPlano(nodo[partes[i]])) nodo[partes[i]] = {};
       nodo = nodo[partes[i]];
     }
-    nodo[partes[partes.length - 1]] = valor;
+    const ultima = partes[partes.length - 1];
+    nodo[ultima] = esIncremento(valor) ? sumar(nodo[ultima], valor) : resolver(valor);
   }
 }
 

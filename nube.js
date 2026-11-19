@@ -5,7 +5,7 @@
 (function () {
   'use strict';
   const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
-  const COLECCIONES = ['equipos', 'compras', 'vehiculos', 'reuniones', 'avisos'];
+  const COLECCIONES = ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos'];
   let A = null, FS = null, auth = null, db = null;
 
   /** ¿config.js ya tiene los datos del proyecto? (si no, la app explica qué falta en vez de fallar). */
@@ -87,8 +87,10 @@
   async function sembrar(forzar, rol) {
     const estadoRef = FS.doc(db, 'demo', 'estado');
     if (!forzar) {
+      // Se siembra si la base está vacía o si los datos guardados son de una versión anterior de la demo.
       const s = await FS.getDoc(estadoRef);
-      if (s.exists()) return false;
+      if (s.exists() && Number(s.data().version) >= window.DatosDemo.VERSION) return false;
+      if (s.exists()) forzar = true;
     }
     const datos = window.DatosDemo.generar(new Date());
     // Primero se borra lo que sobre (solo al reiniciar), en lotes de máximo 450 operaciones (el límite de Firebase es 500).
@@ -109,5 +111,19 @@
     return true;
   }
 
-  window.nube = Object.freeze({ configLista, explicar, iniciar, entrar, salir, escuchar, guardar, mezclar, borrar, sembrar, COLECCIONES });
+  /** Id nuevo para un documento (fecha + azar), legible y ordenable por fecha. */
+  const idNuevo = pref => `${pref}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  /** Suma o resta a un número guardado sin pisar lo que otra persona haya cambiado al mismo tiempo. */
+  const incremento = n => FS.increment(n);
+  /** Varias escrituras que se guardan todas juntas o ninguna. ops: [['set'|'mezclar'|'update', col, id, datos]]. */
+  async function lote(ops) {
+    const b = FS.writeBatch(db);
+    ops.forEach(([t, col, id, datos]) => {
+      const ref = FS.doc(db, col, id);
+      if (t === 'set') b.set(ref, datos); else if (t === 'mezclar') b.set(ref, datos, { merge: true }); else b.update(ref, datos);
+    });
+    await b.commit();
+  }
+
+  window.nube = Object.freeze({ configLista, explicar, iniciar, entrar, salir, escuchar, guardar, mezclar, borrar, sembrar, idNuevo, incremento, lote, COLECCIONES });
 })();

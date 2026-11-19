@@ -211,6 +211,21 @@ const resultados = await pag.evaluate(async () => {
   t('fs: commit con update a inexistente -> not-found', await codigo(mal.commit()) === 'not-found');
   t('fs: commit fallido no aplica nada (atomico)', (await F.getDoc(F.doc(db, 'equipos', 'solo-si-ok'))).exists() === false);
 
+  // --- increment ---
+  await F.setDoc(F.doc(db, 'articulos', 'i1'), { cantidad: 5, n: { c: 1 } });
+  await F.updateDoc(F.doc(db, 'articulos', 'i1'), { cantidad: F.increment(-2), 'n.c': F.increment(3) });
+  let i1 = (await F.getDoc(F.doc(db, 'articulos', 'i1'))).data();
+  t('fs: increment en updateDoc suma y resta (también con ruta de punto)', i1.cantidad === 3 && i1.n.c === 4, JSON.stringify(i1));
+  await F.setDoc(F.doc(db, 'articulos', 'i1'), { cantidad: F.increment(10), otro: F.increment(1) }, { merge: true });
+  i1 = (await F.getDoc(F.doc(db, 'articulos', 'i1'))).data();
+  t('fs: increment en setDoc merge (campo que no existía empieza en 0)', i1.cantidad === 13 && i1.otro === 1, JSON.stringify(i1));
+  const li = F.writeBatch(db);
+  li.update(F.doc(db, 'articulos', 'i1'), { cantidad: F.increment(-1) });
+  li.update(F.doc(db, 'articulos', 'i1'), { cantidad: F.increment(-1) });
+  li.set(F.doc(db, 'articulos', 'i2'), { cantidad: F.increment(7) });
+  await li.commit();
+  t('fs: increment en writeBatch (dos restas seguidas y set nuevo)', (await F.getDoc(F.doc(db, 'articulos', 'i1'))).data().cantidad === 11 && (await F.getDoc(F.doc(db, 'articulos', 'i2'))).data().cantidad === 7);
+
   // --- simulaciones ---
   window.__fbDenegar = true;
   t('fs: __fbDenegar -> getDoc permission-denied', await codigo(F.getDoc(d1)) === 'permission-denied');

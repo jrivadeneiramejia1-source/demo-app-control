@@ -1,24 +1,24 @@
 /* app.js — Demo de la app de control (fases 1 y 2): entrada con cuentas de prueba, cambio de persona en vivo,
    menú de los cuatro módulos con datos inventados, campana de avisos y etiquetas "Versión pagada".
-   Los módulos de Equipos, Compras, Vehículos y Reuniones solo muestran datos en esta fase; las acciones llegan en las fases 3 a 6. */
+   Equipos, Vehículos y Reuniones solo muestran datos en esta fase. El Inventario (consumibles, bodega y compras) vive en inventario.js. */
 (function () {
   'use strict';
   const $ = id => document.getElementById(id);
   const esH = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   const MODULOS = [
     { k: 'equipos', n: 'Equipos', ico: 'equipos', txt: 'Inventario, Recibidos, entregas y devoluciones' },
-    { k: 'compras', n: 'Compras', ico: 'carrito', txt: 'Pedir, autorizar, comprar y resumen del mes' },
+    { k: 'inventario', n: 'Inventario', ico: 'caja', txt: 'Bodega de consumibles: existencias, pedidos de material y compras' },
     { k: 'vehiculos', n: 'Vehículos', ico: 'carro', txt: 'Estado de cada carro, novedades, entrega y recibo' },
     { k: 'reuniones', n: 'Reuniones', ico: 'reunion', txt: 'Reuniones que llegan por correo y lo que cada una necesita' }
   ];
-  const VISTAS = { inicio: 'vInicio', equipos: 'vEquipos', compras: 'vCompras', vehiculos: 'vVehiculos', reuniones: 'vReuniones' };
+  const VISTAS = { inicio: 'vInicio', equipos: 'vEquipos', inventario: 'vInventario', vehiculos: 'vVehiculos', reuniones: 'vReuniones' };
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], compras: [], vehiculos: [], reuniones: [], avisos: [] },
+    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], reuniones: [], avisos: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     oyentes: [],
-    filtro: { equipos: '', compras: '', vehiculos: '', reuniones: '' },
+    filtro: { equipos: '', inventario: '', vehiculos: '', reuniones: '' },
     entrando: false,
     vistos: new Set(),     // avisos que estaban sin leer al abrir la campana (conservan el punto en esa apertura)
     sesion: 0              // sube con cada cambio de sesión; lo que llega tarde de una sesión anterior se ignora
@@ -116,7 +116,7 @@
     reuniones: r => Object.assign({}, r, { necesidades: objetos(r.necesidades), asistentes: Array.isArray(r.asistentes) ? r.asistentes : [] })
   };
   function escucharTodo() {
-    ['equipos', 'compras', 'vehiculos', 'reuniones', 'avisos'].forEach(col => {
+    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos'].forEach(col => {
       S.oyentes.push(nube.escuchar(col, lista => {
         S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
         if (col !== 'avisos' || !$('avisoError').hidden) error('');
@@ -160,14 +160,13 @@
   // Cuenta lo pendiente de cada módulo para la persona que tiene la sesión.
   function pendientes() {
     const d = S.datos, p = S.persona, rol = p ? p.rol : '';
-    const porAutorizar = d.compras.filter(c => c.estado === 'pedido').length;
-    const sinAutorizar = d.compras.filter(c => c.estado === 'sin-autorizar').length;
+    const inv = window.Inventario.resumen(rol);
     const docsPorVencer = d.vehiculos.reduce((n, v) => n + [v.soat, v.tecno].filter(f => { const x = diasHasta(f); return x != null && x <= 30; }).length, 0);
     const novedades = d.vehiculos.reduce((n, v) => n + (v.novedades || []).filter(x => !x.revisada).length, 0);
     const necesidadesDe = r => (r.necesidades || []).filter(x => x.estado === 'pendiente' && (rol === 'jefe' || x.responsableRol === rol));
     const reunionesPend = d.reuniones.filter(r => r.estado !== 'cancelada' && r.estado !== 'realizada' && necesidadesDe(r).length).length;
     const recibidos = d.equipos.filter(e => e.estado === 'recibido').length;
-    return { porAutorizar, sinAutorizar, docsPorVencer, novedades, reunionesPend, recibidos };
+    return { inv, docsPorVencer, novedades, reunionesPend, recibidos };
   }
 
   function pintarInicio() {
@@ -176,15 +175,18 @@
     $('inicioSub').textContent = `${p.cargo} · ${p.rolTxt}`;
     const n = pendientes();
     const todas = [
-      { mod: 'compras', k: 'i-aut', n: n.porAutorizar, lbl: 'Compras por autorizar', icono: 'carrito', tono: 'org', roles: ['jefe', 'compras'] },
-      { mod: 'compras', k: 'i-sin', n: n.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['jefe', 'compras'] },
+      { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: ['jefe', 'asistente'] },
+      { mod: 'inventario', k: 'i-ent', n: n.inv.porEntregar, lbl: 'Pedidos de material por entregar', icono: 'entrega', tono: 'listo', roles: ['jefe', 'asistente'] },
+      { mod: 'inventario', k: 'i-aut', n: n.inv.porAutorizar, lbl: 'Compras por autorizar', icono: 'carrito', tono: 'org', roles: ['jefe', 'compras'] },
+      { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['jefe', 'compras'] },
+      { mod: 'inventario', k: 'i-mis', n: n.inv.misPedidos, lbl: 'Tus pedidos de material en espera', icono: 'caja', tono: 'listo', roles: ['carros', 'conductor'] },
       { mod: 'vehiculos', k: 'i-nov', n: n.novedades, lbl: 'Novedades sin revisar', icono: 'carro', tono: 'org', roles: ['jefe', 'carros', 'conductor'] },
       { mod: 'vehiculos', k: 'i-doc', n: n.docsPorVencer, lbl: 'SOAT o revisión por vencer', icono: 'calendario', tono: 'peligro', roles: ['jefe', 'carros', 'conductor'] },
       { mod: 'reuniones', k: 'i-reu', n: n.reunionesPend, lbl: p.rol === 'jefe' ? 'Reuniones con algo pendiente' : 'Reuniones que esperan tu respuesta', icono: 'reunion', tono: 'listo', roles: ['jefe', 'compras', 'carros'] },
-      { mod: 'equipos', k: 'i-rec', n: n.recibidos, lbl: 'Equipos en Recibidos', icono: 'recibidos', tono: 'listo', roles: ['jefe', 'asistente'] }
+      { mod: 'equipos', k: 'i-rec', n: n.recibidos, lbl: 'Equipos en Recibidos', icono: 'recibidos', tono: 'listo', roles: ['asistente'] }
     ].filter(c => c.roles.includes(p.rol) && puedeVer(c.mod));
     const sum = $('sumInicio');
-    const algoCargando = ['equipos', 'compras', 'vehiculos', 'reuniones'].some(cargando);
+    const algoCargando = ['equipos', 'compras', 'articulos', 'solicitudes', 'vehiculos', 'reuniones'].some(cargando);
     sum.className = 'summary' + (todas.length === 2 || todas.length === 4 ? ' dos' : '');
     sum.innerHTML = todas.map(c => UI.cifra({ k: c.k, n: algoCargando ? 0 : c.n, lbl: c.lbl, icono: c.icono, tono: c.tono, filtro: c.mod, activo: false })).join('');
     UI.contar(sum);
@@ -242,41 +244,6 @@
         ${e.obs ? `<div class="meta">${esH(e.obs)}</div>` : ''}
       </div>`;
     }).join(''), 'No hay equipos con ese filtro');
-  }
-
-  const EST_CO = {
-    pedido: ['Por autorizar', 's-org', 'org'], autorizado: ['Autorizado', 's-listo', 'listo'], rechazado: ['Rechazado', 'none', 'pend'],
-    comprado: ['Comprado', 's-disco', 'disco'], recibido: ['Recibido', 's-disco', 'disco'], 'sin-autorizar': ['Sin autorizar', 's-peligro', 'peligro']
-  };
-  function pintarCompras() {
-    const todas = S.datos.compras.slice().sort((a, b) => String(b.fechaPedido).localeCompare(String(a.fechaPedido)));
-    const c = f => todas.filter(f).length;
-    tablero('compras', [
-      { k: 'c-aut', n: c(x => x.estado === 'pedido'), lbl: 'Por autorizar', icono: 'reloj', tono: 'org', filtro: 'pedido' },
-      { k: 'c-sin', n: c(x => x.estado === 'sin-autorizar'), lbl: 'Sin autorizar', icono: 'aviso', tono: 'peligro', filtro: 'sin-autorizar' },
-      { k: 'c-com', n: c(x => x.estado === 'comprado' || x.estado === 'recibido'), lbl: 'Compradas', icono: 'checkCirculo', tono: 'disco', filtro: 'comprado' }
-    ]);
-    // Resumen del mes: lo comprado (o recibido) con fecha de compra en el mes actual.
-    const mes = hoyISO().slice(0, 7);
-    const delMes = todas.filter(x => ['comprado', 'recibido', 'sin-autorizar'].includes(x.estado) && String(x.fechaCompra || x.fechaPedido).slice(0, 7) === mes);
-    const total = delMes.reduce((s, x) => s + (Number(x.valorReal) || Number(x.valorAprox) || 0), 0);
-    const sinAut = delMes.filter(x => x.estado === 'sin-autorizar').reduce((s, x) => s + (Number(x.valorReal) || Number(x.valorAprox) || 0), 0);
-    $('resumenMes').innerHTML = cargando('compras') ? '<span class="meta">Calculando el resumen del mes…</span>' :
-      `<div class="rm-t"><span class="meta">Comprado este mes (${delMes.length})</span><span class="rm-n valor">${esH(cop(total))}</span></div>
-       ${sinAut ? pill('Sin autorizar: ' + cop(sinAut), 's-peligro', 'aviso') : pill('Todo autorizado', 's-disco', 'check')}`;
-    const vis = todas.filter(x => !S.filtro.compras || x.estado === S.filtro.compras || (S.filtro.compras === 'comprado' && x.estado === 'recibido'));
-    contar('cntCompras', vis.length, todas.length, 'compras');
-    lista('listaCompras', 'compras', vis.map(x => {
-      const st = EST_CO[x.estado] || ['Sin estado', 'none', 'pend'];
-      const valor = x.valorReal ? esH(cop(x.valorReal)) : `<span class="aprox">aprox.</span>${esH(cop(x.valorAprox))}`;
-      return `<div class="card st-${st[2]}">
-        <div class="card-head"><div class="card-title">${esH(x.que)}</div>${pill(st[0], st[1], x.estado === 'sin-autorizar' ? 'aviso' : '')}</div>
-        <p class="card-sub">${esH(x.cantidad)} ${esH(x.unidad)} · ${esH(x.categoria)}</p>
-        <div class="facts"><span class="valor">${valor}</span><span>${esH(x.paraQue)}</span></div>
-        <div class="meta">Pidió ${esH(x.pide)} el ${esH(fechaCorta(x.fechaPedido))}${x.autoriza ? ` · Autoriza ${esH(x.autoriza)}` : ''}${x.proveedor ? ` · ${esH(x.proveedor)}` : ''}${x.entregadoA ? ` · Entregado a ${esH(x.entregadoA)}` : ''}</div>
-        ${x.motivoRechazo ? `<div class="meta">Motivo del rechazo: ${esH(x.motivoRechazo)}</div>` : ''}
-      </div>`;
-    }).join(''), 'No hay compras con ese filtro');
   }
 
   const EST_VE = { disponible: ['Disponible', 's-disco', 'disco'], 'en-uso': ['En uso', 's-listo', 'listo'], 'en-taller': ['En taller', 's-org', 'org'] };
@@ -350,7 +317,7 @@
     return S.datos.avisos.filter(a => a.para === rol || a.para === 'todos').sort((a, b) => String(b.en).localeCompare(String(a.en)));
   };
   const noLeidos = () => { const rol = S.persona ? S.persona.rol : ''; return misAvisos().filter(a => !(a.leido && a.leido[rol])); };
-  const ICO_MOD = { equipos: 'equipos', compras: 'carrito', vehiculos: 'carro', reuniones: 'reunion', inicio: 'campana' };
+  const ICO_MOD = { equipos: 'equipos', inventario: 'caja', compras: 'carrito', vehiculos: 'carro', reuniones: 'reunion', inicio: 'campana' };
   function pintarAvisos() {
     const n = noLeidos().length;
     UI.insignia($('badgeAvisos'), n);
@@ -380,7 +347,7 @@
     const n = pendientes(), rol = S.persona ? S.persona.rol : '';
     const b = {
       equipos: ['jefe', 'asistente'].includes(rol) ? n.recibidos : 0,
-      compras: ['jefe', 'compras'].includes(rol) ? n.porAutorizar + n.sinAutorizar : 0,
+      inventario: n.inv.mias,
       vehiculos: ['jefe', 'carros', 'conductor'].includes(rol) ? n.novedades : 0,
       reuniones: ['jefe', 'compras', 'carros'].includes(rol) ? n.reunionesPend : 0
     };
@@ -391,7 +358,7 @@
     if (!S.persona) return;
     pintarInsignias();
     pintarAvisos();
-    ({ inicio: pintarInicio, equipos: pintarEquipos, compras: pintarCompras, vehiculos: pintarVehiculos, reuniones: pintarReuniones })[S.vista]();
+    ({ inicio: pintarInicio, equipos: pintarEquipos, inventario: () => window.Inventario.pintar(), vehiculos: pintarVehiculos, reuniones: pintarReuniones })[S.vista]();
   }
 
   /* ---------- versión pagada ---------- */
@@ -399,7 +366,7 @@
     entrada: ['Entrada y permisos', 'Cuentas de prueba y un botón para cambiar de persona en vivo.', 'Cuentas reales con el correo de cada persona. Cada una entra con su clave y solo ve lo suyo.'],
     inicio: ['La app completa', 'Gratis, con datos de prueba y avisos solo dentro de la app.', 'Unos USD 20 a 28 al mes: el agente lee el correo real y los avisos llegan al teléfono.'],
     equipos: ['Equipos', 'Las fotos de las hojas se guardan comprimidas dentro de la base de datos.', 'Las fotos van a un almacenamiento aparte (Cloud Storage): más calidad y la base no se llena.'],
-    compras: ['Compras', 'Quien autoriza ve lo pendiente al abrir la app.', 'A quien autoriza le llega un aviso al teléfono apenas alguien pide algo.'],
+    inventario: ['Inventario y compras', 'Cada persona ve lo que le toca al abrir la app, y la campana avisa dentro de la app.', 'Aviso al teléfono de quien autoriza, de quien compra y de quien entrega, apenas le toca algo.'],
     vehiculos: ['Vehículos', 'Los vencimientos del SOAT y la técnico-mecánica se ven en rojo y amarillo dentro de la app.', 'Avisos automáticos al teléfono antes de que venza el SOAT o la revisión.'],
     reuniones: ['Reuniones y agente', 'Correos de ejemplo pegados en la app; Gemini gratis los lee.', 'El agente lee solo el buzón real de Outlook, con n8n y el permiso de TI.'],
     avisos: ['Avisos', 'Una campana dentro de la app.', 'Avisos al teléfono, por correo o por Teams.']
@@ -480,6 +447,12 @@
     const red = () => { $('avisoOff').hidden = navigator.onLine !== false; };
     addEventListener('online', red); addEventListener('offline', red); red();
   }
+
+  /* ---------- ayudas para inventario.js ---------- */
+  window.App = Object.freeze({
+    S, $, esH, pill, cop, hace, fechaCorta, hoyISO, toast, permiso, tablero, cargando, iniciales,
+    abrirHoja, cerrarHoja, confirmar, pintarTodo
+  });
 
   /* ---------- arranque ---------- */
   async function arrancar() {

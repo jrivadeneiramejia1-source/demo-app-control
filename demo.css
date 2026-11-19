@@ -125,3 +125,35 @@
 .facts > span { min-width: 0; }
 /* Letra grande del sistema (200 %): el nombre de la pestaña baja a otra línea en vez de cortarse */
 .tab-lbl { white-space: normal; overflow: visible; text-overflow: clip; text-align: center; line-height: 1.1; overflow-wrap: anywhere; -webkit-hyphens: auto; hyphens: auto; }
+
+/* ---------- Inventario ---------- */
+/* Partes del módulo: una fila que se desliza de lado en el teléfono */
+.chips.secciones { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; margin-inline: -16px; padding-inline: 16px; }
+.chips.secciones::-webkit-scrollbar { display: none; }
+.chips.secciones .chip { flex: none; display: inline-flex; align-items: center; gap: 5px; }
+.chips.secciones .chip .ph { width: 14px; height: 14px; opacity: .7; }
+.inv-contenido { display: flex; flex-direction: column; gap: 12px; }
+/* Tarea de «Qué hay que hacer»: icono, qué pasa y el botón */
+.tarea { gap: 10px; }
+.tarea-cab { display: flex; gap: 12px; align-items: flex-start; }
+.tarea-cab .ico { width: 40px; height: 40px; border-radius: 12px; }
+.tarea-cab .ico .ph { width: 22px; height: 22px; }
+.tarea-t { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tarea-t b { font-family: var(--f-display); font-weight: 700; font-size: 1rem; line-height: 1.25; }
+.tarea-pie { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.tarea .aviso { padding: 9px 12px; }
+.ico.t-peligro { background: var(--danger-bg); color: var(--danger); }
+.ico.t-org { background: var(--org-bg); color: var(--org); }
+.ico.t-listo { background: var(--listo-bg); color: var(--listo); }
+.ico.t-disco { background: var(--disco-bg); color: var(--disco); }
+/* Existencias: cantidad grande y barra con la marca del mínimo */
+.nivel { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 12px; }
+.nivel-n { font-family: var(--f-display); font-weight: 760; font-size: 1.5rem; letter-spacing: -.02em; line-height: 1; font-variant-numeric: tabular-nums; }
+.nivel-n small { font-family: var(--f-body); font-size: .8rem; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+.nivel .meta { grid-column: 1 / -1; }
+.barra { position: relative; height: 10px; border-radius: 999px; background: var(--surface-2); overflow: visible; }
+.barra i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--disco); }
+.barra.n-bajo i { background: var(--warn); }
+.barra.n-agotado i { background: var(--danger); }
+.barra b { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--fg); opacity: .55; border-radius: 1px; }
+#invContenido:focus { outline: none; }

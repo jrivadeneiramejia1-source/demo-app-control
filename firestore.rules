@@ -2,7 +2,8 @@ rules_version = '2';
 // Reglas de la DEMO (proyecto demo-app-control). Se pegan en Firebase > Firestore Database > Reglas (Rules) > Publicar (Publish).
 // Solo entran las cinco cuentas de prueba de personas.js. Cualquier otra cuenta (o alguien sin cuenta) no puede leer ni escribir nada.
 // Fases 1 y 2: todas las cuentas de prueba pueden leer y escribir las colecciones de la demo.
-// En las fases siguientes se agregan los permisos por rol (por ejemplo, solo "Autoriza compras" aprueba una compra).
+// Muestra del inventario: articulos, movimientos y solicitudes con el mismo acceso.
+// Con el módulo completo se agregan los permisos por rol (por ejemplo, solo "Autoriza compras" aprueba una compra).
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -24,8 +25,8 @@ service cloud.firestore {
 
     // Colecciones de los módulos. No se permiten subcolecciones ni otras colecciones.
     match /{col}/{id} {
-      allow read: if esDemo() && col in ['equipos', 'compras', 'vehiculos', 'reuniones', 'avisos', 'demo'];
-      allow write: if esDemo() && col in ['equipos', 'compras', 'vehiculos', 'reuniones', 'avisos', 'demo'];
+      allow read: if esDemo() && col in ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos', 'demo'];
+      allow write: if esDemo() && col in ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos', 'demo'];
     }
   }
 }
