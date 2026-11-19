@@ -29,7 +29,7 @@ Todas con la clave `demo-control-2026` (inventada y pública: la demo solo tiene
 ## Archivos
 - `index.html`, `app.js`, `demo.css`: la app.
 - `nube.js`: conexión con Firebase (Authentication con correo y clave, y Firestore). Nuevo: no usa la clave compartida de las apps reales ni manda errores a Slack.
-- `config.js`: datos del proyecto de Firebase de la demo (no son secretos).
+- `config.js`: datos del proyecto de Firebase de la demo, ID `fir-app-control-d8494` (no son secretos).
 - `personas.js`: las cinco cuentas de prueba y sus permisos. `datos-demo.js`: los datos de ejemplo, con fechas relativas al día en que se cargan.
 - `firestore.rules`: reglas de la base de datos (solo entran las cinco cuentas de prueba). Se pegan en Firebase.
 - `comun.css`, `comun.js`, `iconos.js`, `fuentes/`, `codigos.js`, `lib/codigos/`: copiados de `apps-consulta-previa` (ver `DESIGN.md`). En `iconos.js` se agregaron iconos Phosphor (licencia MIT): inicio, carro, carrito, reunión, cambiar, pagada, correo y llave.
