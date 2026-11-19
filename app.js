@@ -19,7 +19,9 @@
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     oyentes: [],
     filtro: { equipos: '', compras: '', vehiculos: '', reuniones: '' },
-    entrando: false
+    entrando: false,
+    vistos: new Set(),     // avisos que estaban sin leer al abrir la campana (conservan el punto en esa apertura)
+    sesion: 0              // sube con cada cambio de sesión; lo que llega tarde de una sesión anterior se ignora
   };
 
   /* ---------- utilidades ---------- */
@@ -90,25 +92,33 @@
   /* ---------- sesión y datos ---------- */
   function dejarDeEscuchar() { S.oyentes.forEach(f => { try { f(); } catch (e) {} }); S.oyentes = []; S.llegaron.clear(); }
   async function alCambiarSesion(p) {
+    const mia = ++S.sesion;
     dejarDeEscuchar();
     cerrarHoja('shPersona');
-    if (!p) { S.persona = null; error(''); pintarEntrada(); mostrar('vEntrada'); return; }
-    if (p.desconocido) { error('Esta cuenta no es de la demo. Sal y entra con una de las personas de prueba.'); S.persona = null; await nube.salir(); return; }
+    if (!p) { S.persona = null; error(S.motivoSalida || ''); S.motivoSalida = ''; pintarEntrada(); mostrar('vEntrada'); return; }
+    if (p.desconocido) { S.motivoSalida = 'Esa cuenta no es de la demo. Entra con una de las personas de prueba.'; S.persona = null; await nube.salir(); return; }
     const cambio = S.persona && S.persona.rol !== p.rol;
     S.persona = p;
     if (!puedeVer(S.vista) && S.vista !== 'inicio') S.vista = 'inicio';
+    document.querySelectorAll('.tab[data-vista]').forEach(t => { t.dataset.vista === S.vista ? t.setAttribute('aria-current', 'page') : t.removeAttribute('aria-current'); });
     pintarPersona();
     mostrar('app');
     pintarTodo();
     if (cambio) toast(`Ahora eres ${p.nombre} (${p.rolTxt})`);
-    try { if (await nube.sembrar(false, p.rol)) toast('Listo: se cargaron los datos de prueba'); }
-    catch (e) { error(nube.explicar(e)); }
-    escucharTodo();
+    try { const sembro = await nube.sembrar(false, p.rol); if (mia === S.sesion && sembro) toast('Listo: se cargaron los datos de prueba'); }
+    catch (e) { if (mia === S.sesion) error(nube.explicar(e)); }
+    if (mia === S.sesion) escucharTodo();
   }
+  // Los arreglos dañados (null, texto, mapa o con elementos null) se vuelven arreglos de objetos para que nada se rompa.
+  const objetos = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
+  const LIMPIAR = {
+    vehiculos: v => Object.assign({}, v, { novedades: objetos(v.novedades) }),
+    reuniones: r => Object.assign({}, r, { necesidades: objetos(r.necesidades), asistentes: Array.isArray(r.asistentes) ? r.asistentes : [] })
+  };
   function escucharTodo() {
     ['equipos', 'compras', 'vehiculos', 'reuniones', 'avisos'].forEach(col => {
       S.oyentes.push(nube.escuchar(col, lista => {
-        S.datos[col] = lista; S.llegaron.add(col);
+        S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
         if (col !== 'avisos' || !$('avisoError').hidden) error('');
         pintarTodo();
       }, e => { error(nube.explicar(e)); }));
@@ -192,7 +202,9 @@
   function tablero(mod, cifras) {
     const el = $('sum' + mod[0].toUpperCase() + mod.slice(1));
     el.className = 'summary' + (cifras.length === 2 || cifras.length === 4 ? ' dos' : '');
+    const enfocada = el.contains(document.activeElement) ? document.activeElement.dataset.filtro : null;
     el.innerHTML = cifras.map(c => UI.cifra(Object.assign({ activo: S.filtro[mod] === c.filtro }, c))).join('');
+    if (enfocada != null) { const b = el.querySelector(`[data-filtro="${CSS.escape(enfocada)}"]`); if (b) b.focus({ preventScroll: true }); }
     el.dataset.mod = mod;
     UI.contar(el);
   }
@@ -347,18 +359,18 @@
     const lst = misAvisos(), rol = S.persona.rol;
     $('shAvisosSub').textContent = lst.length ? `Avisos para ${S.persona.nombre} (${S.persona.rolTxt}).` : '';
     $('avisosLista').innerHTML = lst.length ? lst.map(a => {
-      const nuevo = !(a._visto || (a.leido && a.leido[rol]));
+      const nuevo = S.vistos.has(a.id) || !(a.leido && a.leido[rol]);
       return `<div class="card aviso-it ${nuevo ? 'nuevo' : ''}"><span class="ico">${ico(ICO_MOD[a.modulo] || 'campana')}</span>
         <span class="ai-t"><b>${esH(a.titulo)}</b><span>${esH(a.texto)}</span><span class="meta">${esH(hace(a.en))}</span></span>
-        ${nuevo ? '<span class="punto" aria-label="Nuevo"></span>' : ''}</div>`;
+        ${nuevo ? '<span class="punto" aria-hidden="true"></span><span class="sr">Nuevo</span>' : ''}</div>`;
     }).join('') : UI.vacio('campana', 'Sin avisos', 'Aquí llegan los avisos de los módulos que te tocan.');
   }
   async function abrirAvisos() {
-    abrirHoja('shAvisos');
-    pintarAvisos();
     // Al abrir la campana se marcan como leídos (los puntos se ven en esta apertura y se van en la siguiente).
     const rol = S.persona.rol, pend = noLeidos();
-    pend.forEach(a => { a._visto = true; });
+    S.vistos = new Set(pend.map(a => a.id));
+    abrirHoja('shAvisos');
+    pintarAvisos();
     try { await Promise.all(pend.map(a => nube.mezclar('avisos', a.id, { leido: { [rol]: true } }))); }
     catch (e) { toast(nube.explicar(e)); }
   }
@@ -435,9 +447,11 @@
       const ok = await confirmar('¿Reiniciar los datos de prueba?', 'Se borra todo lo que se haya cambiado en la demo (para todas las personas) y vuelven los datos de ejemplo con las fechas de hoy. No se puede deshacer.', 'Reiniciar');
       if (!ok) return;
       const b = $('btnReiniciar'); b.disabled = true;
+      // Mientras se reinicia no se deja cambiar de persona: con Firebase real, lo que la persona anterior no alcanzó a enviar se queda esperando hasta que ella vuelva a entrar.
+      S.entrando = true; document.querySelectorAll('#personaLista .persona-card').forEach(x => x.setAttribute('aria-disabled', 'true'));
       try { await nube.sembrar(true, S.persona.rol); toast('Listo: datos de prueba reiniciados'); cerrarHoja('shPersona'); }
       catch (e) { toast(nube.explicar(e)); }
-      finally { b.disabled = false; }
+      finally { b.disabled = false; S.entrando = false; document.querySelectorAll('#personaLista .persona-card').forEach(x => x.removeAttribute('aria-disabled')); }
     };
     document.querySelector('.tabs').addEventListener('click', e => { const t = e.target.closest('.tab[data-vista]'); if (t) irA(t.dataset.vista); });
     $('modulosLista').addEventListener('click', e => {

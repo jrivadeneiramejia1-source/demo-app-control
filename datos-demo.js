@@ -17,7 +17,9 @@
     }
     // Marca de tiempo ISO desplazada n días, a la hora local indicada.
     function iso(n, h, min) {
-      return new Date(base.getFullYear(), base.getMonth(), base.getDate() + n, h, min || 0, 0).toISOString();
+      // Nunca en el futuro: si se reinicia temprano (antes de la hora del aviso), queda un minuto antes de ahora.
+      const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + n, h, min || 0, 0);
+      return new Date(Math.min(d.getTime(), base.getTime() - 60000)).toISOString();
     }
 
     // ---------- EQUIPOS ----------
@@ -168,7 +170,7 @@
     }
     const reuniones = {
       're-001': {
-        comunidad: 'Comunidad Los Olivos', fecha: dias(6), hora: '08:00', lugar: 'Salón comunal de Los Olivos',
+        comunidad: 'Comunidad Ejemplo Norte', fecha: dias(6), hora: '08:00', lugar: 'Salón comunal de Ejemplo Norte',
         jefe: 'Ana Pérez', asistentes: ['Jorge Ibarra', 'Paola Ríos', 'Andrés Mendoza', 'Liliana Torres'],
         estado: 'programada',
         necesidades: [
@@ -179,11 +181,11 @@
           { id: 'ne-003', tipo: 'almuerzo', cantidad: 30, detalle: 'Almuerzo para 30 personas',
             responsable: 'Luis Rodríguez', responsableRol: 'compras', estado: 'pendiente' }
         ],
-        correo: correo('Comunidad Los Olivos', dias(6), '08:00', 'el salón comunal de Los Olivos'),
+        correo: correo('Comunidad Ejemplo Norte', dias(6), '08:00', 'el salón comunal de Ejemplo Norte'),
         historial: [{ fecha: iso(-3, 9, 30), texto: 'Reunión creada desde el correo recibido' }]
       },
       're-002': {
-        comunidad: 'Comunidad El Cardón', fecha: dias(13), hora: '09:30', lugar: 'Kiosco principal de El Cardón',
+        comunidad: 'Comunidad Ejemplo Sur', fecha: dias(13), hora: '09:30', lugar: 'Kiosco principal de Ejemplo Sur',
         jefe: 'Ana Pérez', asistentes: ['Paola Ríos', 'Camilo Suárez', 'Liliana Torres'],
         estado: 'reprogramada',
         necesidades: [
@@ -192,14 +194,14 @@
           { id: 'ne-005', tipo: 'refrigerios', cantidad: 20, detalle: 'Refrigerios para 20 personas',
             responsable: 'Luis Rodríguez', responsableRol: 'compras', estado: 'pendiente' }
         ],
-        correo: correo('Comunidad El Cardón', dias(9), '09:30', 'el kiosco principal de El Cardón'),
+        correo: correo('Comunidad Ejemplo Sur', dias(9), '09:30', 'el kiosco principal de Ejemplo Sur'),
         historial: [
           { fecha: iso(-6, 10, 0), texto: 'Reunión creada desde el correo recibido' },
           { fecha: iso(-1, 15, 20), texto: 'Cambió la fecha del ' + dias(9) + ' al ' + dias(13) + ' porque la comunidad pidió más tiempo' }
         ]
       },
       're-003': {
-        comunidad: 'Comunidad Punta Arena', fecha: dias(-10), hora: '10:00', lugar: 'Escuela de Punta Arena',
+        comunidad: 'Comunidad Ejemplo Centro', fecha: dias(-10), hora: '10:00', lugar: 'Escuela de Ejemplo Centro',
         jefe: 'Ana Pérez', asistentes: ['Jorge Ibarra', 'Paola Ríos', 'Camilo Suárez'],
         estado: 'realizada',
         necesidades: [
@@ -208,7 +210,7 @@
           { id: 'ne-007', tipo: 'almuerzo', cantidad: 15, detalle: 'Almuerzo para 15 personas',
             responsable: 'Luis Rodríguez', responsableRol: 'compras', estado: 'autorizado' }
         ],
-        correo: correo('Comunidad Punta Arena', dias(-10), '10:00', 'la escuela de Punta Arena'),
+        correo: correo('Comunidad Ejemplo Centro', dias(-10), '10:00', 'la escuela de Ejemplo Centro'),
         historial: [
           { fecha: iso(-18, 8, 45), texto: 'Reunión creada desde el correo recibido' },
           { fecha: iso(-10, 16, 0), texto: 'Reunión realizada sin novedades' }

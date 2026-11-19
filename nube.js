@@ -27,7 +27,8 @@
       'auth/clave-distinta': 'Esta cuenta de prueba ya existe en Firebase con otra clave. Bórrala en Authentication y vuelve a entrar.',
       'permission-denied': 'Firebase no deja leer ni guardar: falta pegar las reglas de firestore.rules en Firestore Database, pestaña Reglas.',
       'unavailable': 'Sin conexión con la base de datos. Lo que hagas se guarda cuando vuelva la señal.',
-      'not-found': 'Ese registro ya no existe. Puede que otra persona lo haya borrado.'
+      'not-found': 'Ese registro ya no existe. Puede que otra persona lo haya borrado.',
+      'sin-sdk': 'Firebase no alcanzó a cargar. Revisa la conexión a internet y toca Reintentar arriba.'
     };
     return t[c] || ('Algo salió mal con Firebase' + (c ? ' (' + c + ')' : '') + '. Vuelve a intentar.');
   }
@@ -47,8 +48,9 @@
   async function entrar(rol) {
     const p = window.DEMO.porRol(rol);
     if (!p) throw new Error('Rol desconocido');
+    if (!auth) { const e = new Error('Firebase no cargó'); e.code = 'sin-sdk'; throw e; }
     if (auth.currentUser && auth.currentUser.email === p.correo) return p;
-    if (auth.currentUser) await A.signOut(auth);
+    // No se cierra la sesión antes: entrar con otra cuenta la reemplaza directo y así la pantalla de entrada no parpadea.
     try {
       await A.signInWithEmailAndPassword(auth, p.correo, window.DEMO.CLAVE);
     } catch (e) {
@@ -56,7 +58,12 @@
       if (!['auth/invalid-credential', 'auth/user-not-found', 'auth/wrong-password', 'auth/invalid-login-credentials'].includes(e.code)) throw e;
       try { await A.createUserWithEmailAndPassword(auth, p.correo, window.DEMO.CLAVE); }
       catch (e2) {
-        if (e2.code === 'auth/email-already-in-use') { const x = new Error('Clave distinta'); x.code = 'auth/clave-distinta'; throw x; }
+        if (e2.code === 'auth/email-already-in-use') {
+          // Puede que otro teléfono la haya creado hace un instante: se intenta entrar una vez más antes de culpar a la clave.
+          try { await A.signInWithEmailAndPassword(auth, p.correo, window.DEMO.CLAVE); return p; }
+          catch (e3) { if (!['auth/invalid-credential', 'auth/wrong-password', 'auth/invalid-login-credentials'].includes(e3.code)) throw e3; }
+          const x = new Error('Clave distinta'); x.code = 'auth/clave-distinta'; throw x;
+        }
         throw e2;
       }
     }

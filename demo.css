@@ -120,3 +120,8 @@
 .aprox { font-family: var(--f-body); font-size: .84rem; color: var(--muted); margin-right: 4px; }
 /* Cinco pestañas en pantallas angostas: la letra baja un poco para que "Reuniones" quepa entera */
 @media (max-width: 380px) { .tab { font-size: .72rem; letter-spacing: -.01em; padding: 4px 2px; } }
+/* revisión: palabras larguísimas (enlaces, seriales) parten en vez de salirse */
+.card, .aviso-it .ai-t, .persona-card .pc-t { overflow-wrap: anywhere; min-width: 0; }
+.facts > span { min-width: 0; }
+/* Letra grande del sistema (200 %): el nombre de la pestaña baja a otra línea en vez de cortarse */
+.tab-lbl { white-space: normal; overflow: visible; text-overflow: clip; text-align: center; line-height: 1.1; overflow-wrap: anywhere; -webkit-hyphens: auto; hyphens: auto; }
