@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" media="(prefers-color-scheme: light)" content="#0A5A4E">
-<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0D3B37">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#0B4F6C">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#082F40">
 <meta name="description" content="Demo de la app de control: equipos, inventario y compras, vehículos y reuniones, con datos de prueba">
 <meta name="robots" content="noindex">
 <link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" type="image/png" href="iconos/control-192.png">
-<link rel="apple-touch-icon" href="iconos/control-180.png">
+<link rel="icon" type="image/png" href="iconos/control-192.png?v=3">
+<link rel="apple-touch-icon" href="iconos/control-180.png?v=3">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Control">
@@ -18,14 +18,15 @@
 <link rel="preload" href="fuentes/bricolage.woff2" as="font" type="font/woff2" crossorigin>
 <script>try { var t = localStorage.getItem('cp_tema'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
 <link rel="stylesheet" href="comun.css?v=1">
-<link rel="stylesheet" href="demo.css?v=5">
+<link rel="stylesheet" href="demo.css?v=6">
+<link rel="stylesheet" href="caribe.css?v=2">
 </head>
 <body>
 <a class="saltar" href="#contenido">Saltar al contenido</a>
 <header class="top">
   <div class="top-in">
     <div class="brand">
-      <span class="marca marca-demo" aria-hidden="true"><span data-ico="candado"></span></span>
+      <img class="marca" src="iconos/control-192.png?v=3" alt="" width="42" height="42">
       <div class="brand-t">
         <h1>Control</h1>
         <p id="subtitulo">Datos de prueba</p>
@@ -262,10 +263,10 @@
 <script src="config.js?v=3"></script>
 <script src="personas.js?v=5"></script>
 <script src="datos-demo.js?v=5"></script>
-<script src="nube.js?v=4"></script>
+<script src="nube.js?v=5"></script>
 <script src="push.js?v=1"></script>
 <script src="inventario.js?v=4"></script>
-<script src="gente.js?v=1"></script>
-<script src="app.js?v=5"></script>
+<script src="gente.js?v=2"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>

@@ -40,7 +40,17 @@ service cloud.firestore {
     function esCuenta() { return request.auth != null && !esPrueba() && exists(rutaPerfil()) && perfil().activo == true; }
     function esDemo() { return esPrueba() || esCuenta(); }
     function rol() { return esPrueba() ? cuentas()[request.auth.token.email] : perfil().rol; }
-    function esJefeOGerente() { return esDemo() && rol() in ['gerente', 'jefe']; }
+    // Cuenta propia (no persona de prueba) con uno de estos roles.
+    function esCuentaDe(roles) { return esCuenta() && perfil().rol in roles; }
+    function esDireccion(r) { return r in ['gerente', 'jefe']; }
+    function rutaCodigo(c, r) {
+      return esDireccion(r) ? /databases/$(database)/documents/codigosDireccion/$(c) : /databases/$(database)/documents/codigos/$(c);
+    }
+    // Cambio que le toca decidir al Gerente: una compra que pidió la Jefe pasa a autorizada o rechazada, o sale de ahí.
+    function decideGerente() {
+      return antes().get('pideRol', '') == 'jefe' && nuevo().get('estado', '') != antes().get('estado', '')
+        && (antes().get('estado', '') in ['pedido', 'rechazado'] || nuevo().get('estado', '') in ['autorizado', 'rechazado']);
+    }
     function esJefe() { return esDemo() && rol() == 'jefe'; }
     function esGerente() { return esDemo() && rol() == 'gerente'; }
     function esCompras() { return esDemo() && (rol() == 'compras' || rol() == 'jefe'); }
@@ -86,12 +96,14 @@ service cloud.firestore {
     match /compras/{id} {
       allow read: if esDemo();
       // Pedir: a su propio nombre y en estado "pedido". Compras también registra compras hechas sin autorización.
-      allow create: if esJefe()
+      // La Jefe de prueba crea cualquier compra porque carga y reinicia los datos de ejemplo.
+      allow create: if (esJefe() && esPrueba())
         || (esDemo() && nuevo().pideRol == rol() && nuevo().estado == 'pedido')
         || (esCompras() && nuevo().estado == 'sin-autorizar');
       allow update: if
-        // La Jefe puede cambiar todo, menos sacar de "pedido" una compra que pidió ella (esa la decide el Gerente).
-        (esJefe() && !(antes().estado == 'pedido' && antes().get('pideRol', '') == 'jefe' && nuevo().estado != 'pedido'))
+        // La Jefe de prueba puede todo (reinicia los datos). Una Jefe con cuenta propia también, menos cambiar quién pidió
+        // y menos decidir una compra que pidió ella (esa la decide el Gerente).
+        (esJefe() && (esPrueba() || (!decideGerente() && nuevo().get('pideRol', '') == antes().get('pideRol', ''))))
         // El Gerente autoriza o rechaza solo lo que pidió la Jefe, sin cambiar cantidad ni valor.
         || (esGerente() && antes().estado == 'pedido' && antes().get('pideRol', '') == 'jefe'
             && nuevo().estado in ['autorizado', 'rechazado']
@@ -107,37 +119,53 @@ service cloud.firestore {
 
     // Perfiles de las cuentas propias.
     match /usuarios/{uid} {
-      // Cada quien lee el suyo; el Gerente y el Jefe ven todos (panel «Personas y códigos»).
+      // Cada quien lee el suyo; el Gerente y el Jefe con cuenta propia ven todos (panel «Personas y códigos»).
+      // Las personas de prueba (clave pública) no ven ni manejan cuentas propias.
       allow get: if request.auth != null && request.auth.uid == uid;
-      allow read: if esJefeOGerente();
+      allow list: if esCuentaDe(['gerente', 'jefe']);
       // Crear el perfil: solo el dueño, con un código que exista, esté activo y sea del mismo rol.
+      // Los códigos de Gerente y Jefe son de un solo uso: se borran en la misma escritura.
       allow create: if request.auth != null && request.auth.uid == uid && !esPrueba()
         && nuevo().keys().hasOnly(['nombre', 'correo', 'rol', 'codigo', 'activo', 'en'])
         && nuevo().rol in ROLES() && nuevo().activo == true
         && nuevo().nombre is string && nuevo().nombre.size() >= 3 && nuevo().nombre.size() <= 60
         && nuevo().correo == request.auth.token.email
         && nuevo().codigo is string
-        && exists(/databases/$(database)/documents/codigos/$(nuevo().codigo))
-        && get(/databases/$(database)/documents/codigos/$(nuevo().codigo)).data.activo == true
-        && get(/databases/$(database)/documents/codigos/$(nuevo().codigo)).data.rol == nuevo().rol;
+        && exists(rutaCodigo(nuevo().codigo, nuevo().rol))
+        && get(rutaCodigo(nuevo().codigo, nuevo().rol)).data.activo == true
+        && get(rutaCodigo(nuevo().codigo, nuevo().rol)).data.rol == nuevo().rol
+        && (!esDireccion(nuevo().rol) || !existsAfter(rutaCodigo(nuevo().codigo, nuevo().rol)));
       // Cambiar rol o pausar: el Gerente a cualquiera; el Jefe a todos menos Gerentes y Jefes. Nadie a sí mismo.
-      allow update: if esJefeOGerente() && request.auth.uid != uid
+      allow update: if esCuentaDe(['gerente', 'jefe']) && request.auth.uid != uid
         && soloCambia(['rol', 'activo'])
         && nuevo().rol in ROLES() && nuevo().activo is bool
-        && (rol() == 'gerente' || (!(antes().rol in ['gerente', 'jefe']) && !(nuevo().rol in ['gerente', 'jefe'])));
-      allow delete: if esDemo() && rol() == 'gerente';
+        && (perfil().rol == 'gerente' || (!esDireccion(antes().rol) && !esDireccion(nuevo().rol)));
+      allow delete: if esCuentaDe(['gerente']);
     }
 
-    // Códigos de cada rol. Nadie más los puede leer (ni adivinar uno preguntando).
+    // Códigos de los roles de trabajo (no Gerente ni Jefe). Solo los ven el Gerente y el Jefe con cuenta propia.
     match /codigos/{codigo} {
-      allow read: if esJefeOGerente();
-      allow create: if esJefeOGerente()
+      allow read: if esCuentaDe(['gerente', 'jefe']);
+      allow create: if esCuentaDe(['gerente', 'jefe'])
         && nuevo().keys().hasOnly(['rol', 'activo', 'por', 'en'])
-        && nuevo().rol in ROLES() && nuevo().activo == true
-        && codigo.size() >= 12
-        && (rol() == 'gerente' || !(nuevo().rol in ['gerente', 'jefe']));
+        && nuevo().rol in ROLES() && !esDireccion(nuevo().rol) && nuevo().activo == true
+        && codigo.size() >= 12;
       allow update: if false;
-      allow delete: if esJefeOGerente() && (rol() == 'gerente' || !(antes().rol in ['gerente', 'jefe']));
+      // resource == null: ya lo había borrado otra persona (dos cambiando el código a la vez).
+      allow delete: if esCuentaDe(['gerente', 'jefe']);
+    }
+
+    // Códigos de Gerente y Jefe: solo los ve y crea el Gerente, y sirven una sola vez.
+    match /codigosDireccion/{codigo} {
+      allow read: if esCuentaDe(['gerente']);
+      allow create: if esCuentaDe(['gerente'])
+        && nuevo().keys().hasOnly(['rol', 'activo', 'por', 'en'])
+        && esDireccion(nuevo().rol) && nuevo().activo == true
+        && codigo.size() >= 12;
+      allow update: if false;
+      // Lo borra el Gerente, o quien lo está usando para crear su perfil en esa misma escritura.
+      allow delete: if esCuentaDe(['gerente'])
+        || (request.auth != null && !exists(rutaPerfil()) && getAfter(rutaPerfil()).data.codigo == codigo);
     }
 
     // Avisos de la campana: cualquiera los crea; cada quien solo cambia SU marca de leído (con su id de cuenta).

@@ -1,5 +1,6 @@
 /* gente.js — Panel «Personas y códigos» (solo Gerente y Jefe).
-   Códigos: uno activo por rol, guardado en codigos/<CÓDIGO> = { rol, activo, por, en }. Nadie más los puede leer.
+   Códigos: uno activo por rol, en codigos/<CÓDIGO> = { rol, activo, por, en }. Los de Gerente y Jefe van en codigosDireccion:
+   solo los ve el Gerente y sirven una sola vez. Nadie más los puede leer. El panel solo sale con cuentas propias.
    Quien se registra escribe su código; Firebase revisa que exista, esté activo y sea de ese rol (ver firestore.rules).
    Personas: usuarios/<uid> = { nombre, correo, rol, codigo, activo }. Aquí se les cambia el rol o se pausa su acceso.
    El Gerente maneja todo; el Jefe todo menos los códigos y las personas de Gerente y de Jefe. */
@@ -10,12 +11,14 @@
   const esH = v => A().esH(v);
   const yo = () => A().S.persona;
   const esGerente = () => !!yo() && yo().rol === 'gerente';
+  const esDireccion = rol => ['gerente', 'jefe'].includes(rol);
+  const coleccion = rol => (esDireccion(rol) ? 'codigosDireccion' : 'codigos');
   // Roles que puede manejar quien tiene la sesión.
   const puedeManejar = rol => esGerente() || (!!yo() && yo().rol === 'jefe' && !['gerente', 'jefe'].includes(rol));
   let ocupado = false;
 
   function abrir() {
-    if (!yo() || !['gerente', 'jefe'].includes(yo().rol)) return;
+    if (!yo() || !yo().real || !['gerente', 'jefe'].includes(yo().rol)) return;
     pintar(true);
     A().abrirHoja('shGente');
   }
@@ -23,9 +26,9 @@
   function pintar(forzar) {
     if (!forzar && $('shGente').hidden) return;
     const S = A().S, D = window.DEMO;
-    if (!yo() || !['gerente', 'jefe'].includes(yo().rol)) { $('shGente').hidden = true; return; }
-    if (A().cargando('codigos') || A().cargando('usuarios')) { $('genteCuerpo').innerHTML = UI.esqueleto(3); return; }
-    const codigos = S.datos.codigos.filter(c => c.activo === true);
+    if (!yo() || !yo().real || !['gerente', 'jefe'].includes(yo().rol)) { $('shGente').hidden = true; return; }
+    if (A().cargando('codigos') || A().cargando('usuarios') || (esGerente() && A().cargando('codigosDireccion'))) { $('genteCuerpo').innerHTML = UI.esqueleto(3); return; }
+    const codigos = S.datos.codigos.concat(esGerente() ? S.datos.codigosDireccion : []).filter(c => c.activo === true);
     let h = '<div class="section-label">Códigos por rol</div>';
     h += D.AREAS.map(area => {
       const roles = D.ROLES.filter(r => r.area === area);
@@ -33,9 +36,10 @@
         const c = codigos.filter(x => x.rol === r.rol).sort((a, b) => String(b.en).localeCompare(String(a.en)))[0];
         const maneja = puedeManejar(r.rol);
         const botones = !maneja ? '<span class="meta">Solo el Gerente</span>'
-          : c ? `<button class="btn small" type="button" data-g="copiar" data-id="${esH(c.id)}">Copiar</button><button class="btn small ghost" type="button" data-g="cambiar" data-rol="${esH(r.rol)}">Cambiar</button>`
+          : c ? `<button class="btn small" type="button" data-g="copiar" data-id="${esH(c.id)}" data-rol="${esH(r.rol)}">Copiar</button><button class="btn small ghost" type="button" data-g="cambiar" data-rol="${esH(r.rol)}">Cambiar</button>`
           : `<button class="btn small primary" type="button" data-g="crear" data-rol="${esH(r.rol)}">${window.ico('mas')}Crear código</button>`;
-        return `<div class="codigo-fila"><span class="cf-t"><b>${esH(r.rolTxt)}</b>${c && maneja ? `<code>${esH(c.id)}</code>` : `<span class="meta">${c ? 'Ya tiene código' : 'Sin código'}</span>`}</span><span class="row">${botones}</span></div>`;
+        const nota = esDireccion(r.rol) && maneja ? '<span class="meta">Sirve una sola vez</span>' : '';
+        return `<div class="codigo-fila"><span class="cf-t"><b>${esH(r.rolTxt)}</b>${nota}${c && maneja ? `<code>${esH(c.id)}</code>` : `<span class="meta">${c ? 'Ya tiene código' : 'Sin código'}</span>`}</span><span class="row">${botones}</span></div>`;
       }).join('')}</div>`;
     }).join('');
     const gente = S.datos.usuarios.slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
@@ -62,9 +66,9 @@
   }
   // Código nuevo para el rol; los viejos de ese rol se borran (dejan de servir para registrarse).
   function nuevo(rol) {
-    const viejos = A().S.datos.codigos.filter(c => c.rol === rol);
+    const col = coleccion(rol), viejos = (A().S.datos[col] || []).filter(c => c.rol === rol);
     const c = window.nube.codigoNuevo(rol);
-    return window.nube.lote(viejos.map(v => ['borrar', 'codigos', v.id]).concat([['set', 'codigos', c, { rol, activo: true, por: yo().nombre, en: new Date().toISOString() }]]));
+    return window.nube.lote(viejos.map(v => ['borrar', col, v.id]).concat([['set', col, c, { rol, activo: true, por: yo().nombre, en: new Date().toISOString() }]]));
   }
   async function copiar(texto) {
     try { await navigator.clipboard.writeText(texto); A().toast(`Copiado: ${texto}`); }

@@ -57,14 +57,16 @@
       // Cuenta real: el rol sale de su perfil (usuarios/<uid>), que solo se crea con un código válido.
       // Se escucha en vivo: si el Jefe le cambia el rol o le quita el acceso, la app cambia al instante.
       let ultimo = '';
-      oyentePerfil = F.onSnapshot(F.doc(db, 'usuarios', u.uid), s => {
+      oyentePerfil = F.onSnapshot(F.doc(db, 'usuarios', u.uid), { includeMetadataChanges: true }, s => {
+        // Mientras Firebase no confirme el perfil recién escrito (código por revisar), no se entra.
+        if (s.metadata && s.metadata.hasPendingWrites) return;
         const d = s.exists() ? s.data() : null;
         const p = !d ? { sinPerfil: true, correo: u.email }
           : d.activo !== true ? { sinAcceso: true, correo: u.email, nombre: d.nombre }
           : (window.DEMO.armar(d.rol, d.nombre, u.email, '', { real: true, uid: u.uid }) || { sinPerfil: true, correo: u.email });
         const firma = JSON.stringify([p.rol, p.nombre, !!p.sinPerfil, !!p.sinAcceso]);
         if (firma !== ultimo) { ultimo = firma; alCambiarSesion(p); }
-      }, () => alCambiarSesion({ sinPerfil: true, correo: u.email }));
+      }, e => alCambiarSesion({ sinPerfil: true, correo: u.email, error: e && e.code === 'permission-denied' ? '' : explicar(e) }));
     });
   }
   let oyentePerfil = null;
@@ -86,9 +88,12 @@
     const u = auth && auth.currentUser;
     const c = limpiarCodigo(codigo), rol = window.DEMO.rolDeCodigo(c);
     if (!u || !rol) { const e = new Error('Código'); e.code = 'codigo-malo'; throw e; }
-    try {
-      await FS.setDoc(FS.doc(db, 'usuarios', u.uid), { nombre: String(nombre || '').trim().slice(0, 60), correo: String(u.email || ''), rol, codigo: c, activo: true, en: new Date().toISOString() });
-    } catch (e) { if (e && e.code === 'permission-denied') { const x = new Error('Código'); x.code = 'codigo-malo'; throw x; } throw e; }
+    // Los códigos de Gerente y Jefe son de un solo uso: se borran en la misma escritura que crea el perfil.
+    const b = FS.writeBatch(db);
+    b.set(FS.doc(db, 'usuarios', u.uid), { nombre: String(nombre || '').trim().slice(0, 60), correo: String(u.email || ''), rol, codigo: c, activo: true, en: new Date().toISOString() });
+    if (['gerente', 'jefe'].includes(rol)) b.delete(FS.doc(db, 'codigosDireccion', c));
+    try { await b.commit(); }
+    catch (e) { if (e && e.code === 'permission-denied') { const x = new Error('Código'); x.code = 'codigo-malo'; throw x; } throw e; }
   }
   /** Código nuevo para un rol: 3 letras del rol + 8 caracteres al azar (sin 0, O, 1, I ni L para que no se confundan). */
   function codigoNuevo(rol) {

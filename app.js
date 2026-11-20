@@ -15,7 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], reuniones: [], avisos: [], suscripciones: [], usuarios: [], codigos: [] },
+    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], reuniones: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     oyentes: [],
     filtro: { equipos: '', inventario: '', vehiculos: '', reuniones: '' },
@@ -108,7 +108,7 @@
       S.registrando = { nombre, codigo };
       await nube.crearCuenta(correo, clave);
       try { await nube.usarCodigo(nombre, codigo); }
-      catch (e) { S.registrando = null; mostrarCuenta({ sinPerfil: true, correo }, nube.explicar(e)); }
+      catch (e) { S.registrando = null; $('cuNombre').value = nombre; $('cuCodigo').value = $('ctCodigo').value; mostrarCuenta({ sinPerfil: true, correo }, nube.explicar(e)); }
     } catch (e) { S.registrando = null; falla(nube.explicar(e)); }
     finally { S.entrando = false; $('ctBoton').disabled = false; $('ctClave').value = ''; }
   }
@@ -119,7 +119,6 @@
     $('cuentaTxt').textContent = sin ? `La cuenta ${p.correo} está pausada. Habla con tu jefe para que te devuelva el acceso.`
       : `Entraste como ${p.correo}, pero todavía no tienes rol. Escribe el código que te dio tu jefe: ese código decide qué puedes ver y hacer.`;
     $('cuentaForm').hidden = sin;
-    if (!sin && S.registrando === null && !$('cuNombre').value && $('ctNombre').value) { $('cuNombre').value = $('ctNombre').value; $('cuCodigo').value = $('ctCodigo').value; }
     // El error se queda aunque llegue otra vez el aviso de «sin perfil» (pasa justo después de crear la cuenta).
     if (msg) S.errCuenta = msg;
     const m = sin ? '' : S.errCuenta || '';
@@ -160,11 +159,12 @@
     dejarDeEscuchar();
     cerrarHoja('shPersona');
     if (!p || !(p.sinPerfil || p.sinAcceso)) S.errCuenta = '';
+    if (!p) { $('cuNombre').value = ''; $('cuCodigo').value = ''; }
     if (!p) { S.persona = null; S.registrando = null; error(S.motivoSalida || ''); S.motivoSalida = ''; pintarEntrada(); mostrar('vEntrada'); return; }
     if (p.sinPerfil || p.sinAcceso) {
       S.persona = null;
       if (p.sinPerfil && S.registrando) return;   // se está guardando el código recién escrito: espera el perfil
-      mostrarCuenta(p); return;
+      mostrarCuenta(p, p.error || ''); return;
     }
     S.registrando = null;
     const cambio = S.persona && S.persona.rol !== p.rol;
@@ -179,7 +179,8 @@
     pintarTodo();
     if (cambio) toast(`Ahora eres ${p.nombre} (${p.rolTxt})`);
     S.errorFijo = '';
-    try { const sembro = await nube.sembrar(false, p.rol); if (mia === S.sesion && sembro) toast('Listo: se cargaron los datos de prueba'); }
+    // Solo la Jefe de prueba carga los datos de ejemplo (una Jefe con cuenta propia no los pisa).
+    try { const sembro = await nube.sembrar(false, p.prueba ? p.rol : ''); if (mia === S.sesion && sembro) toast('Listo: se cargaron los datos de prueba'); }
     catch (e) { if (mia === S.sesion) { S.errorFijo = nube.explicar(e); error(S.errorFijo); } }
     if (mia === S.sesion) escucharTodo();
     if (window.Push && Push.estado() === 'activo') Push.actualizarRol(p.rol);
@@ -193,7 +194,7 @@
   };
   function escucharTodo() {
     // Las personas y los códigos solo los leen el Gerente y el Jefe (para el panel «Personas y códigos»).
-    const panel = ['gerente', 'jefe'].includes(S.persona.rol) ? ['usuarios', 'codigos'] : [];
+    const p = S.persona, panel = !p.real ? [] : p.rol === 'gerente' ? ['usuarios', 'codigos', 'codigosDireccion'] : p.rol === 'jefe' ? ['usuarios', 'codigos'] : [];
     ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos', 'suscripciones'].concat(panel).forEach(col => {
       S.oyentes.push(nube.escuchar(col, lista => {
         S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
@@ -201,7 +202,7 @@
         if (S.errorFijo && col === 'articulos' && lista.length) S.errorFijo = '';
         if (col !== 'avisos' || !$('avisoError').hidden) error(S.errorFijo || '');
         pintarTodo();
-      }, e => { if (['suscripciones', 'usuarios', 'codigos'].includes(col)) { S.llegaron.add(col); return; } error(nube.explicar(e)); }));
+      }, e => { if (['suscripciones', 'usuarios', 'codigos', 'codigosDireccion'].includes(col)) { S.llegaron.add(col); return; } error(nube.explicar(e)); }));
     });
   }
 
@@ -220,7 +221,8 @@
     $('personaLista').innerHTML = porArea(p.prueba ? p.rol : '');
     $('cuentaPropia').hidden = !p.real;
     if (p.real) $('cuentaPropiaTxt').textContent = `${p.nombre} · ${p.correo} · ${p.rolTxt}. Si tocas una persona de prueba, sales de tu cuenta.`;
-    $('ajustesGente').hidden = !['gerente', 'jefe'].includes(p.rol);
+    // El panel solo sale con cuentas propias: las personas de prueba tienen la clave pública.
+    $('ajustesGente').hidden = !(p.real && ['gerente', 'jefe'].includes(p.rol));
     $('permNombre').textContent = p.nombre;
     $('permTabla').innerHTML = MODULOS.map(m => `<div><span>${esH(m.n)}</span>${pill(window.DEMO.PERMISO_TXT[permiso(m.k)], permiso(m.k) === 'no' ? 'none' : 's-disco')}</div>`).join('');
     // Reiniciar los datos es para presentar: solo con la Jefe de prueba (no con cuentas propias).

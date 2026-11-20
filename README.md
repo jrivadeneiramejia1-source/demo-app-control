@@ -21,7 +21,10 @@ Dos formas, desde la pantalla de entrada:
 1. **Personas de prueba** (para presentar): una por rol, todas con la clave `demo-control-2026` (inventada y pública). Se cambia de persona en vivo desde el botón de arriba.
 2. **Mi cuenta** (como sería el uso real): cada persona crea su cuenta con su correo, su clave y el **código de su rol**. El código decide el rol: aunque alguien diga ser jefe, entra con el rol del código. Firebase revisa el código (las reglas), no solo la pantalla.
 
-Los códigos los crea el Gerente o el Jefe en **Cambiar de persona > Personas y códigos** (uno por rol, con el formato `LOG-7KQ4-M2XP`; las 3 letras dicen el rol). Ahí mismo se ve quién se registró, se le cambia el rol o se pausa su acceso. Si un código se riega, se cambia y el viejo deja de servir. El Jefe maneja todos los roles menos Gerente y Jefe. Para que las cuentas propias funcionen, en Firebase debe estar activa la creación de cuentas (**Authentication > Settings > User actions > Enable create (sign-up)**).
+Los códigos se manejan en **Cambiar de persona > Personas y códigos**, que solo sale con una cuenta propia de Gerente o de Jefe (las personas de prueba tienen la clave pública, por eso no lo ven). Hay un código por rol, con el formato `LOG-7KQ4-M2XP` (las 3 letras dicen el rol). Ahí mismo se ve quién se registró, se le cambia el rol o se pausa su acceso. Si un código se riega, se cambia y el viejo deja de servir.
+- Los códigos de **Gerente y Jefe** solo los ve y crea el Gerente, y **sirven una sola vez** (colección `codigosDireccion`). El Jefe maneja los demás roles.
+- El **primer código de Gerente** se crea a mano en Firebase: Firestore Database > Datos > Iniciar colección `codigosDireccion`, documento con ID `GER-XXXX-XXXX` y campos `rol` = `gerente`, `activo` = `true` (booleano), `por` = `consola`, `en` = la fecha.
+- En Firebase debe quedar activa la creación de cuentas (**Authentication > Settings > User actions > Enable create (sign-up)**).
 
 | Área | Persona de prueba | Rol | Equipos | Inventario | Vehículos | Reuniones |
 |---|---|---|---|---|---|---|
@@ -49,12 +52,13 @@ Equipos, Vehículos y Reuniones por ahora solo se ven: lo que hace cada rol ahí
 - `config.js`: datos del proyecto de Firebase de la demo, ID `fir-app-control-d8494` (no son secretos).
 - `personas.js`: los roles, sus permisos y las personas de prueba. `datos-demo.js`: los datos de ejemplo, con fechas relativas al día en que se cargan.
 - `firestore.rules`: reglas de la base de datos (entran las personas de prueba y las cuentas con un código válido). Se pegan en Firebase.
+- `caribe.css`: el estilo de la demo (azul mar sobrio, relieve con sombras, letra Nunito en `fuentes/nunito.woff2`, licencia SIL OFL 1.1). Va después de `demo.css`.
 - `comun.css`, `comun.js`, `iconos.js`, `fuentes/`, `codigos.js`, `lib/codigos/`: copiados de `apps-consulta-previa` (ver `DESIGN.md`). En `iconos.js` se agregaron iconos Phosphor (licencia MIT): inicio, carro, carrito, reunión, cambiar, pagada, correo y llave.
 - `gente.js`: panel «Personas y códigos» (Gerente y Jefe).
 - `pruebas/`: Firebase falso (`firebase-*.js`) y pruebas con Playwright.
 
 ## Datos en Firestore
-Colecciones de primer nivel: `usuarios` (perfil de cada cuenta propia: nombre, rol y si tiene acceso), `codigos` (código activo de cada rol; solo lo leen Gerente y Jefe), `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `avisos`, `suscripciones` (teléfonos con avisos activados; Reiniciar no las borra) y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). Solo la Jefe carga, actualiza y reinicia los datos de prueba (así lo piden las reglas): si otra persona entra primero, la app le dice que entre una vez como Ana. La Jefe tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
+Colecciones de primer nivel: `usuarios` (perfil de cada cuenta propia: nombre, rol y si tiene acceso), `codigos` (código de cada rol de trabajo; lo leen Gerente y Jefe con cuenta propia), `codigosDireccion` (códigos de Gerente y Jefe, de un solo uso; solo el Gerente), `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `avisos`, `suscripciones` (teléfonos con avisos activados; Reiniciar no las borra) y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). Solo la Jefe carga, actualiza y reinicia los datos de prueba (así lo piden las reglas): si otra persona entra primero, la app le dice que entre una vez como Ana. La Jefe de prueba (Ana) tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
 
 ## Permisos (los hace cumplir Firebase, no solo la pantalla)
 - Compras: alguien pide → la Jefe autoriza (si la pidió la Jefe, el Gerente) → Compras (Luis) la compra → Bodega (Sofía) la recibe. Nadie autoriza su propio pedido.

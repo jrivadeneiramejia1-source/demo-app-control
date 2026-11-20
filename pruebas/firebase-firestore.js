@@ -95,6 +95,7 @@ function snapDoc(ref, datosGuardados) {
     id: ref.id,
     ref,
     exists: () => existe,
+    metadata: { hasPendingWrites: false, fromCache: false },
     data: () => (existe ? copia(fija) : undefined), // siempre una copia nueva
   };
 }
@@ -125,7 +126,8 @@ export function getDocs(colRef) {
 // Copia de la regla de firestore.rules para crear un perfil: el código debe existir, estar activo y ser del mismo rol.
 function revisarPerfilNuevo(datos, ref, data) {
   if (ref.parent.id !== 'usuarios' || (datos.usuarios && datos.usuarios[ref.id])) return;
-  const c = (datos.codigos || {})[data && data.codigo];
+  const col = data && ['gerente', 'jefe'].includes(data.rol) ? 'codigosDireccion' : 'codigos';
+  const c = (datos[col] || {})[data && data.codigo];
   if (!c || c.activo !== true || c.rol !== data.rol || data.activo !== true) throw crearError('permission-denied', 'Missing or insufficient permissions.');
 }
 
@@ -244,7 +246,10 @@ window.addEventListener('storage', (e) => {
   emitir(visto, leer());
 });
 
-export function onSnapshot(ref, next, error) {
+export function onSnapshot(ref, a, b, c) {
+  // Igual que el real: onSnapshot(ref, next, error) u onSnapshot(ref, opciones, next, error).
+  const conOpciones = a && typeof a === 'object' && typeof a !== 'function';
+  const next = conOpciones ? b : a, error = conOpciones ? c : b;
   const o = { ref, next, error, vivo: true };
   oyentes.add(o);
   setTimeout(() => entregar(o), RETRASO_MS); // primera llamada asincrona con el estado actual
