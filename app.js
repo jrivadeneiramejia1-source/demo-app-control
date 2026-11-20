@@ -15,7 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], reuniones: [], necesidades: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [] },
+    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], reuniones: [], necesidades: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     oyentes: [],
     filtro: { equipos: '', inventario: '', vehiculos: '', reuniones: '' },
@@ -44,6 +44,8 @@
   const cop = n => { const v = Number(n) || 0; return fmtCop ? fmtCop.format(v) : 'COP ' + Math.round(v).toLocaleString(); };
   const iniciales = nombre => String(nombre || '').trim().split(/\s+/).slice(0, 2).map(p => p[0] || '').join('').toUpperCase();
   const permiso = mod => (S.persona && S.persona.permisos[mod]) || 'no';
+  /** ¿La persona tiene este permiso extra? (los marca el Gerente o la Jefe en «Personas y códigos») */
+  const tieneExtra = id => !!(S.persona && Array.isArray(S.persona.extras) && S.persona.extras.includes(id));
   const puedeVer = mod => permiso(mod) !== 'no';
   const pill = (txt, clase, icono) => `<span class="pill ${clase}">${icono ? ico(icono) : ''}${esH(txt)}</span>`;
 
@@ -195,6 +197,9 @@
   function escucharTodo() {
     // Las personas y los códigos solo los leen el Gerente y el Jefe (para el panel «Personas y códigos»).
     const p = S.persona, panel = !p.real ? [] : p.rol === 'gerente' ? ['usuarios', 'codigos', 'codigosDireccion'] : p.rol === 'jefe' ? ['usuarios', 'codigos'] : [];
+    // La bandeja de correos (Gmail de prueba) solo la leen la Jefe y la Administrativa encargada.
+    if (p.rol === 'jefe' || (p.rol === 'administrativo' && tieneExtra('encargada'))) panel.push('buzon');
+    S.errBuzon = '';
     ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'reuniones', 'necesidades', 'avisos', 'suscripciones'].concat(panel).forEach(col => {
       S.oyentes.push(nube.escuchar(col, lista => {
         S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
@@ -202,10 +207,13 @@
         // (por ejemplo, reglas sin pegar) se queda a la vista hasta recargar.
         if (S.errorFijo && S.errorFijoSeVa && col === 'articulos' && lista.length) S.errorFijo = '';
         if (S.erroresLectura) delete S.erroresLectura[col];
+        if (col === 'buzon') S.errBuzon = '';
         if (col !== 'avisos' || !$('avisoError').hidden) error(errorVisible());
         pintarTodo();
       }, e => {
         S.llegaron.add(col);   // así la pantalla deja de mostrar «cargando» y dice qué pasó
+        // La bandeja dice su error dentro de Correos (por ejemplo, si todavía no se pegaron las reglas nuevas).
+        if (col === 'buzon') { S.errBuzon = nube.explicar(e); pintarTodo(); return; }
         if (['suscripciones', 'usuarios', 'codigos', 'codigosDireccion'].includes(col)) return;
         S.erroresLectura = S.erroresLectura || {}; S.erroresLectura[col] = nube.explicar(e);
         error(errorVisible()); pintarTodo();
@@ -231,7 +239,8 @@
     // El panel solo sale con cuentas propias: las personas de prueba tienen la clave pública.
     $('ajustesGente').hidden = !(p.real && ['gerente', 'jefe'].includes(p.rol));
     $('permNombre').textContent = p.nombre;
-    $('permTabla').innerHTML = MODULOS.map(m => `<div><span>${esH(m.n)}</span>${pill(window.DEMO.PERMISO_TXT[permiso(m.k)], permiso(m.k) === 'no' ? 'none' : 's-disco')}</div>`).join('');
+    $('permTabla').innerHTML = MODULOS.map(m => `<div><span>${esH(m.n)}</span>${pill(window.DEMO.PERMISO_TXT[permiso(m.k)], permiso(m.k) === 'no' ? 'none' : 's-disco')}</div>`).join('') +
+      window.DEMO.EXTRAS.filter(e => tieneExtra(e.id)).map(e => `<div><span>Permiso extra</span>${pill(e.txt, 's-disco', 'check')}</div>`).join('');
     // Reiniciar los datos es para presentar: solo con la Jefe de prueba (no con cuentas propias).
     $('ajustesJefe').hidden = !(p.rol === 'jefe' && p.prueba);
     pintarAvisosTel();
@@ -385,7 +394,8 @@
   /* ---------- avisos (campana) ---------- */
   const misAvisos = () => {
     const rol = S.persona ? S.persona.rol : '';
-    return S.datos.avisos.filter(a => a.para === rol || a.para === 'todos').sort((a, b) => String(b.en).localeCompare(String(a.en)));
+    // Bodega con el permiso extra «compra» también recibe los avisos de Compras.
+    return S.datos.avisos.filter(a => a.para === rol || a.para === 'todos' || (a.para === 'compras' && rol === 'asistente' && tieneExtra('compra'))).sort((a, b) => String(b.en).localeCompare(String(a.en)));
   };
   // Cada persona marca SUS avisos como leídos (la marca es su id de cuenta), aunque haya varias personas con el mismo rol.
   const yo = () => nube.uid();
@@ -534,7 +544,7 @@
 
   /* ---------- ayudas para inventario.js ---------- */
   window.App = Object.freeze({
-    S, $, esH, pill, cop, hace, fechaCorta, hoyISO, toast, permiso, tablero, cargando, iniciales,
+    S, $, esH, pill, cop, hace, fechaCorta, hoyISO, toast, permiso, tieneExtra, tablero, cargando, iniciales,
     abrirHoja, cerrarHoja, confirmar, pintarTodo, diasHasta
   });
 

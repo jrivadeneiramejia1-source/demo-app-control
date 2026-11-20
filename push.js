@@ -62,7 +62,9 @@
   async function guardar(rol, sub) {
     const s = limpiar(sub);
     const id = await idDe(s.endpoint);
-    await window.nube.mezclar(COLECCION, id, { rol: String(rol || ''), sub: s, navegador: navegadorCorto(), en: new Date().toISOString() });
+    // Los permisos extra (por ejemplo, Bodega que también compra) para que le lleguen los avisos de ese trabajo.
+    const extras = window.App && window.App.S.persona && Array.isArray(window.App.S.persona.extras) ? window.App.S.persona.extras.slice() : [];
+    await window.nube.mezclar(COLECCION, id, { rol: String(rol || ''), extras, sub: s, navegador: navegadorCorto(), en: new Date().toISOString() });
     return id;
   }
   async function registro() {

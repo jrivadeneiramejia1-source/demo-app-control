@@ -63,8 +63,8 @@
         const d = s.exists() ? s.data() : null;
         const p = !d ? { sinPerfil: true, correo: u.email }
           : d.activo !== true ? { sinAcceso: true, correo: u.email, nombre: d.nombre }
-          : (window.DEMO.armar(d.rol, d.nombre, u.email, '', { real: true, uid: u.uid }) || { sinPerfil: true, correo: u.email });
-        const firma = JSON.stringify([p.rol, p.nombre, !!p.sinPerfil, !!p.sinAcceso]);
+          : (window.DEMO.armar(d.rol, d.nombre, u.email, '', { real: true, uid: u.uid, extras: d.extras }) || { sinPerfil: true, correo: u.email });
+        const firma = JSON.stringify([p.rol, p.nombre, !!p.sinPerfil, !!p.sinAcceso, p.extras || []]);
         if (firma !== ultimo) { ultimo = firma; alCambiarSesion(p); }
       }, e => alCambiarSesion({ sinPerfil: true, correo: u.email, error: e && e.code === 'permission-denied' ? '' : explicar(e) }));
     });

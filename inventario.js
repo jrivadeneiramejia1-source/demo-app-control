@@ -54,8 +54,10 @@
   const autorizadorDe = c => (c.pideRol === 'jefe' ? 'gerente' : 'jefe');   // nadie autoriza su propio pedido
   const miRol = () => (persona() ? persona().rol : '');
   // Quién puede hacer una tarea: la persona de ese rol, o la Jefe (que puede hacer todo menos lo del Gerente).
-  const puedoHacer = rol => miRol() === rol || (esJefe() && rol !== 'gerente');
-  const esMia = t => miRol() === t.rol;
+  // Bodega con el permiso extra «compra» también hace y registra compras (como Compras).
+  const hagoCompras = () => miRol() === 'compras' || (miRol() === 'asistente' && A().tieneExtra('compra'));
+  const puedoHacer = rol => miRol() === rol || (rol === 'compras' && hagoCompras()) || (esJefe() && rol !== 'gerente');
+  const esMia = t => miRol() === t.rol || (t.rol === 'compras' && hagoCompras());
   const ahora = () => new Date().toISOString();
   const delMes = f => String(f || '').slice(0, 7) === A().hoyISO().slice(0, 7);
   const texto = (...partes) => partes.filter(Boolean).join(' ').toLowerCase();
@@ -110,6 +112,8 @@
     else if (f === 'entregar' || f === 'compras') seccion = 'hacer';
     if (!secciones().some(x => x[0] === seccion)) seccion = secciones()[0][0];
     $('btnPedirMaterial').parentElement.hidden = esGerente();
+    // Quien hace las compras «hace» una compra (la Jefe la autoriza antes); los demás la piden.
+    $('btnPedirCompraTxt').textContent = hagoCompras() ? 'Hacer una compra' : 'Pedir una compra';
     const arts = articulos();
     App.tablero('inventario', [
       { k: 'v-ago', n: arts.filter(a => estadoArt(a) === 'agotado').length, lbl: 'Agotados', icono: 'aviso', tono: 'peligro', filtro: 'agotado' },
@@ -229,7 +233,7 @@
     let h = `<div class="section-label">Tus pedidos de material (${sols.length})</div>`;
     h += sols.length ? `<div class="list">${sols.map(tarjetaSolicitud).join('')}</div>` : UI.vacio('caja', 'No has pedido material', 'Toca «Pedir material» y la encargada de bodega te lo entrega.');
     h += `<div class="section-label">Tus compras pedidas (${comps.length})</div>`;
-    h += comps.length ? `<div class="list">${comps.map(tarjetaCompra).join('')}</div>` : UI.vacio('carrito', 'No has pedido compras', 'Toca «Pedir una compra»: le llega el aviso a quien autoriza.');
+    h += comps.length ? `<div class="list">${comps.map(tarjetaCompra).join('')}</div>` : UI.vacio('carrito', hagoCompras() ? 'No has hecho compras' : 'No has pedido compras', hagoCompras() ? 'Toca «Hacer una compra»: le llega el aviso a quien autoriza y, cuando la autorice, la compras.' : 'Toca «Pedir una compra»: le llega el aviso a quien autoriza.');
     return h;
   }
 
@@ -323,7 +327,7 @@
     const vis = todas.filter(c => (sub.compras === 'todas' || grupo(c) === sub.compras) && (!q || texto(c.que, c.proveedor, c.pide, c.categoria, c.paraQue).includes(q)));
     let h = barraBotones(puedoHacer('compras') ? [boton('sinaut', 'Registrar compra hecha sin autorización', 'aviso')] : []);
     h += subChips('compras', [['curso', 'En curso', cuenta('curso')], ['recibidas', 'Recibidas', cuenta('recibidas')], ['rechazadas', 'Rechazadas', cuenta('rechazadas')], ['sin', 'Sin autorizar', cuenta('sin')], ['todas', 'Todas', todas.length]]);
-    return h + (vis.length ? `<div class="list">${vis.map(tarjetaCompra).join('')}</div>` : UI.vacio('carrito', 'No hay compras aquí', 'Cambia el filtro o toca «Pedir una compra».'));
+    return h + (vis.length ? `<div class="list">${vis.map(tarjetaCompra).join('')}</div>` : UI.vacio('carrito', 'No hay compras aquí', `Cambia el filtro o toca «${hagoCompras() ? 'Hacer' : 'Pedir'} una compra».`));
   }
 
   /* --- Conteo --- */
@@ -436,7 +440,7 @@
     if (!window.Push || !envios.length) return;
     const subs = A().S.datos.suscripciones || [];
     envios.forEach(e => {
-      const destino = subs.filter(s => s.rol === e.para);
+      const destino = subs.filter(s => s.rol === e.para || (e.para === 'compras' && s.rol === 'asistente' && Array.isArray(s.extras) && s.extras.includes('compra')));
       if (destino.length) Promise.resolve(window.Push.enviar(destino, { titulo: e.titulo, texto: e.texto, url: './#inventario', etiqueta: 'inventario' })).catch(() => {});
     });
   }
@@ -447,14 +451,16 @@
     const sug = cantSug || (a ? Math.max(1, num(a.maximo) - num(a.cantidad)) : 1);
     const aut = autorizadorDe({ pideRol: persona().rol });
     abrirAccion({
-      titulo: 'Pedir una compra', sub: `Escribe qué se va a comprar. Le llega el aviso a ${nombreRol(aut)} para que la autorice.`,
+      titulo: hagoCompras() ? 'Hacer una compra' : 'Pedir una compra',
+      sub: hagoCompras() ? `Escribe qué vas a comprar. Antes de comprar, ${nombreRol(aut)} la autoriza (le llega el aviso).` : `Escribe qué se va a comprar. Le llega el aviso a ${nombreRol(aut)} para que la autorice.`,
       campos: campoSel('acArt', '¿Es para la bodega?', opsArt('No va a bodega'), a ? a.id : '') +
         campoTxt('acQue', 'Qué se va a comprar', a ? a.nombre : '', 'Ej: botas de seguridad talla 40', 100) +
         `<div class="fields cols">${campoNum('acCant', 'Cantidad', sug, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), a ? a.unidad : 'unidades')}</div>` +
         `<div class="fields cols">${campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), a && CATEGORIAS.includes(a.categoria) ? a.categoria : 'Otro')}${campoNum('acValor', 'Valor aproximado (pesos)', a ? num(a.costo) * sug : '', 0, null)}</div>` +
         campoTxt('acPara', 'Para qué', a ? 'Reponer la bodega' : '', 'Ej: para la cuadrilla de campo', 140) +
         campoSel('acProy', 'Proyecto', PROYECTOS.map(p => [p, p]), PROYECTOS[0]),
-      primario: 'Pedir la compra', icono: 'enviar', listo: `Listo: compra pedida. Le llegó el aviso a ${nombreRol(aut)} para autorizarla.`,
+      primario: hagoCompras() ? 'Enviar para autorizar' : 'Pedir la compra', icono: 'enviar',
+      listo: hagoCompras() ? `Listo: le llegó el aviso a ${nombreRol(aut)}. Cuando la autorice, haces la compra y la registras.` : `Listo: compra pedida. Le llegó el aviso a ${nombreRol(aut)} para autorizarla.`,
       ops: () => {
         const art = artPorId(valor('acArt')), n = entero('acCant'), v = entero('acValor');
         if (!valor('acQue')) return fallar('Escribe qué se va a comprar.', 'acQue');

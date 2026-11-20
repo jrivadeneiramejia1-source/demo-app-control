@@ -7,9 +7,9 @@
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#082F40">
 <meta name="description" content="Demo de la app de control: equipos, inventario y compras, vehículos y reuniones, con datos de prueba">
 <meta name="robots" content="noindex">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" type="image/png" href="iconos/control-192.png?v=3">
-<link rel="apple-touch-icon" href="iconos/control-180.png?v=3">
+<link rel="manifest" href="manifest.webmanifest?v=4">
+<link rel="icon" type="image/png" href="iconos/control-192.png?v=4">
+<link rel="apple-touch-icon" href="iconos/control-180.png?v=4">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Control">
@@ -18,7 +18,7 @@
 <link rel="preload" href="fuentes/bricolage.woff2" as="font" type="font/woff2" crossorigin>
 <script>try { var t = localStorage.getItem('cp_tema'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
 <link rel="stylesheet" href="comun.css?v=1">
-<link rel="stylesheet" href="demo.css?v=12">
+<link rel="stylesheet" href="demo.css?v=13">
 <link rel="stylesheet" href="caribe.css?v=2">
 </head>
 <body>
@@ -26,7 +26,7 @@
 <header class="top">
   <div class="top-in">
     <div class="brand">
-      <img class="marca" src="iconos/control-192.png?v=3" alt="" width="42" height="42">
+      <img class="marca" src="iconos/control-192.png?v=4" alt="" width="42" height="42">
       <div class="brand-t">
         <h1>Control</h1>
         <p id="subtitulo">Datos de prueba</p>
@@ -128,7 +128,7 @@
     <div class="summary cuatro" id="sumInventario"></div>
     <div class="dos-botones">
       <button class="btn primary big" type="button" id="btnPedirMaterial"><span data-ico="caja"></span>Pedir material</button>
-      <button class="btn big" type="button" id="btnPedirCompra"><span data-ico="carrito"></span>Pedir una compra</button>
+      <button class="btn big" type="button" id="btnPedirCompra"><span data-ico="carrito"></span><span id="btnPedirCompraTxt">Pedir una compra</span></button>
     </div>
     <div class="chips secciones" id="invSecciones" role="group" aria-label="Partes del inventario"></div>
     <input class="search" id="qInventario" type="search" placeholder="Buscar artículo, categoría o ubicación" autocomplete="off" aria-label="Buscar artículo" hidden>
@@ -286,15 +286,15 @@
 <script src="iconos.js?v=3"></script>
 <script src="comun.js?v=1"></script>
 <script src="config.js?v=5"></script>
-<script src="personas.js?v=7"></script>
+<script src="personas.js?v=8"></script>
 <script src="datos-demo.js?v=8"></script>
-<script src="nube.js?v=7"></script>
+<script src="nube.js?v=8"></script>
 <script src="push.js?v=1"></script>
-<script src="inventario.js?v=7"></script>
+<script src="inventario.js?v=8"></script>
 <script src="correos-demo.js?v=1"></script>
-<script src="reuniones.js?v=7"></script>
+<script src="reuniones.js?v=8"></script>
 <script src="vehiculos.js?v=1"></script>
-<script src="gente.js?v=2"></script>
-<script src="app.js?v=11"></script>
+<script src="gente.js?v=3"></script>
+<script src="app.js?v=12"></script>
 </body>
 </html>

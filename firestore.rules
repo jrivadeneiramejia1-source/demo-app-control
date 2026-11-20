@@ -83,7 +83,13 @@ service cloud.firestore {
     }
     function esJefe() { return esDemo() && rol() == 'jefe'; }
     function esGerente() { return esDemo() && rol() == 'gerente'; }
-    function esCompras() { return esDemo() && (rol() == 'compras' || rol() == 'jefe'); }
+    // Permisos extra que el Gerente o la Jefe le marcan a una cuenta propia (las personas de prueba no tienen).
+    function extras() { return esCuenta() ? perfil().get('extras', []) : []; }
+    function tieneExtra(x) { return x in extras(); }
+    // Compras, la Jefe, o la persona de Bodega con el permiso extra «compra».
+    function esCompras() { return esDemo() && (rol() == 'compras' || rol() == 'jefe' || (rol() == 'asistente' && tieneExtra('compra'))); }
+    // Administrativa con el permiso extra «encargada»: ve todo lo de las reuniones y la bandeja de correos.
+    function esEncargada() { return esDemo() && rol() == 'administrativo' && tieneExtra('encargada'); }
     function esBodega() { return esDemo() && (rol() == 'asistente' || rol() == 'jefe'); }
     function nuevo() { return request.resource.data; }
     function antes() { return resource.data; }
@@ -152,6 +158,32 @@ service cloud.firestore {
     }
 
     // Reuniones: las arma la Jefe con lo que entendió el agente. Administrativo la marca como realizada al registrar el acta.
+    // Ajustes que se escriben solo a mano en la consola de Firebase. ajustes/buzon = { uid: <UID de la cuenta robot> }.
+    match /ajustes/{id} {
+      allow read, write: if false;
+    }
+    function rutaAjusteBuzon() { return /databases/$(database)/documents/ajustes/buzon; }
+    // La cuenta robot del buzón: su UID tiene que ser el que Jeiler guardó a mano en ajustes/buzon
+    // (así nadie se hace pasar por ella aunque se registre primero con ese correo).
+    function esRobotBuzon() {
+      return request.auth != null && request.auth.token.email == 'buzon.demo@example.com'
+        && request.auth.token.firebase.sign_in_provider == 'password'
+        && exists(rutaAjusteBuzon()) && request.auth.uid == get(rutaAjusteBuzon()).data.uid;
+    }
+    // Bandeja de correos: los correos que llegan al Gmail de prueba. Los sube un Apps Script con la cuenta robot
+    // (solo puede crear aquí: no tiene perfil ni rol, así que no ve ni toca nada más).
+    // Los leen la Jefe y la Administrativa encargada; la Jefe los reparte con el agente o los borra.
+    match /buzon/{id} {
+      allow read: if esJefe() || esEncargada();
+      allow create: if esRobotBuzon()
+        && id.size() <= 40 && nuevo().keys().hasOnly(['asunto', 'texto', 'fecha'])
+        && nuevo().asunto is string && nuevo().asunto.size() <= 300
+        && nuevo().texto is string && nuevo().texto.size() >= 10 && nuevo().texto.size() <= 8000
+        && nuevo().fecha is string && nuevo().fecha.size() <= 40;
+      allow update: if false;
+      allow delete: if esJefe();
+    }
+
     match /reuniones/{id} {
       allow read: if esDemo();
       allow create, delete: if esJefe();
@@ -261,10 +293,12 @@ service cloud.firestore {
         && get(rutaCodigo(nuevo().codigo, nuevo().rol)).data.activo == true
         && get(rutaCodigo(nuevo().codigo, nuevo().rol)).data.rol == nuevo().rol
         && (!esDireccion(nuevo().rol) || !existsAfter(rutaCodigo(nuevo().codigo, nuevo().rol)));
-      // Cambiar rol o pausar: el Gerente a cualquiera; el Jefe a todos menos Gerentes y Jefes. Nadie a sí mismo.
+      // Cambiar rol, pausar o marcar permisos extra: el Gerente a cualquiera; el Jefe a todos menos Gerentes y Jefes. Nadie a sí mismo.
       allow update: if esCuentaDe(['gerente', 'jefe']) && request.auth.uid != uid
-        && soloCambia(['rol', 'activo'])
+        && soloCambia(['rol', 'activo', 'extras'])
         && nuevo().rol in ROLES() && nuevo().activo is bool
+        && nuevo().get('extras', []) is list && nuevo().get('extras', []).size() <= 5
+        && nuevo().get('extras', []).hasOnly(['compra', 'actas', 'encargada'])
         && (perfil().rol == 'gerente' || (!esDireccion(antes().rol) && !esDireccion(nuevo().rol)));
       allow delete: if esCuentaDe(['gerente']);
     }
