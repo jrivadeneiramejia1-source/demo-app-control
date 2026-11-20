@@ -62,6 +62,21 @@
     compra: 'Hace las compras', bodega: 'Encargada de bodega', gerente: 'Ve todo a detalle', jefe: 'Ve y cambia todo',
     encargado: 'Mantenimiento y actas de entrega', soporte: 'Recibe los registros y sigue las entregas', logistica: 'Logística de la reunión', asiste: 'Asiste a reuniones', actas: 'Registra actas y formatos', informa: 'Informa lo que hay' };
 
+  // Niveles que la Jefe puede dar a una persona en cada módulo (además de «Como su rol», que es no marcar nada, y «Sin acceso»).
+  // Nunca «jefe» ni «gerente». Debe coincidir con firestore.rules (función permisosOk).
+  const NIVELES = {
+    equipos: [['ver', 'Solo ver'], ['encargado', 'Encargado: mantenimiento y entregas'], ['soporte', 'Soporte: recibe y revisa']],
+    inventario: [['ver', 'Solo ver'], ['pide', 'Pide material y compras'], ['compra', 'Hace las compras'], ['bodega', 'Encargada de bodega']],
+    vehiculos: [['ver', 'Solo ver'], ['reporta', 'Reporta novedades y registra salidas'], ['autoriza', 'Revisa novedades y documentos']],
+    reuniones: [['ver', 'Solo ver']]   // en Reuniones cada rol hace su tarea: aquí solo se sube o se baja a «ver»
+  };
+  const MODULOS_PERM = Object.keys(NIVELES);
+  /** Deja solo los niveles válidos (mapa módulo -> nivel). Lo demás se descarta. */
+  const permisosValidos = ov => {
+    const o = {};
+    if (ov && typeof ov === 'object') MODULOS_PERM.forEach(m => { const v = ov[m]; if (v === 'no' || (NIVELES[m].some(x => x[0] === v))) o[m] = v; });
+    return o;
+  };
   const rolDe = rol => ROLES.find(r => r.rol === rol) || null;
   const corto = nombre => { const p = String(nombre || '').trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[1][0]}.` : (p[0] || ''); };
   /** Arma la persona con la que trabaja la app a partir de un rol y un nombre (sirve para prueba y para cuentas reales). */
@@ -69,8 +84,11 @@
     const r = rolDe(rol); if (!r) return null;
     const x = Object.assign({}, extra || {});
     x.extras = Object.freeze(extrasDe(rol, x.extras));   // solo los permisos extra que sirven para ese rol
+    // Lo que la Jefe le marcó a la persona (por módulo) manda sobre lo de su rol. Las personas de prueba no lo llevan.
+    const ajustes = Object.freeze(x.real ? permisosValidos(x.permisos) : {});
+    delete x.permisos;
     return Object.freeze(Object.assign({ rol, nombre, corto: corto(nombre), correo: String(correo || '').toLowerCase(), cargo: cargo || r.cargo,
-      rolTxt: r.rolTxt, area: r.area, permisos: Object.freeze(Object.assign({}, r.permisos)) }, x));
+      rolTxt: r.rolTxt, area: r.area, ajustes, permisos: Object.freeze(Object.assign({}, r.permisos, ajustes)) }, x));
   }
   // Valentina (Soporte de prueba) tiene el permiso extra de las actas, para mostrar cómo se revisan. Debe coincidir con firestore.rules (extrasPrueba).
   const PERSONAS = DE_PRUEBA.map(([rol, nombre, correo, cargo, extras]) => armar(rol, nombre, correo, cargo, { prueba: true, extras: extras || [] }));
@@ -83,6 +101,8 @@
     PERMISO_TXT: Object.freeze(PERMISO_TXT),
     EXTRAS: Object.freeze(EXTRAS.map(e => Object.freeze(e))),
     extrasDe,
+    NIVELES: Object.freeze(NIVELES),
+    permisosValidos,
     rolDe,
     armar,
     rolDeCodigo: c => { const m = /^([A-Z]{3})-/.exec(String(c || '')); const r = m && ROLES.find(x => x.pref === m[1]); return r ? r.rol : null; },

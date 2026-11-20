@@ -15,8 +15,9 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], reuniones: [], necesidades: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [] },
+    datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], reuniones: [], necesidades: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [], ajustesApp: [], invitaciones: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
+    suscritas: new Set(),  // colecciones a las que esta persona se suscribió (las demás no las puede leer y nunca «cargan»)
     oyentes: [],
     filtro: { equipos: '', inventario: '', vehiculos: '', reuniones: '' },
     entrando: false,
@@ -47,6 +48,9 @@
   /** ¿La persona tiene este permiso extra? (los marca el Gerente o la Jefe en «Personas y códigos») */
   const tieneExtra = id => !!(S.persona && Array.isArray(S.persona.extras) && S.persona.extras.includes(id));
   const puedeVer = mod => permiso(mod) !== 'no';
+  /** Desde cuánto una compra también la autoriza el Gerente (lo guarda el Gerente en Firebase; por defecto 1.000.000). */
+  const MONTO_POR_DEFECTO = 1000000;
+  const montoGerente = () => { const d = S.datos.ajustesApp.find(x => x.id === 'compras'); return d && Number.isInteger(d.montoGerente) && d.montoGerente >= 0 ? d.montoGerente : MONTO_POR_DEFECTO; };
   const pill = (txt, clase, icono) => `<span class="pill ${clase}">${icono ? ico(icono) : ''}${esH(txt)}</span>`;
 
   /* ---------- pantallas ---------- */
@@ -74,8 +78,11 @@
     const ps = window.DEMO.PERSONAS.filter(p => p.area === a);
     return ps.length ? `<div class="section-label">${esH(a)}</div>${ps.map(p => tarjetaPersona(p, p.rol === actual)).join('')}` : '';
   }).join('');
+  const hayPrueba = () => window.PERSONAS_PRUEBA !== false;
   function pintarEntrada() {
-    $('entradaLista').innerHTML = porArea('');
+    $('entradaLista').innerHTML = hayPrueba() ? porArea('') : '';
+    if (!hayPrueba()) modoEntrada = 'cuenta';
+    $('entradaModo').hidden = !hayPrueba();
     pintarModoEntrada();
   }
   /* --- Entrar con cuenta propia (correo, clave y el código del rol) --- */
@@ -85,11 +92,11 @@
     $('entradaPrueba').hidden = modoEntrada !== 'prueba';
     $('entradaCuenta').hidden = modoEntrada !== 'cuenta';
     const crear = modoCuenta === 'crear';
-    $('ctNombreF').hidden = !crear; $('ctCodigoF').hidden = !crear;
+    $('ctCodigoD').hidden = !crear; $('ctClaveAy').hidden = !crear; $('ctOlvide').hidden = crear;
     $('ctClave').autocomplete = crear ? 'new-password' : 'current-password';
     $('ctBoton').innerHTML = ico(crear ? 'mas' : 'flecha') + (crear ? 'Crear mi cuenta' : 'Entrar');
-    $('ctCambiar').textContent = crear ? 'Ya tengo cuenta: entrar' : 'No tengo cuenta: crearla con mi código';
-    $('ctTitulo').textContent = crear ? 'Crear tu cuenta' : 'Entrar con tu cuenta';
+    $('ctCambiar').textContent = crear ? 'Ya tengo cuenta: entrar' : 'Es mi primera vez: crear mi cuenta';
+    $('ctTitulo').textContent = crear ? 'Crear tu cuenta (con el correo con el que te invitaron)' : 'Entrar con tu cuenta';
   }
   async function enviarCuenta() {
     if (S.entrando) return;
@@ -97,14 +104,17 @@
     const nombre = $('ctNombre').value.trim(), correo = $('ctCorreo').value.trim(), clave = $('ctClave').value, codigo = nube.limpiarCodigo($('ctCodigo').value);
     const falla = (msg, id) => { err.textContent = msg; err.hidden = false; if (id) $(id).focus(); };
     err.hidden = true;
-    if (crear && nombre.length < 3) return falla('Escribe tu nombre completo.', 'ctNombre');
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return falla('Escribe tu correo.', 'ctCorreo');
     if (!clave) return falla('Escribe la clave.', 'ctClave');
-    if (crear && clave.length < 6) return falla('La clave debe tener al menos 6 caracteres.', 'ctClave');
-    if (crear && !window.DEMO.rolDeCodigo(codigo)) return falla('Escribe el código de tu rol tal cual te lo dieron (ejemplo: LOG-7KQ4-M2XP).', 'ctCodigo');
+    if (crear && clave.length < 10) return falla('La clave debe tener al menos 10 caracteres. Inventa una que solo tú sepas.', 'ctClave');
+    // El código es opcional: si no lo escribes, la app busca la invitación que la Jefe hizo a tu correo.
+    const conCodigo = crear && $('ctCodigoD').open && !!$('ctCodigo').value.trim();
+    if (conCodigo && nombre.length < 3) return falla('Escribe tu nombre completo.', 'ctNombre');
+    if (conCodigo && !window.DEMO.rolDeCodigo(codigo)) return falla('Escribe el código de tu rol tal cual te lo dieron (ejemplo: LOG-7KQ4-M2XP).', 'ctCodigo');
     S.entrando = true; $('ctBoton').disabled = true;
     try {
       if (!crear) { await nube.entrarCuenta(correo, clave); return; }
+      if (!conCodigo) { await nube.crearCuenta(correo, clave); return; }   // sigue la pantalla de confirmar el correo
       S.registrando = { nombre, codigo };
       await nube.crearCuenta(correo, clave);
       try { await nube.usarCodigo(nombre, codigo); }
@@ -114,11 +124,14 @@
   }
   // Cuenta sin rol todavía (código malo o sin escribir) o con el acceso quitado por el Jefe.
   function mostrarCuenta(p, msg) {
-    const sin = !!p.sinAcceso;
-    $('tCuenta').textContent = sin ? 'Tu acceso está pausado' : 'Falta el código de tu rol';
-    $('cuentaTxt').textContent = sin ? `La cuenta ${p.correo} está pausada. Habla con tu jefe para que te devuelva el acceso.`
-      : `Entraste como ${p.correo}, pero todavía no tienes rol. Escribe el código que te dio tu jefe: ese código decide qué puedes ver y hacer.`;
-    $('cuentaForm').hidden = sin;
+    const sin = !!p.sinAcceso, conf = !!p.sinConfirmar;
+    $('tCuenta').textContent = conf ? 'Confirma tu correo' : sin ? 'Tu acceso está pausado' : 'Tu correo no está en la lista';
+    $('cuentaTxt').textContent = conf ? `Te mandamos un correo a ${p.correo} con un enlace. Tócalo y vuelve aquí. Si no lo ves, revisa el correo no deseado (spam).`
+      : sin ? `La cuenta ${p.correo} está pausada. Habla con tu jefe para que te devuelva el acceso.`
+      : `Entraste como ${p.correo}, pero la Jefe no te ha invitado con ese correo, así que todavía no tienes rol. Pídele que te agregue. Si te dieron un código de rol, escríbelo aquí.`;
+    $('cuentaConfirmar').hidden = !conf;
+    $('cuConfErr').hidden = true;
+    $('cuentaForm').hidden = sin || conf;
     // El error se queda aunque llegue otra vez el aviso de «sin perfil» (pasa justo después de crear la cuenta).
     if (msg) S.errCuenta = msg;
     const m = sin ? '' : S.errCuenta || '';
@@ -153,15 +166,15 @@
   }
 
   /* ---------- sesión y datos ---------- */
-  function dejarDeEscuchar() { S.oyentes.forEach(f => { try { f(); } catch (e) {} }); S.oyentes = []; S.llegaron.clear(); S.erroresLectura = {}; }
+  function dejarDeEscuchar() { S.oyentes.forEach(f => { try { f(); } catch (e) {} }); S.oyentes = []; S.llegaron.clear(); S.suscritas.clear(); S.erroresLectura = {}; }
   async function alCambiarSesion(p) {
     const mia = ++S.sesion;
     dejarDeEscuchar();
     cerrarHoja('shPersona');
-    if (!p || !(p.sinPerfil || p.sinAcceso)) S.errCuenta = '';
-    if (!p) { $('cuNombre').value = ''; $('cuCodigo').value = ''; }
+    if (!p || !(p.sinPerfil || p.sinAcceso || p.sinConfirmar)) S.errCuenta = '';
+    if (!p) { $('cuNombre').value = ''; $('cuCodigo').value = ''; $('ctNombre').value = ''; $('ctCodigo').value = ''; $('ctCodigoD').open = false; }
     if (!p) { S.persona = null; S.registrando = null; error(S.motivoSalida || ''); S.motivoSalida = ''; pintarEntrada(); mostrar('vEntrada'); return; }
-    if (p.sinPerfil || p.sinAcceso) {
+    if (p.sinPerfil || p.sinAcceso || p.sinConfirmar) {
       S.persona = null;
       if (p.sinPerfil && S.registrando) return;   // se está guardando el código recién escrito: espera el perfil
       mostrarCuenta(p, p.error || ''); return;
@@ -195,14 +208,18 @@
   };
   const errorVisible = () => S.errorFijo || Object.values(S.erroresLectura || {})[0] || '';
   function escucharTodo() {
-    // Las personas y los códigos solo los leen el Gerente y el Jefe (para el panel «Personas y códigos»).
-    const p = S.persona, panel = !p.real ? [] : p.rol === 'gerente' ? ['usuarios', 'codigos', 'codigosDireccion'] : p.rol === 'jefe' ? ['usuarios', 'codigos'] : [];
+    // Las personas, los códigos y las invitaciones solo los lee la Jefe con cuenta propia (panel «Personas y permisos»).
+    const p = S.persona, panel = p.real && p.rol === 'jefe' ? ['usuarios', 'codigos', 'codigosDireccion', 'invitaciones'] : [];
     // La bandeja de correos (Gmail de prueba) solo la leen la Jefe y la Administrativa encargada.
     if (p.rol === 'jefe' || (p.rol === 'administrativo' && tieneExtra('encargada'))) panel.push('buzon');
     S.errBuzon = '';
-    // Las actas (con nombre y cédula) y la agenda de equipos solo las leen quienes ven Equipos.
-    const eq = permiso('equipos') !== 'no' ? ['hojas', 'tareasEq'] : [];
-    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'reuniones', 'necesidades', 'avisos', 'suscripciones'].concat(eq, panel).forEach(col => {
+    // Cada persona se suscribe solo a lo de los módulos que puede ver (las reglas de Firebase hacen lo mismo).
+    const ve = m => permiso(m) !== 'no';
+    const cols = ['avisos', 'suscripciones', 'ajustesApp']
+      .concat(ve('equipos') ? ['equipos', 'hojas', 'tareasEq'] : [], ve('inventario') ? ['compras', 'articulos', 'movimientos', 'solicitudes'] : [],
+        ve('vehiculos') ? ['vehiculos', 'novedades', 'entregas'] : [], ve('reuniones') ? ['reuniones', 'necesidades'] : [], panel);
+    cols.forEach(col => {
+      S.suscritas.add(col);
       S.oyentes.push(nube.escuchar(col, lista => {
         S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
         // «Faltan los datos de prueba» se quita cuando llegan artículos. Un error de permiso al cargar o al leer
@@ -216,7 +233,7 @@
         S.llegaron.add(col);   // así la pantalla deja de mostrar «cargando» y dice qué pasó
         // La bandeja dice su error dentro de Correos (por ejemplo, si todavía no se pegaron las reglas nuevas).
         if (col === 'buzon') { S.errBuzon = nube.explicar(e); pintarTodo(); return; }
-        if (['suscripciones', 'usuarios', 'codigos', 'codigosDireccion'].includes(col)) return;
+        if (['suscripciones', 'usuarios', 'codigos', 'codigosDireccion', 'invitaciones', 'ajustesApp'].includes(col)) return;
         S.erroresLectura = S.erroresLectura || {}; S.erroresLectura[col] = nube.explicar(e);
         error(errorVisible()); pintarTodo();
       }));
@@ -239,7 +256,8 @@
     $('cuentaPropia').hidden = !p.real;
     if (p.real) $('cuentaPropiaTxt').textContent = `${p.nombre} · ${p.correo} · ${p.rolTxt}. Si tocas una persona de prueba, sales de tu cuenta.`;
     // El panel solo sale con cuentas propias: las personas de prueba tienen la clave pública.
-    $('ajustesGente').hidden = !(p.real && ['gerente', 'jefe'].includes(p.rol));
+    $('ajustesGente').hidden = !(p.real && p.rol === 'jefe');
+    if (!hayPrueba()) $('personaLista').innerHTML = '';
     $('permNombre').textContent = p.nombre;
     $('permTabla').innerHTML = MODULOS.map(m => `<div><span>${esH(m.n)}</span>${pill(window.DEMO.PERMISO_TXT[permiso(m.k)], permiso(m.k) === 'no' ? 'none' : 's-disco')}</div>`).join('') +
       window.DEMO.EXTRAS.filter(e => tieneExtra(e.id)).map(e => `<div><span>Permiso extra</span>${pill(e.txt, 's-disco', 'check')}</div>`).join('');
@@ -296,7 +314,7 @@
     window.scrollTo(0, 0);
     pintarTodo();
   }
-  const cargando = col => !S.llegaron.has(col);
+  const cargando = col => S.suscritas.has(col) && !S.llegaron.has(col);
 
   // Cuenta lo pendiente de cada módulo para la persona que tiene la sesión.
   function pendientes() {
@@ -469,6 +487,33 @@
     $('ctForm').addEventListener('submit', e => { e.preventDefault(); enviarCuenta(); });
     $('cuentaForm').addEventListener('submit', e => { e.preventDefault(); guardarCodigo(); });
     $('cuSalir').onclick = () => nube.salir();
+    $('ctGoogle').onclick = async () => {
+      if (S.entrando) return;
+      S.entrando = true; $('ctErr').hidden = true; $('ctGoogle').disabled = true;
+      try { await nube.entrarGoogle(); }
+      catch (e) { $('ctErr').textContent = nube.explicar(e); $('ctErr').hidden = false; }
+      finally { S.entrando = false; $('ctGoogle').disabled = false; }
+    };
+    $('ctOlvide').onclick = async () => {
+      const correo = $('ctCorreo').value.trim(), err = $('ctErr');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) { err.textContent = 'Escribe tu correo arriba y toca otra vez «Olvidé mi clave».'; err.hidden = false; $('ctCorreo').focus(); return; }
+      err.hidden = true;
+      // Por seguridad la respuesta es la misma exista o no la cuenta (no se revela quién tiene cuenta).
+      try { await nube.recuperarClave(correo); toast(`Si ${correo} tiene cuenta, le llegó un correo para poner una clave nueva.`); }
+      catch (e) { if (e && ['auth/too-many-requests', 'auth/network-request-failed', 'sin-sdk'].includes(e.code)) { err.textContent = nube.explicar(e); err.hidden = false; } else toast(`Si ${correo} tiene cuenta, le llegó un correo para poner una clave nueva.`); }
+    };
+    $('cuReenviar').onclick = async () => {
+      const b = $('cuReenviar'), e = $('cuConfErr'); b.disabled = true; e.hidden = true;
+      try { await nube.reenviarConfirmacion(); toast('Listo: te mandamos otro correo.'); }
+      catch (er) { e.textContent = nube.explicar(er); e.hidden = false; }
+      finally { setTimeout(() => { b.disabled = false; }, 15000); }   // Firebase frena los reenvíos seguidos
+    };
+    $('cuYa').onclick = async () => {
+      const b = $('cuYa'), e = $('cuConfErr'); b.disabled = true; e.hidden = true;
+      try { if (!(await nube.yaConfirme())) { e.textContent = 'Todavía no aparece confirmado. Toca el enlace del correo y vuelve a tocar este botón.'; e.hidden = false; } }
+      catch (er) { e.textContent = nube.explicar(er); e.hidden = false; }
+      finally { b.disabled = false; }
+    };
     $('btnReiniciar').onclick = async () => {
       if (S.persona.rol !== 'jefe' || !S.persona.prueba) return;
       const ok = await confirmar('¿Reiniciar los datos de prueba?', 'Se borra todo lo que se haya cambiado en la demo (para todas las personas) y vuelven los datos de ejemplo con las fechas de hoy. No se puede deshacer.', 'Reiniciar');
@@ -512,7 +557,7 @@
 
   /* ---------- ayudas para inventario.js ---------- */
   window.App = Object.freeze({
-    S, $, esH, pill, cop, hace, fechaCorta, hoyISO, toast, permiso, tieneExtra, tablero, cargando, iniciales,
+    S, $, esH, pill, cop, hace, fechaCorta, hoyISO, toast, permiso, tieneExtra, tablero, cargando, iniciales, montoGerente,
     abrirHoja, cerrarHoja, confirmar, pintarTodo, diasHasta
   });
 

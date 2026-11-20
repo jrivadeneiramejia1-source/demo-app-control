@@ -126,6 +126,12 @@ export function getDocs(colRef) {
 // Copia de la regla de firestore.rules para crear un perfil: el código debe existir, estar activo y ser del mismo rol.
 function revisarPerfilNuevo(datos, ref, data) {
   if (ref.parent.id !== 'usuarios' || (datos.usuarios && datos.usuarios[ref.id])) return;
+  // Con invitación: la de su correo tiene que existir y decir el mismo nombre y rol (lo demás lo revisan las reglas reales).
+  if (data && data.codigo === 'invitacion') {
+    const inv = (datos.invitaciones || {})[String(data.correo || '').toLowerCase()];
+    if (!inv || inv.rol !== data.rol || inv.nombre !== data.nombre || data.activo !== true) throw crearError('permission-denied', 'Missing or insufficient permissions.');
+    return;
+  }
   const col = data && ['gerente', 'jefe'].includes(data.rol) ? 'codigosDireccion' : 'codigos';
   const c = (datos[col] || {})[data && data.codigo];
   if (!c || c.activo !== true || c.rol !== data.rol || data.activo !== true) throw crearError('permission-denied', 'Missing or insufficient permissions.');

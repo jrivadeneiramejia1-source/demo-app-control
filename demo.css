@@ -308,6 +308,15 @@ button.card .card-title { text-align: left; }
 .acta-dev span { padding: 4px 8px; min-height: 1.4em; }
 .acta-nota { font-size: .72rem; margin: 2px 0 0; }
 .acta-pie { font-size: .64rem; color: #4a5a66; margin-top: 10px; border-top: 1px solid #c3ced7; padding-top: 4px; }
+/* Entrada con Google, código opcional y panel de permisos por persona */
+#ctGoogle { width: 100%; justify-content: center; }
+.ct-o { text-align: center; margin: 10px 0 8px; }
+.ct-codigo { border: 1px dashed var(--line, rgba(0,0,0,.2)); border-radius: 12px; padding: 0 12px; margin: 4px 0 8px; }
+.ct-codigo > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; font-size: .92rem; }
+.ct-codigo[open] > summary { border-bottom: 1px solid var(--line, rgba(0,0,0,.12)); margin-bottom: 8px; }
+.perm-grid { display: grid; gap: 4px 12px; }
+@media (min-width: 560px) { .perm-grid { grid-template-columns: 1fr 1fr; } }
+.err-txt { color: var(--danger, #B0281F); }
 #impresion { display: none; }
 @media print {
   body.imprimiendo > *:not(#impresion) { display: none !important; }

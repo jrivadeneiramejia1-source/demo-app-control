@@ -10,6 +10,10 @@ window.FIREBASE_CONFIG = {
   appId: "1:433360043841:web:da6dc035b1f025eb572bc0"
 };
 
+/* Personas de prueba (clave pública). Para uso real con datos de la empresa: pon false. Así no se muestran ni en la entrada ni en el menú,
+   y además la Jefe las apaga en Firebase (Personas y permisos > Seguridad), que es lo que las reglas hacen cumplir. */
+window.PERSONAS_PRUEBA = true;
+
 /* Avisos al teléfono (Web Push, gratis) con el Worker "avisos-demo" de Cloudflare.
      url:   la dirección del Worker avisos-demo.
      vapid: la llave PÚBLICA de generar-llaves.html (no es secreta; la privada está solo en Cloudflare como VAPID_D). */

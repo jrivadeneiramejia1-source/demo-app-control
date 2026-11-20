@@ -2,6 +2,9 @@
 // Estado en localStorage para que sobreviva recargas y se vea en otras pestañas:
 //   '__fb_usuarios' = { correo: { uid, clave } }
 //   '__fb_actual'   = uid del usuario con sesion, o '' si no hay.
+//   cada usuario guarda también { verificado, proveedor }: «verificado» es el correo confirmado (se confirma tocando el enlace del correo;
+//   en las pruebas se simula con __fbConfirmar(correo)). '__fb_correos' = lista de correos que la app mandó (confirmar o clave).
+// Google: antes de tocar el botón se pone window.__fbGoogle = { correo } (la cuenta que «escoge» la persona); sin eso, la ventana «se cierra».
 // Simulacion de fallo: window.__fbFallarAuth = 'auth/network-request-failed'
 // hace fallar la PROXIMA llamada a signIn/create con ese code (y se limpia sola).
 
@@ -15,6 +18,16 @@ function leerUsuarios() {
 }
 function guardarUsuarios(u) { localStorage.setItem(K_USUARIOS, JSON.stringify(u)); }
 function uidActual() { return localStorage.getItem(K_ACTUAL) || ''; }
+const K_CORREOS = '__fb_correos';
+function anotarCorreo(tipo, correo) {
+  let l = []; try { l = JSON.parse(localStorage.getItem(K_CORREOS) || '[]') || []; } catch { l = []; }
+  l.push({ tipo, correo, en: Date.now() }); localStorage.setItem(K_CORREOS, JSON.stringify(l));
+}
+// Simula tocar el enlace del correo de confirmación.
+window.__fbConfirmar = (correo) => {
+  const u = leerUsuarios(), c = String(correo).trim().toLowerCase();
+  if (u[c]) { u[c].verificado = true; guardarUsuarios(u); }
+};
 
 // Crea un error con la forma de los errores de Firebase (e.code).
 function crearError(code) {
@@ -52,7 +65,11 @@ function usuarioActual() {
   const usuarios = leerUsuarios();
   const correo = Object.keys(usuarios).find((c) => usuarios[c].uid === uid);
   if (!correo) { cacheUsuario = null; return null; }
-  cacheUsuario = { uid, email: correo, getIdToken: () => Promise.resolve('token-falso-' + uid) };
+  cacheUsuario = {
+    uid, email: correo, getIdToken: () => Promise.resolve('token-falso-' + uid), reload: () => Promise.resolve(),
+    get emailVerified() { return !!(leerUsuarios()[correo] || {}).verificado; },
+    get providerData() { return [{ providerId: (leerUsuarios()[correo] || {}).proveedor || 'password' }]; }
+  };
   return cacheUsuario;
 }
 
@@ -114,13 +131,38 @@ export function createUserWithEmailAndPassword(_auth, email, pass) {
     const usuarios = leerUsuarios();
     if (usuarios[correo]) throw crearError('auth/email-already-in-use');
     const uid = 'u-' + Math.random().toString(36).slice(2, 10).padEnd(8, '0');
-    usuarios[correo] = { uid, clave: pass };
+    usuarios[correo] = { uid, clave: pass, verificado: false, proveedor: 'password' };
     guardarUsuarios(usuarios);
     localStorage.setItem(K_ACTUAL, uid); // crear tambien inicia sesion
     notificar();
     return { user: usuarioActual() };
   });
 }
+
+export function sendEmailVerification(user) {
+  return conRetraso(() => { consumirFalloSimulado(); anotarCorreo('confirmar', user.email); });
+}
+export function sendPasswordResetEmail(_auth, email) {
+  return conRetraso(() => { consumirFalloSimulado(); anotarCorreo('clave', normalizarCorreo(email)); });
+}
+export class GoogleAuthProvider { setCustomParameters() {} }
+export function signInWithPopup(_auth, _prov) {
+  return conRetraso(() => {
+    consumirFalloSimulado();
+    const g = window.__fbGoogle;
+    if (!g || !g.correo) throw crearError('auth/popup-closed-by-user');
+    const usuarios = leerUsuarios(), correo = normalizarCorreo(g.correo);
+    // Con Google el correo ya viene confirmado (y si ya había cuenta con clave, se une a ella).
+    if (!usuarios[correo]) usuarios[correo] = { uid: 'g-' + Math.random().toString(36).slice(2, 10).padEnd(8, '0'), clave: '', proveedor: 'google.com' };
+    usuarios[correo].verificado = true;
+    guardarUsuarios(usuarios);
+    localStorage.setItem(K_ACTUAL, usuarios[correo].uid);
+    notificar();
+    return { user: usuarioActual() };
+  });
+}
+export const signInWithRedirect = signInWithPopup;
+export function getRedirectResult(_auth) { return Promise.resolve(null); }
 
 export function signOut(_auth) {
   return conRetraso(() => {
