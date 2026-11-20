@@ -83,7 +83,7 @@ service cloud.firestore {
     }
     function esJefe() { return esDemo() && rol() == 'jefe'; }
     function esGerente() { return esDemo() && rol() == 'gerente'; }
-    // Permisos extra que el Gerente o la Jefe le marcan a una cuenta propia (las personas de prueba no tienen).
+    // Permisos extra que el Gerente o la Jefe le marcan a una cuenta propia (y los fijos de las personas de prueba).
     function extras() { return esCuenta() ? perfil().get('extras', []) : esPrueba() ? extrasPrueba().get(request.auth.token.email, []) : []; }
     // Permisos extra de las personas de prueba (deben coincidir con personas.js): Valentina (Soporte) revisa las actas.
     function extrasPrueba() { return { 'valentina.ruiz@example.com': ['actas'] }; }
@@ -114,33 +114,50 @@ service cloud.firestore {
       return nuevo().historial is list && nuevo().historial.size() == antes().get('historial', []).size() + 1
         && nuevo().historial[0:antes().get('historial', []).size()] == antes().get('historial', []);
     }
+    function rutaHoja(h) { return /databases/$(database)/documents/hojas/$(h); }
+    function ultimoPaso() { return nuevo().historial[nuevo().historial.size() - 1]; }
     match /equipos/{id} {
       allow read: if esDemo();
       allow delete: if esJefe();
-      allow create: if esJefe() || (esEncargadoEq() && nuevo().estado == 'bodega' && nuevo().serial is string && nuevo().historial.size() == 1);
+      allow create: if (esJefe() && esPrueba()) || (esEncargadoEq() && id.matches('^eq-[a-z0-9]{4,30}$')
+        && nuevo().estado == 'bodega' && nuevo().serial is string && nuevo().serial.size() <= 30 && nuevo().historial.size() == 1);
       // El Encargado entrega, recibe, hace mantenimiento y backup (siempre con una línea de historial).
-      allow update: if esJefe() || (esEncargadoEq()
-        && soloCambia(['estado', 'asignadoA', 'proyecto', 'ultimoMtto', 'ultimoBackup', 'obs', 'pendientes', 'historial'])
-        && nuevo().estado in ['asignado', 'bodega', 'recibido'] && historialEqSigue());
+      // Entregar o recibir (pasar a «asignado» o «recibido») solo junto con el acta en esa misma escritura.
+      allow update: if (esJefe() && esPrueba()) || (esEncargadoEq()
+        && soloCambia(['estado', 'asignadoA', 'asignadoCedula', 'proyecto', 'ultimoMtto', 'ultimoBackup', 'obs', 'pendientes', 'historial'])
+        && nuevo().estado in ['asignado', 'bodega', 'recibido'] && historialEqSigue()
+        && (nuevo().estado == antes().estado || nuevo().estado == 'bodega'
+            || (ultimoPaso().hojaId is string && existsAfter(rutaHoja(ultimoPaso().hojaId))
+                && ultimoPaso().tipo == (nuevo().estado == 'asignado' ? 'entrega' : 'devolucion'))));
     }
-    // Actas: las crea el Encargado con las dos firmas; Soporte (con el permiso de actas) las revisa una vez;
-    // si tienen un problema, el Encargado las corrige y vuelven a revisión. No se borran (solo la Jefe).
+    // Actas (como la hoja de papel): las crea el Encargado con la firma de quien recibe; el id es «ac» + el número,
+    // así dos actas no quedan con el mismo número. La devolución se agrega a la misma acta (con su firma).
+    // Soporte (con el permiso de actas) las revisa, pero nadie revisa las suyas. Si tienen un problema, el Encargado
+    // las corrige y vuelven a revisión. No se borran (solo la Jefe).
     match /hojas/{id} {
       allow read: if veEquipos();
       allow delete: if esJefe();
       allow create: if (esJefe() && esPrueba()) || (esEncargadoEq()
-        && nuevo().tipo in ['entrega', 'devolucion'] && nuevo().porRol == rol() && nuevo().revision == 'pendiente'
+        && nuevo().numero is int && id == 'ac' + string(nuevo().numero)
+        && nuevo().porRol == rol() && nuevo().revision == 'pendiente' && nuevo().devoluciones == []
         && nuevo().persona is string && nuevo().persona.size() >= 5 && nuevo().persona.size() <= 80
-        && nuevo().cedula is string && nuevo().cedula.size() >= 5 && nuevo().cedula.size() <= 12
+        && nuevo().cedula is string && nuevo().cedula.matches('^[0-9]{5,12}$')
         && nuevo().equipos is list && nuevo().equipos.size() >= 1 && nuevo().equipos.size() <= 20
-        && firmaOk(nuevo().firmaPersona) && firmaOk(nuevo().firmaEncargado)
-        && !nuevo().keys().hasAny(['foto']));
-      allow update: if esJefe()
-        || (revisaActas() && antes().revision == 'pendiente' && nuevo().revision in ['ok', 'problema']
+        && nuevo().otros is list && nuevo().otros.size() <= 30
+        && firmaOk(nuevo().firmaPersona) && !nuevo().keys().hasAny(['foto']));
+      allow update: if (esJefe() && esPrueba())
+        || (revisaActas() && antes().revision == 'pendiente' && antes().porRol != rol() && nuevo().revision in ['ok', 'problema']
             && soloCambia(['revision', 'revisadaPor', 'revisadaEn', 'notaRevision']))
         || (esEncargadoEq() && antes().revision == 'problema' && nuevo().revision == 'pendiente'
-            && soloCambia(['persona', 'cedula', 'cargo', 'nota', 'firmaPersona', 'revision', 'revisadaPor', 'revisadaEn'])
-            && firmaOk(nuevo().firmaPersona));
+            && soloCambia(['persona', 'cedula', 'proyecto', 'codigoProyecto', 'firmaPersona', 'revision', 'revisadaPor', 'revisadaEn'])
+            && nuevo().persona is string && nuevo().persona.size() >= 5 && nuevo().persona.size() <= 80
+            && nuevo().cedula is string && nuevo().cedula.matches('^[0-9]{5,12}$') && firmaOk(nuevo().firmaPersona))
+        // Devolución: una más al final (las anteriores iguales), con su firma; el acta vuelve a revisión.
+        || (esEncargadoEq() && nuevo().revision == 'pendiente'
+            && soloCambia(['devoluciones', 'revision', 'revisadaPor', 'revisadaEn', 'notaRevision'])
+            && nuevo().devoluciones is list && nuevo().devoluciones.size() == antes().get('devoluciones', []).size() + 1
+            && nuevo().devoluciones[0:antes().get('devoluciones', []).size()] == antes().get('devoluciones', [])
+            && firmaOk(nuevo().devoluciones[nuevo().devoluciones.size() - 1].firma));
     }
     // Agenda: Soporte o la Jefe le programan tareas al Encargado; él las marca hechas.
     match /tareasEq/{id} {
@@ -148,7 +165,7 @@ service cloud.firestore {
       allow delete: if esJefe();
       allow create: if (esJefe() && esPrueba()) || (esDemo() && rol() in ['soporte', 'jefe'] && nuevo().pidioRol == rol()
         && nuevo().estado == 'pendiente' && nuevo().tipo in ['mantenimiento', 'backup', 'revision']);
-      allow update: if esJefe() || (esEncargadoEq() && antes().estado == 'pendiente' && nuevo().estado == 'hecha'
+      allow update: if (esJefe() && esPrueba()) || (esEncargadoEq() && antes().estado == 'pendiente' && nuevo().estado == 'hecha'
         && soloCambia(['estado', 'hechaPor', 'hechaEn', 'resultado']));
     }
 
