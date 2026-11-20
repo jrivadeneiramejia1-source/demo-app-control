@@ -23,83 +23,121 @@
     }
 
     // ---------- EQUIPOS ----------
+    // Los que están en Recibidos esperan mantenimiento y backup (pendientes) antes de volver a bodega.
     function equipo(serial, tipo, marca, modelo, estado, asignadoA, proyecto, ultimoMtto, ultimoBackup, obs, historial) {
-      return { serial, tipo, marca, modelo, estado, asignadoA, proyecto, ultimoMtto, ultimoBackup, obs, historial };
+      return { serial, tipo, marca, modelo, estado, asignadoA: estado === 'bodega' ? '' : asignadoA, proyecto, ultimoMtto, ultimoBackup, obs,
+        pendientes: estado === 'recibido' ? { mtto: true, backup: true } : { mtto: false, backup: false }, historial };
     }
-    const H = (n, tipo, persona, nota) => ({ fecha: dias(n), tipo, persona, nota });
+    const H = (n, tipo, persona, nota, hojaId) => Object.assign({ fecha: dias(n), tipo, persona, nota }, hojaId ? { hojaId } : {});
 
     const equipos = {
       'eq-001': equipo('DEMO-0001', 'Portátil', 'Lenovo', 'ThinkPad E14', 'asignado', 'Jorge Ibarra', 'Proyecto Costa Norte',
         dias(-40), dias(-12), '', [
-          H(-120, 'mantenimiento', 'Valentina Ruiz', 'Limpieza general y cambio de pasta térmica'),
-          H(-60, 'entrega', 'Jorge Ibarra', 'Entregado para el trabajo de campo'),
-          H(-40, 'mantenimiento', 'Valentina Ruiz', 'Revisión de rutina y actualización del sistema'),
-          H(-12, 'backup', 'Valentina Ruiz', 'Copia de las carpetas de reuniones')
+          H(-120, 'mantenimiento', 'Daniel Ortiz', 'Limpieza general y cambio de pasta térmica'),
+          H(-60, 'entrega', 'Jorge Ibarra', 'Entregado para el trabajo de campo', 'ho-001'),
+          H(-40, 'mantenimiento', 'Daniel Ortiz', 'Revisión de rutina y actualización del sistema'),
+          H(-12, 'backup', 'Daniel Ortiz', 'Copia de las carpetas de reuniones')
         ]),
       'eq-002': equipo('DEMO-0002', 'Portátil', 'HP', 'ProBook 440', 'asignado', 'Paola Ríos', 'Proyecto Costa Norte',
         dias(-210), dias(-30), 'Batería dura poco, revisar en el próximo mantenimiento', [
-          H(-210, 'mantenimiento', 'Valentina Ruiz', 'Limpieza de ventilador y revisión de disco'),
+          H(-210, 'mantenimiento', 'Daniel Ortiz', 'Limpieza de ventilador y revisión de disco'),
           H(-150, 'entrega', 'Paola Ríos', 'Entregado a Paola para el registro de asistentes'),
-          H(-30, 'backup', 'Valentina Ruiz', 'Copia de fotos y listas de asistencia')
+          H(-30, 'backup', 'Daniel Ortiz', 'Copia de fotos y listas de asistencia')
         ]),
       'eq-003': equipo('DEMO-0003', 'Portátil', 'Dell', 'Latitude 5420', 'asignado', 'Andrés Mendoza', 'Proyecto Ruta Alta',
         dias(-95), dias(-20), '', [
-          H(-95, 'mantenimiento', 'Valentina Ruiz', 'Mantenimiento preventivo'),
+          H(-95, 'mantenimiento', 'Daniel Ortiz', 'Mantenimiento preventivo'),
           H(-90, 'entrega', 'Andrés Mendoza', 'Entregado para el Proyecto Ruta Alta'),
-          H(-20, 'backup', 'Valentina Ruiz', 'Copia de documentos del proyecto')
+          H(-20, 'backup', 'Daniel Ortiz', 'Copia de documentos del proyecto')
         ]),
       'eq-004': equipo('DEMO-0004', 'Tableta', 'Samsung', 'Galaxy Tab A8', 'asignado', 'Liliana Torres', 'Proyecto Ruta Alta',
         dias(-70), '', 'Se usa para tomar fotos y firmas en las reuniones', [
-          H(-70, 'mantenimiento', 'Valentina Ruiz', 'Actualización y limpieza de archivos'),
-          H(-35, 'entrega', 'Liliana Torres', 'Entregada para las reuniones de la ruta alta')
+          H(-70, 'mantenimiento', 'Daniel Ortiz', 'Actualización y limpieza de archivos'),
+          H(-35, 'entrega', 'Liliana Torres', 'Entregada para las reuniones de la ruta alta', 'ho-002')
         ]),
       'eq-005': equipo('DEMO-0005', 'GPS', 'Garmin', 'GPSMAP 65', 'asignado', 'Camilo Suárez', 'Proyecto Costa Norte',
         dias(-100), '', '', [
-          H(-100, 'mantenimiento', 'Valentina Ruiz', 'Carga de mapas y revisión de batería'),
-          H(-25, 'entrega', 'Camilo Suárez', 'Entregado para la salida a la costa')
+          H(-100, 'mantenimiento', 'Daniel Ortiz', 'Carga de mapas y revisión de batería'),
+          H(-25, 'entrega', 'Camilo Suárez', 'Entregado para la salida a la costa', 'ho-005')
         ]),
       'eq-006': equipo('DEMO-0006', 'Celular', 'Motorola', 'Moto G54', 'asignado', 'Carlos Pinto', 'Proyecto Costa Norte',
         dias(-55), '', '', [
-          H(-55, 'mantenimiento', 'Valentina Ruiz', 'Limpieza de memoria y actualización'),
+          H(-55, 'mantenimiento', 'Daniel Ortiz', 'Limpieza de memoria y actualización'),
           H(-50, 'entrega', 'Carlos Pinto', 'Entregado al conductor para el contacto en ruta')
         ]),
       'eq-007': equipo('DEMO-0007', 'Portátil', 'Lenovo', 'ThinkPad E14', 'bodega', 'Bodega', '',
         dias(-230), dias(-45), 'Listo para entregar', [
-          H(-230, 'mantenimiento', 'Valentina Ruiz', 'Mantenimiento completo'),
+          H(-230, 'mantenimiento', 'Daniel Ortiz', 'Mantenimiento completo'),
           H(-150, 'entrega', 'Jorge Ibarra', 'Entregado para el trabajo de campo'),
           H(-45, 'devolucion', 'Jorge Ibarra', 'Devuelto al terminar el proyecto'),
-          H(-45, 'backup', 'Valentina Ruiz', 'Copia de la información antes de guardarlo')
+          H(-45, 'backup', 'Daniel Ortiz', 'Copia de la información antes de guardarlo')
         ]),
       'eq-008': equipo('DEMO-0008', 'Impresora', 'Epson', 'EcoTank L3250', 'bodega', 'Bodega', '',
         dias(-60), '', 'Tiene tinta completa', [
-          H(-60, 'mantenimiento', 'Valentina Ruiz', 'Limpieza de cabezal y revisión de tanques')
+          H(-60, 'mantenimiento', 'Daniel Ortiz', 'Limpieza de cabezal y revisión de tanques')
         ]),
       'eq-009': equipo('DEMO-0009', 'Disco duro externo', 'Seagate', 'Expansion 2 TB', 'bodega', 'Bodega', '',
         dias(-20), dias(-20), 'Disco con copias de reuniones anteriores', [
           H(-80, 'entrega', 'Paola Ríos', 'Entregado para guardar videos de reuniones'),
           H(-22, 'devolucion', 'Paola Ríos', 'Devuelto con las copias terminadas'),
-          H(-20, 'mantenimiento', 'Valentina Ruiz', 'Revisión del disco sin errores')
+          H(-20, 'mantenimiento', 'Daniel Ortiz', 'Revisión del disco sin errores')
         ]),
       'eq-010': equipo('DEMO-0010', 'Portátil', 'HP', 'ProBook 440', 'recibido', 'Liliana Torres', 'Proyecto Ruta Alta',
         dias(-190), dias(-75), 'Teclado con una tecla floja', [
-          H(-190, 'mantenimiento', 'Valentina Ruiz', 'Mantenimiento preventivo'),
+          H(-190, 'mantenimiento', 'Daniel Ortiz', 'Mantenimiento preventivo'),
           H(-130, 'entrega', 'Liliana Torres', 'Entregado para el Proyecto Ruta Alta'),
-          H(-75, 'backup', 'Valentina Ruiz', 'Copia de documentos'),
-          H(-2, 'devolucion', 'Liliana Torres', 'Traído para mantenimiento por la tecla floja')
+          H(-75, 'backup', 'Daniel Ortiz', 'Copia de documentos'),
+          H(-2, 'devolucion', 'Liliana Torres', 'Traído para mantenimiento por la tecla floja', 'ho-003')
         ]),
       'eq-011': equipo('DEMO-0011', 'Tableta', 'Lenovo', 'Tab M10', 'recibido', 'Jorge Ibarra', 'Proyecto Costa Norte',
         dias(-80), '', 'No carga bien, probar el cable y el puerto', [
-          H(-80, 'mantenimiento', 'Valentina Ruiz', 'Actualización del sistema'),
+          H(-80, 'mantenimiento', 'Daniel Ortiz', 'Actualización del sistema'),
           H(-45, 'entrega', 'Jorge Ibarra', 'Entregada para el trabajo de campo'),
-          H(-1, 'devolucion', 'Jorge Ibarra', 'Traída porque no carga bien')
+          H(-1, 'devolucion', 'Jorge Ibarra', 'Traída porque no carga bien', 'ho-004')
         ]),
       'eq-012': equipo('DEMO-0012', 'Portátil', 'Dell', 'Latitude 5420', 'recibido', 'Andrés Mendoza', 'Proyecto Ruta Alta',
         dias(-215), dias(-100), 'Pantalla con una raya y el equipo se calienta', [
-          H(-215, 'mantenimiento', 'Valentina Ruiz', 'Limpieza interna'),
+          H(-215, 'mantenimiento', 'Daniel Ortiz', 'Limpieza interna'),
           H(-170, 'entrega', 'Andrés Mendoza', 'Entregado para el Proyecto Ruta Alta'),
-          H(-100, 'backup', 'Valentina Ruiz', 'Copia de archivos del proyecto'),
-          H(0, 'devolucion', 'Andrés Mendoza', 'Traído para revisar el calentamiento')
+          H(-100, 'backup', 'Daniel Ortiz', 'Copia de archivos del proyecto'),
+          H(0, 'devolucion', 'Andrés Mendoza', 'Traído para revisar el calentamiento', 'ho-006')
         ])
+    };
+
+    // ---------- ACTAS DE ENTREGA Y DEVOLUCIÓN (virtuales, firmadas en la pantalla) ----------
+    // Las llena el Encargado de equipos con la persona; le llegan a Soporte para revisarlas. Las firmas son garabatos inventados.
+    const FIRMAS = ['data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWgAAAB4AQAAAAD3P1VXAAADFklEQVR42u1YsY7TQBB9u2fJqS4W1RURccEHUAbp0FkI6Vo+gU+4kuKkM6K5AglKSiSa+wsc7iSuQnwBJOQkKJCwIwoHfDsUM3Z27U3QlSBvkfXGz+M3M29mN1GEGwyNHt2je3SP7tH/F/rbVrRJnRvFaCv6dyYXOX+a7UxmMr8CAKjPPnpUj3zIswmJiOg8p+6wbJc8LYXwIN3GpDgW2sz/Atk2JtMpz08LIiIKqzGvU4vJGn0+5zlk9NCwHwYnPt4XEQDgehACAEWKv/61IYIhAKC6W6+fcEpN5kOfSsKTIAVgYlQAgIXXdn06eNMELgEABF60iYIUAJ5DZ4y9DQC4VDMPuop5jmSZblcsv5hi1MaGAICXXnTZNSbfHHnQufBd3x7Iu3y2567dFRBkNkUX/U5Ck3QIlR500HiHiXXLfVq3UlmPJZqnRx7FDonGRFQS0XsiWlCzXnQ1SJETKjuCLSYrAHaFj6ziXwG7Ht6xa+XKaRc2OkiBKmni3IyJ1Ta6nW3i0dGDukoctC2TXQCX4nzgeKsB6GzNb+l6a/a8TFQrDZbzQdZBf2lFsS6MpNt9xkTPiGguOSwljwVfmnEnl4EUy5WHTd5hciqpFo4Uc4NZiUs22i4Wz3jStk0R2PlTzq1JmN3SrQhBG9kdyCfCfeC7hZ6wqHSrnWhx+jrCJ8d2lQBQOYwjRXE5LmuY7lQqoDOWohK5jI9xYaFH+Jgyz8rJXS3X+7UHXNh0KJItHXGl0tfik4GFprXUUqyLvUniXhZZ6Og4FokWTqEl0teCD7GFHpzVdF870ShFlfqnrcFKukpR7hAR0Qvi/WxRHfCN2YmlQb1TJ3jfyaWRENHIjom6A2cfZtkAVKbAXKnGmrabYChteSJ8oyOl1AERwaoC4JGvF02TQLV+BzsbXPCQszOq7inggK7DjacCIqr4aJJCcWzM4ebzCaD3UCil6OsP3odV+9DhbrWpCgnAMufdD2ebmMwA0FvJ0pT8o/E6j6xt5Fb1l9OjBUY4utFZ8/EGtPL9D2H0TdD92b5H9+ge/U+j/wARzwHUvuhttwAAAABJRU5ErkJggg==',
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWgAAAB4AQAAAAD3P1VXAAACzElEQVR42u2YsW7bMBCGf8pCrQKF7aFAPRi10b5ARg8FrAfoQ/QRsnRNmKBAs8UP0QdRiwL12EeQCz+A7MkGFF6Hn5JISk7aoegiLgrJ747H492RjhL8RYvQ0z3d0z3d0z39P+gP3njGT3iHiW1mLE7Lhvzi2h2VliUpVZ86Vde0OXJ+AwAYFxoAzFXWTZdWiErXLx7f5fEdhS40xzMAKPU5n1zx8x4AsHjCg3sCx9sMgEABAE4q76Z/jQEARdXP/+QstyoHYOhHHM7RcaIB4FvVv3SgvEVvrJCna0ehLy16Qu4Ol47n7Nk86DBO5mbFaLkXkaPIDxER9mQ6DuPEeniCJWD9BwBLABjuY98SAZ1hvU5pmQTbjPzYa1oJwFhNi1lAG/qsTDFz/FwFwKAMdOvKBNtGjWz7dEq7IY1RM2llTRrS1gv76lTcBdu6jwgWHTayTZRHLeGhNzDq1H3ghDUhAWLdUWza1Sdu4sPKnlr0rolEHZrfqTuYyOoobtN2Yk1s3dil3QxydMeeCSp3hRxaUE1IqzJEmZtPEQDjFhyovBKqZHOPLusJ48Rtk8aJR8e1Uj84TMrBLNylVVpqFqC0yjGbfS4d5dRXr20Yw6XmoPbOGcXNJ2nidhn6ZeHpVlZ6yfC3WfW6SnoJzvLj+MHpGZogjKbSTfCIJT4CgBkr7IJLTLxdOHSa2uEYAMYUSvSBBjkXRAQAz9kXTY/rrVsEnTpA+g3/nmYJACRZRG/tuFIYsS+tN39mxL6Dp8CV9t2ZNjhOiNGwYsMgyZ2wci/mm7mIiAEL8OBeROQBCeYV4NHFimPzSrYAsPp85p63F/Caz4m3W/VKxOR3HW8IERGpXwwlgIuViIgZOY8Ln2bLASUiJe2K5o/QgN2kGCu7OmP3SSl1LVJ4ZXca1DG2rykGXT/unzm5qmogXzz9ClP9/wp6uqd7uqf/Gf0bp0nBKAiT+AMAAAAASUVORK5CYII=',
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWgAAAB4AQAAAAD3P1VXAAADNklEQVR42u2XsY7jVBSGPzsWcbFKIkACoUhxgQQPQDEVY/EizCOEfkUMWontdt9gRcdbYGCkmSeg9sAUFKtVMlvgLOb+FDc3Pk7sGbYDKa58x59P/nv+c871ROItrpgTfaJP9Ik+0f9Nunor+od76ejgbEhrgJfvPxDbS1ADwK8PKfES3vhFaQg3rLu+AGBl/vRXYRbaXSNJUvVakly60v6qz9v7EFszv2kH4GZlK6vuUeK8vN8AaD4G4M8cYFP16P4UgMSH+6ICWF8f+hXo5hyA6zEA36wBvn8MEC9bOgnJeGJCbKYAfFsBXKbHOVk3K0la1JL0i55JctONJE2vjnMS7W6SAig5A5gNenlHCSiz8vxiNu/JSWT2/pQ54HLaAIfOrwGXx61T4BM0OaZvg2flgVSXqy/2Y6ApdoIn7YK06KE/H+yY8oi+ZgFsiSpw+U5xUkBTJFVP7FlxEHIbkHUPbQ32Ju3eieoj+nmwZGkexeV+/4ex4xLu/G2xNwCA/N5Z1RCiAnehAgK9BWVEhy/dhptJX2yfqDNTNVFl3gl0m4DbXnfSw9guN9nYBsNCw3TouLxnUKb3zu+5TfsSSqt0RzcFnJkf94b1dlpUPXgo1J3Y230bTvaO+nTOIC55aehlsLC98tCQhR3L8d7frtTabDkK89HmZDKougrtE3t5rYnjME5cDpOwm2S4Bm2K5Pf11NBzroGxnTRzM1DagR/bg8h1qrzt0zdhHsUAKp73dKRf5MCXzsb+sPSPmtwU37b9uVmeGTr5Kdvr6xTkbvHoMjf0KDRq0Z/8uHs2vJAkd34jSQu9kLTR75K0aCRJTedsuOgkuuj2PzA67oYolJiZ78tuuVkvq8vWvjQUwyaK0uNzXtJiLElXbiWp1neSyoypAWTpZ1NJumo8PS5gcfXawkpsBc18hRSglEyC21ePhnreZQCu+TuK4q1TcfxVZunPADafpGNJo68zgMnPw99s+U0UffDHV41J25Nu6bdbKN5lIal+T5IaVpJUd1Jic/LjjXd5JEnOP6gXHTq2Q8G7nABEvmCTi0HdH9kx8U6nQAa+NYEq+9dfpqf/BE70iT7R/3/6H8WB1q/RBnFCAAAAAElFTkSuQmCC',
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAWgAAAB4AQAAAAD3P1VXAAADBUlEQVR42u2Yu47TQBSGv/EakmKVBIkKRbsWvMAWFEFCYPEC8AiUlBHVFit5KpYK8gAUW1JCRwVBXJSWN/CiFDRI2UDhIK8PhZ14xp5Nsg0SkqfIxfl8/M+5zVGUcInl0dAN3dAN3dD/hpZL0X/0pZSML/i8eri5Zl0REYlERNJ9qa2K7QTgfAww3ajk1xHAbwBOhxt1hwDfYoCrG21PA4CvAEw2+6QD0M41DDbRub0RAL1tIz8A0EZwz530CECC/EsfyPLfp9qmc6/RKqMWGJkTVGz/rFrNVzrTgOyObToOV0QWmv45ATio2PYmFT8W9/gzIHsQ2/SXIyALfb30Rr4WO4krB1ufRCSN0kgkkUREUklE5EyORSSRrpWD0t6r+Dw1M4dDW0mvLLKFcc+cvnmloLOgB6TaGwP4Ghb4hv67Fp3SXlOS82qehGUZzs0ULt73bFr7NcW5qg4wXWLecmdeDKBimBacua5v1asmxWvboueoGqliOysLOpc7dO+vVjumY4cwKayil0U3qnhwugyxuWZO27kLEvfTfb0qkpXticsbA4Mr6Vxmf1nuPbCbWhau6RB2wliR8nJHjGp6RtAvrKa6brtTKfcLz4ZBdTcDq7ctbDrNgHalVUFWxt+k98qu1LFaVa54XumaaehS2XLr7iaAr0sN5l6HRog9gLbWyxOvtcV5+RYgNiOXheDrBTAwwuAB+DHgzcoId1bNx2HbuwqO4lnuYWTTKgA4THVZGYmuNotSd2x2Pg0tZmVCGYHO6dcA98x2qSr5Y9KPAPYXRoJ+d6W3md89bZTXGFDxtBIB3zg/Tl44ritzIjJsq6eAivP8fA7AHaWidMdpO+8Rs9UxqQgP3sD5K/fJfXvVRbz315SK5GEIeI8vmpRE5PhUBPQHEZGX3fWTEqS3lIqyd2P3wGffDEFLRKQnIiKf99fYVkpF8jEAOMOaBlw+iTSw88NQFa6ZZjTAbg/gmTt7/eqFtvH0m/e3m5GfuIfgGn0lLNvUjdpR1PzH0dAN3dD/Af0XgAJg75VLhSsAAAAASUVORK5CYII='];
+    const COMPROMISO = {
+      entrega: 'Recibo los equipos descritos en esta acta en el estado indicado. Me comprometo a cuidarlos, a usarlos solo para el trabajo y a devolverlos con sus accesorios al terminar el proyecto o cuando la empresa los pida. Si se dañan o se pierden, aviso de inmediato.',
+      devolucion: 'Devuelvo los equipos descritos en esta acta en el estado indicado. Quien los recibe revisa su estado y sus accesorios en el momento.'
+    };
+    let numero = 0;
+    function hoja(tipo, persona, cedula, cargo, n, proyecto, ids, revision, extra) {
+      const eqs = ids.map(([id, estado, accesorios, obs]) => ({ id, serial: equipos[id].serial, tipo: equipos[id].tipo, marca: equipos[id].marca, modelo: equipos[id].modelo, estado, accesorios, obs: obs || '' }));
+      numero++;
+      return Object.assign({ numero, tipo, persona, cedula, cargo, fecha: dias(n), proyecto, equipos: eqs, nota: '', compromiso: COMPROMISO[tipo],
+        firmaPersona: FIRMAS[numero % FIRMAS.length], firmaEncargado: FIRMAS[0], encargado: 'Daniel Ortiz', por: 'Daniel Ortiz', porRol: 'equipos', en: iso(n, 9, 15),
+        revision, revisadaPor: revision === 'pendiente' ? '' : 'Valentina Ruiz', revisadaEn: revision === 'pendiente' ? '' : iso(n, 15, 0), notaRevision: '' }, extra || {});
+    }
+    const hojas = {
+      'ho-001': hoja('entrega', 'Jorge Ibarra', '1020304050', 'Profesional de campo', -60, 'Proyecto Costa Norte', [['eq-001', 'Bueno', ['Cargador', 'Maletín']]], 'ok'),
+      'ho-005': hoja('entrega', 'Camilo Suárez', '1040506070', 'Auxiliar de campo', -25, 'Proyecto Costa Norte', [['eq-005', 'Bueno', ['Cable USB', 'Funda']]], 'problema', { notaRevision: 'La cédula no coincide con la del contrato. Hay que corregirla.' }),
+      'ho-002': hoja('entrega', 'Liliana Torres', '1030405060', 'Profesional social', -35, 'Proyecto Ruta Alta', [['eq-004', 'Bueno', ['Cargador', 'Funda']]], 'ok'),
+      'ho-003': hoja('devolucion', 'Liliana Torres', '1030405060', 'Profesional social', -2, 'Proyecto Ruta Alta', [['eq-010', 'Regular', ['Cargador'], 'Una tecla floja']], 'pendiente', { nota: 'Lo trae para mantenimiento' }),
+      'ho-004': hoja('devolucion', 'Jorge Ibarra', '1020304050', 'Profesional de campo', -1, 'Proyecto Costa Norte', [['eq-011', 'Con daño', ['Cargador'], 'No carga bien']], 'pendiente'),
+      'ho-006': hoja('devolucion', 'Andrés Mendoza', '1050607080', 'Coordinador de campo', 0, 'Proyecto Ruta Alta', [['eq-012', 'Con daño', ['Cargador', 'Maletín'], 'Pantalla con una raya y se calienta']], 'pendiente')
+    };
+    // ---------- AGENDA DE EQUIPOS (mantenimientos y backups que Soporte o la Jefe le programan al Encargado) ----------
+    function tarea(equipoId, tipo, n, nota, pidio, pidioRol, estado, extra) {
+      return Object.assign({ equipoId, serial: equipos[equipoId].serial, tipo, fecha: dias(n), nota, pidio, pidioRol, estado, hechaPor: '', hechaEn: '', resultado: '', en: iso(Math.min(n, 0) - 3, 10, 0) }, extra || {});
+    }
+    const tareasEq = {
+      'ta-001': tarea('eq-002', 'mantenimiento', -3, 'La batería dura poco: revisarla y limpiar el equipo', 'Valentina Ruiz', 'soporte', 'pendiente'),
+      'ta-002': tarea('eq-004', 'backup', 2, 'Copiar las fotos de las reuniones antes de que se llene', 'Ana Pérez', 'jefe', 'pendiente'),
+      'ta-003': tarea('eq-008', 'mantenimiento', -60, 'Limpiar el cabezal antes de guardarla', 'Valentina Ruiz', 'soporte', 'hecha', { hechaPor: 'Daniel Ortiz', hechaEn: iso(-60, 16, 0), resultado: 'Cabezal limpio y tanques revisados' })
     };
 
     // ---------- COMPRAS ----------
@@ -341,8 +379,8 @@
       'av-006': aviso('asistente', 'Pedidos de material por entregar', 'Tienes 3 pedidos de material por entregar.', iso(-1, 17, 10), 'inventario')
     };
 
-    return { equipos, compras, vehiculos, novedades, entregas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
+    return { equipos, hojas, tareasEq, compras, vehiculos, novedades, entregas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 8, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 9, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

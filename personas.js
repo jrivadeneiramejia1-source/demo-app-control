@@ -49,7 +49,7 @@
     ['gerente', 'Ricardo Fuentes', 'ricardo.fuentes@example.com', 'Gerente general'],
     ['jefe', 'Ana Pérez', 'ana.perez@example.com'],
     ['equipos', 'Daniel Ortiz', 'daniel.ortiz@example.com'],
-    ['soporte', 'Valentina Ruiz', 'valentina.ruiz@example.com'],
+    ['soporte', 'Valentina Ruiz', 'valentina.ruiz@example.com', '', ['actas']],
     ['compras', 'Luis Rodríguez', 'luis.rodriguez@example.com'],
     ['asistente', 'Sofía Herrera', 'sofia.herrera@example.com'],
     ['carros', 'Marta Gómez', 'marta.gomez@example.com'],
@@ -72,7 +72,8 @@
     return Object.freeze(Object.assign({ rol, nombre, corto: corto(nombre), correo: String(correo || '').toLowerCase(), cargo: cargo || r.cargo,
       rolTxt: r.rolTxt, area: r.area, permisos: Object.freeze(Object.assign({}, r.permisos)) }, x));
   }
-  const PERSONAS = DE_PRUEBA.map(([rol, nombre, correo, cargo]) => armar(rol, nombre, correo, cargo, { prueba: true }));
+  // Valentina (Soporte de prueba) tiene el permiso extra de las actas, para mostrar cómo se revisan. Debe coincidir con firestore.rules (extrasPrueba).
+  const PERSONAS = DE_PRUEBA.map(([rol, nombre, correo, cargo, extras]) => armar(rol, nombre, correo, cargo, { prueba: true, extras: extras || [] }));
 
   window.DEMO = Object.freeze({
     CLAVE: CLAVE_DEMO,

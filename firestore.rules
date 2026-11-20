@@ -84,7 +84,9 @@ service cloud.firestore {
     function esJefe() { return esDemo() && rol() == 'jefe'; }
     function esGerente() { return esDemo() && rol() == 'gerente'; }
     // Permisos extra que el Gerente o la Jefe le marcan a una cuenta propia (las personas de prueba no tienen).
-    function extras() { return esCuenta() ? perfil().get('extras', []) : []; }
+    function extras() { return esCuenta() ? perfil().get('extras', []) : esPrueba() ? extrasPrueba().get(request.auth.token.email, []) : []; }
+    // Permisos extra de las personas de prueba (deben coincidir con personas.js): Valentina (Soporte) revisa las actas.
+    function extrasPrueba() { return { 'valentina.ruiz@example.com': ['actas'] }; }
     function tieneExtra(x) { return x in extras(); }
     // Compras, la Jefe, o la persona de Bodega con el permiso extra «compra».
     function esCompras() { return esDemo() && (rol() == 'compras' || rol() == 'jefe' || (rol() == 'asistente' && tieneExtra('compra'))); }
@@ -102,9 +104,52 @@ service cloud.firestore {
     }
 
     // Módulos que en esta fase solo se ven: los escribe la Jefe al cargar los datos de prueba.
-    match /{col}/{id} {
-      allow read: if esDemo() && col in ['equipos'];
-      allow write: if esJefe() && col in ['equipos'];
+    // ---------- EQUIPOS (Equipos y Entregas juntas, con el acta virtual) ----------
+    function veEquipos() { return esDemo() && rol() in ['gerente', 'jefe', 'equipos', 'soporte']; }
+    function esEncargadoEq() { return esDemo() && rol() in ['equipos', 'jefe']; }
+    function revisaActas() { return esJefe() || (esDemo() && rol() == 'soporte' && tieneExtra('actas')); }
+    function firmaOk(f) { return f is string && f.size() < 80000 && f.matches('^data:image/png;base64,.*'); }
+    // El historial del equipo solo crece: una línea nueva al final y las viejas iguales.
+    function historialEqSigue() {
+      return nuevo().historial is list && nuevo().historial.size() == antes().get('historial', []).size() + 1
+        && nuevo().historial[0:antes().get('historial', []).size()] == antes().get('historial', []);
+    }
+    match /equipos/{id} {
+      allow read: if esDemo();
+      allow delete: if esJefe();
+      allow create: if esJefe() || (esEncargadoEq() && nuevo().estado == 'bodega' && nuevo().serial is string && nuevo().historial.size() == 1);
+      // El Encargado entrega, recibe, hace mantenimiento y backup (siempre con una línea de historial).
+      allow update: if esJefe() || (esEncargadoEq()
+        && soloCambia(['estado', 'asignadoA', 'proyecto', 'ultimoMtto', 'ultimoBackup', 'obs', 'pendientes', 'historial'])
+        && nuevo().estado in ['asignado', 'bodega', 'recibido'] && historialEqSigue());
+    }
+    // Actas: las crea el Encargado con las dos firmas; Soporte (con el permiso de actas) las revisa una vez;
+    // si tienen un problema, el Encargado las corrige y vuelven a revisión. No se borran (solo la Jefe).
+    match /hojas/{id} {
+      allow read: if veEquipos();
+      allow delete: if esJefe();
+      allow create: if (esJefe() && esPrueba()) || (esEncargadoEq()
+        && nuevo().tipo in ['entrega', 'devolucion'] && nuevo().porRol == rol() && nuevo().revision == 'pendiente'
+        && nuevo().persona is string && nuevo().persona.size() >= 5 && nuevo().persona.size() <= 80
+        && nuevo().cedula is string && nuevo().cedula.size() >= 5 && nuevo().cedula.size() <= 12
+        && nuevo().equipos is list && nuevo().equipos.size() >= 1 && nuevo().equipos.size() <= 20
+        && firmaOk(nuevo().firmaPersona) && firmaOk(nuevo().firmaEncargado)
+        && !nuevo().keys().hasAny(['foto']));
+      allow update: if esJefe()
+        || (revisaActas() && antes().revision == 'pendiente' && nuevo().revision in ['ok', 'problema']
+            && soloCambia(['revision', 'revisadaPor', 'revisadaEn', 'notaRevision']))
+        || (esEncargadoEq() && antes().revision == 'problema' && nuevo().revision == 'pendiente'
+            && soloCambia(['persona', 'cedula', 'cargo', 'nota', 'firmaPersona', 'revision', 'revisadaPor', 'revisadaEn'])
+            && firmaOk(nuevo().firmaPersona));
+    }
+    // Agenda: Soporte o la Jefe le programan tareas al Encargado; él las marca hechas.
+    match /tareasEq/{id} {
+      allow read: if veEquipos();
+      allow delete: if esJefe();
+      allow create: if (esJefe() && esPrueba()) || (esDemo() && rol() in ['soporte', 'jefe'] && nuevo().pidioRol == rol()
+        && nuevo().estado == 'pendiente' && nuevo().tipo in ['mantenimiento', 'backup', 'revision']);
+      allow update: if esJefe() || (esEncargadoEq() && antes().estado == 'pendiente' && nuevo().estado == 'hecha'
+        && soloCambia(['estado', 'hechaPor', 'hechaEn', 'resultado']));
     }
 
     // Vehículos: hoja de vida de cada carro. Transporte y Bodega asignan, actualizan documentos y estado;
