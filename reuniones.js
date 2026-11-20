@@ -114,16 +114,27 @@
     if (otras.length && persona().rol !== 'profesional') h += `<div class="section-label">Le toca a otras personas (${otras.length})</div><div class="list">${otras.slice(0, 12).map(tarjeta).join('')}</div>`;
     return h;
   }
+  // Botones de una tarea (los mismos en «Lo que me toca» y en «Ver reunión»).
+  function botonesDe(n) {
+    if (n.tipo === 'refrigerios' || n.tipo === 'almuerzo') return boton('autorizar', 'Autorizar', 'check', n.id, 'primary small') + boton('rechazar', 'Rechazar', '', n.id, 'ghost small');
+    if (n.tipo === 'carros') return boton('carros', 'Autorizar y escoger conductor', 'carro', n.id, 'primary small') + boton('rechazar', 'Rechazar', '', n.id, 'ghost small');
+    if (n.tipo === 'viaje') return boton('viajeok', 'Confirmo el viaje', 'check', n.id, 'primary small') + boton('nopuedo', 'No puedo', '', n.id, 'ghost small');
+    if (n.tipo === 'logistica') return boton('logistica', 'Abrir la lista', 'tarea', n.id, 'primary small');
+    if (n.tipo === 'asistencia') return boton('voy', 'Voy', 'check', n.id, 'primary small') + boton('nopuedo', 'No puedo', '', n.id, 'ghost small');
+    if (n.tipo === 'acta') return boton('acta', 'Registrar acta', 'hojas', n.id, 'primary small');
+    return '';
+  }
   function tarjeta(n) {
     const App = A(), r = reunionPorId(n.reunionId), puede = puedoHacer(n.responsableRol);
     const tt = TIPO[n.tipo] || [n.tipo, 'tarea'];
-    let titulo = '', botones = '', extra = '';
-    if (n.tipo === 'refrigerios' || n.tipo === 'almuerzo') { titulo = `Autorizar ${tt[0].toLowerCase()}`; botones = boton('autorizar', 'Autorizar', 'check', n.id, 'primary small') + boton('rechazar', 'Rechazar', '', n.id, 'ghost small'); }
-    else if (n.tipo === 'carros') { titulo = 'Autorizar carros y escoger conductor'; botones = boton('carros', 'Autorizar y escoger conductor', 'carro', n.id, 'primary small') + boton('rechazar', 'Rechazar', '', n.id, 'ghost small'); }
-    else if (n.tipo === 'viaje') { titulo = 'Confirmar el viaje'; extra = `<span class="meta">Conductor: ${esH(n.conductor || 'sin nombre')}</span>`; botones = boton('viajeok', 'Confirmo el viaje', 'check', n.id, 'primary small') + boton('nopuedo', 'No puedo', '', n.id, 'ghost small'); }
-    else if (n.tipo === 'logistica') { const it = Array.isArray(n.items) ? n.items : []; titulo = 'Alistar la reunión'; extra = `<span class="meta">${it.filter(x => x && x.ok).length} de ${it.length} listos</span>`; botones = boton('logistica', 'Abrir la lista', 'tarea', n.id, 'primary small'); }
-    else if (n.tipo === 'asistencia') { titulo = '¿Vas a la reunión?'; botones = boton('voy', 'Voy', 'check', n.id, 'primary small') + boton('nopuedo', 'No puedo', '', n.id, 'ghost small'); }
-    else if (n.tipo === 'acta') { titulo = 'Registrar el acta y el formato diario'; botones = boton('acta', 'Registrar acta', 'hojas', n.id, 'primary small'); }
+    const botones = botonesDe(n);
+    let titulo = '', extra = '';
+    if (n.tipo === 'refrigerios' || n.tipo === 'almuerzo') titulo = `Autorizar ${tt[0].toLowerCase()}`;
+    else if (n.tipo === 'carros') titulo = 'Autorizar carros y escoger conductor';
+    else if (n.tipo === 'viaje') { titulo = 'Confirmar el viaje'; extra = `<span class="meta">Conductor: ${esH(n.conductor || 'sin nombre')}</span>`; }
+    else if (n.tipo === 'logistica') { const it = Array.isArray(n.items) ? n.items : []; titulo = 'Alistar la reunión'; extra = `<span class="meta">${it.filter(x => x && x.ok).length} de ${it.length} listos</span>`; }
+    else if (n.tipo === 'asistencia') titulo = '¿Vas a la reunión?';
+    else if (n.tipo === 'acta') titulo = 'Registrar el acta y el formato diario';
     if (n.motivo) extra += `<span class="meta">Nota: ${esH(n.motivo)}</span>`;
     const pie = puede ? botones : App.pill('Le toca a ' + nombreRol(n.responsableRol), 'none', 'persona');
     return `<div class="card tarea st-org">
@@ -237,8 +248,11 @@
       A().cerrarHoja('shReu');
       try { $('reuContenido').focus({ preventScroll: true }); } catch (e) {}
       A().toast(accion.listo);
+      const volver = accion.volver;
       accion = null;
       notificar(envios);
+      // Si la acción salió de «Ver reunión», se vuelve a esa reunión para seguir con lo demás.
+      if (volver) setTimeout(() => { const r = reunionPorId(volver); if (r && $('shReu').hidden) ver(r); }, 350);
     } catch (e) { fallar(window.nube.explicar(e)); }
     finally { guardando = false; $('rePrimario').disabled = false; $('reSecundario').disabled = false; }
   }
@@ -430,7 +444,7 @@
   function autorizar(n) {
     const r = reunionPorId(n.reunionId);
     abrir({ titulo: `Autorizar ${(TIPO[n.tipo] || [''])[0].toLowerCase()}`, sub: `${n.detalle}. ${r ? r.comunidad + ', ' + fechaTxt(r) : ''}`, primario: 'Autorizar', icono: 'check', secundario: 'Rechazar',
-      listo: 'Listo: autorizado.', alSecundario: () => { rechazar(n); accion.base = Object.assign({}, n); },
+      listo: 'Listo: autorizado.', alSecundario: () => { const v = accion.volver; rechazar(n); accion.base = Object.assign({}, n); accion.volver = v; },
       ops: () => [['mezclar', 'necesidades', n.id, hecho({ estado: 'autorizado', motivo: '' })]] });
   }
   function rechazar(n) {
@@ -530,10 +544,13 @@
       const e = EST_NE[n.estado] || [n.estado, 'none'];
       const quien = n.por ? `${n.por}${n.en ? ', ' + App.hace(n.en) : ''}` : 'Le toca a ' + nombreRol(n.responsableRol);
       const mas = [n.conductor && `conductor: ${n.conductor}`, n.tipo === 'logistica' && Array.isArray(n.items) && `${n.items.filter(x => x && x.ok).length} de ${n.items.length} listos`, n.motivo].filter(Boolean).join(' · ');
-      return `<li><span class="nf-t"><b>${esH((TIPO[n.tipo] || [n.tipo])[0])}</b><span class="meta">${esH(n.detalle)}</span><span class="meta">${esH(quien)}${mas ? ' · ' + esH(mas) : ''}</span></span>${App.pill(e[0], e[1])}</li>`;
+      // Si a quien mira le toca esta tarea (o es la Jefe), puede hacerla desde aquí mismo.
+      const acc = esTarea(n) && puedoHacer(n.responsableRol) ? `<div class="tarea-pie">${botonesDe(n)}</div>` : '';
+      return `<li><span class="nf-cab"><span class="nf-t"><b>${esH((TIPO[n.tipo] || [n.tipo])[0])}</b><span class="meta">${esH(n.detalle)}</span><span class="meta">${esH(quien)}${mas ? ' · ' + esH(mas) : ''}</span></span>${App.pill(e[0], e[1])}</span>${acc}</li>`;
     }).join('');
     const hist = historial(r).slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
-    abrir({ titulo: r.comunidad, sub: `${fechaTxt(r)}`,
+    const pend = ns.filter(n => esTarea(n) && puedoHacer(n.responsableRol)).length;
+    abrir({ titulo: r.comunidad, sub: `${fechaTxt(r)}${pend ? ` · ${pend} ${pend === 1 ? 'cosa puedes hacer' : 'cosas puedes hacer'} desde aquí` : ''}`,
       campos: `<div class="row">${App.pill(st[0], st[1])}${(r.faltan || []).length ? App.pill('Falta: ' + r.faltan.join(', '), 's-peligro', 'aviso') : ''}</div>
         <dl class="datos"><dt>Lugar</dt><dd>${esH(r.lugar || 'Falta el lugar')}</dd><dt>Personas</dt><dd>${num(r.asistentes) || 'Sin dato'}</dd><dt>Jefe</dt><dd>${esH(r.jefe || '')}</dd>${r.motivo ? `<dt>Motivo</dt><dd>${esH(r.motivo)}</dd>` : ''}</dl>
         <div class="section-label">Tareas</div><ul class="necesidades-l">${filas || '<li><span class="meta">Sin tareas.</span></li>'}</ul>
@@ -559,9 +576,12 @@
     };
     const fn = mapa[b.dataset.accion];
     if (!fn) return;
-    if (fn() === null) A().toast('Esa tarea ya cambió. Revisa la lista otra vez.');
+    const desdeReunion = $('reCampos').contains(b) && n ? n.reunionId : '';
+    if (fn() === null) { A().toast('Esa tarea ya cambió. Revisa la lista otra vez.'); return; }
+    if (desdeReunion && accion) accion.volver = desdeReunion;
   }
   $('reuContenido').addEventListener('click', alTocar);
+  $('reCampos').addEventListener('click', e => { if (e.target.closest('[data-accion]')) alTocar(e); });
   $('reForm').addEventListener('submit', e => { e.preventDefault(); guardar(); });
   $('reSecundario').addEventListener('click', () => { if (accion && accion.alSecundario) accion.alSecundario(); });
 

@@ -421,6 +421,16 @@ try {
   const nec = tipo => o.ns.find(n => n.tipo === tipo && n.estado !== 'cancelado' && n.estado !== 'no-va');
   log('cambia a Luis (Compras)', await cambiar(t.page, 'compras'));
   await irReu('hacer');
+  await irReu('proximas');
+  await t.page.click('#reuContenido [data-accion="ver"][data-id="re-001"]');
+  log('en «Ver reunión» Compras tiene sus botones (autorizar refrigerio y almuerzo) y no los de otros', await hasta(t.page, () => !!document.querySelector('#reCampos [data-accion="autorizar"][data-id="ne-003"]') && !document.querySelector('#reCampos [data-accion="logistica"], #reCampos [data-accion="voy"]')));
+  await t.page.click('#reCampos [data-accion="autorizar"][data-id="ne-003"]');
+  await hasta(t.page, () => document.getElementById('reT').textContent.startsWith('Autorizar'));
+  await t.page.click('#rePrimario');
+  log('autoriza desde «Ver reunión» y vuelve a la misma reunión con la tarea ya autorizada', await hasta(t.page, () => document.getElementById('reT').textContent === 'Comunidad Ejemplo Norte' && !document.querySelector('#reCampos [data-accion="autorizar"][data-id="ne-003"]') && !!document.querySelector('#reCampos [data-accion="autorizar"][data-id="ne-004"]')) && await t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos')).necesidades['ne-003'].estado === 'autorizado'));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '12-ver-reunion-acciones.png') });
+  await t.page.keyboard.press('Escape');
+  await irReu('hacer');
   await tocarReu('autorizar', nec('refrigerios').id); await guardarReu();
   await tocarReu('autorizar', nec('almuerzo').id);
   log('Compras autoriza el refrigerio y el almuerzo de la reunión', await guardarReu() && await (async () => { o = await oriente(); return ['refrigerios', 'almuerzo'].every(tp => o.ns.find(n => n.tipo === tp).estado === 'autorizado'); })());
