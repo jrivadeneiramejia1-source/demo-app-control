@@ -152,7 +152,7 @@
   }
 
   /* ---------- sesión y datos ---------- */
-  function dejarDeEscuchar() { S.oyentes.forEach(f => { try { f(); } catch (e) {} }); S.oyentes = []; S.llegaron.clear(); }
+  function dejarDeEscuchar() { S.oyentes.forEach(f => { try { f(); } catch (e) {} }); S.oyentes = []; S.llegaron.clear(); S.erroresLectura = {}; }
   async function alCambiarSesion(p) {
     const mia = ++S.sesion;
     dejarDeEscuchar();
@@ -180,7 +180,7 @@
     S.errorFijo = '';
     // Solo la Jefe de prueba carga los datos de ejemplo (una Jefe con cuenta propia no los pisa).
     try { const sembro = await nube.sembrar(false, p.prueba ? p.rol : ''); if (mia === S.sesion && sembro) toast('Listo: se cargaron los datos de prueba'); }
-    catch (e) { if (mia === S.sesion) { S.errorFijo = nube.explicar(e); error(S.errorFijo); } }
+    catch (e) { if (mia === S.sesion) { S.errorFijo = nube.explicar(e); S.errorFijoSeVa = ['falta-sembrar', 'datos-viejos'].includes(e && e.code); error(S.errorFijo); } }
     if (mia === S.sesion) escucharTodo();
     if (window.Push && Push.estado() === 'activo') Push.actualizarRol(p.rol);
     pintarAvisoActivar();
@@ -192,17 +192,25 @@
     reuniones: r => Object.assign({}, r, { historial: objetos(r.historial), faltan: Array.isArray(r.faltan) ? r.faltan.filter(x => typeof x === 'string') : [], correos: Array.isArray(r.correos) ? r.correos : [] }),
     necesidades: n => Object.assign({}, n, { items: objetos(n.items) })
   };
+  const errorVisible = () => S.errorFijo || Object.values(S.erroresLectura || {})[0] || '';
   function escucharTodo() {
     // Las personas y los códigos solo los leen el Gerente y el Jefe (para el panel «Personas y códigos»).
     const p = S.persona, panel = !p.real ? [] : p.rol === 'gerente' ? ['usuarios', 'codigos', 'codigosDireccion'] : p.rol === 'jefe' ? ['usuarios', 'codigos'] : [];
     ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'necesidades', 'avisos', 'suscripciones'].concat(panel).forEach(col => {
       S.oyentes.push(nube.escuchar(col, lista => {
         S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
-        // El aviso de que faltan los datos de prueba (o de que no se pudieron cargar) se queda hasta que lleguen artículos.
-        if (S.errorFijo && col === 'articulos' && lista.length) S.errorFijo = '';
-        if (col !== 'avisos' || !$('avisoError').hidden) error(S.errorFijo || '');
+        // «Faltan los datos de prueba» se quita cuando llegan artículos. Un error de permiso al cargar o al leer
+        // (por ejemplo, reglas sin pegar) se queda a la vista hasta recargar.
+        if (S.errorFijo && S.errorFijoSeVa && col === 'articulos' && lista.length) S.errorFijo = '';
+        if (S.erroresLectura) delete S.erroresLectura[col];
+        if (col !== 'avisos' || !$('avisoError').hidden) error(errorVisible());
         pintarTodo();
-      }, e => { if (['suscripciones', 'usuarios', 'codigos', 'codigosDireccion'].includes(col)) { S.llegaron.add(col); return; } error(nube.explicar(e)); }));
+      }, e => {
+        S.llegaron.add(col);   // así la pantalla deja de mostrar «cargando» y dice qué pasó
+        if (['suscripciones', 'usuarios', 'codigos', 'codigosDireccion'].includes(col)) return;
+        S.erroresLectura = S.erroresLectura || {}; S.erroresLectura[col] = nube.explicar(e);
+        error(errorVisible()); pintarTodo();
+      }));
     });
   }
 
