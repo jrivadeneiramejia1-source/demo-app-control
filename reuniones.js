@@ -311,17 +311,20 @@
   async function leerConAgente(c) {
     const cfg = window.AGENTE_DEMO || {};
     const activas = D().reuniones.filter(r => ACTIVA.includes(r.estado)).map(r => ({ id: r.id, comunidad: r.comunidad, fecha: r.fecha, hora: r.hora, lugar: r.lugar, estado: r.estado }));
+    let motivo = 'el agente no está conectado';
     if (cfg.url) {
       try {
         const token = await window.nube.token();
-        const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 25000);
+        const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 30000);
         const r = await fetch(cfg.url, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ correo: c.texto, asunto: c.asunto, hoy: hoy(), reuniones: activas }), signal: ctl.signal });
         clearTimeout(t);
         const j = await r.json().catch(() => null);
         if (r.ok && j && j.ok && j.reunion) return { datos: limpiar(j.reunion), fuente: 'gemini' };
-      } catch (e) { /* se usa el respaldo */ }
+        // Se guarda por qué falló, para mostrarlo (ayuda a saber qué arreglar en Cloudflare o en Gemini).
+        motivo = `el agente respondió ${r.status}${j && (j.detalle || j.error) ? ': ' + String(j.detalle || j.error).slice(0, 200) : ''}`;
+      } catch (e) { motivo = e && e.name === 'AbortError' ? 'el agente tardó más de 30 segundos' : 'no se pudo hablar con el agente (conexión o permiso del navegador)'; }
     }
-    return { datos: limpiar(c.respaldo), fuente: 'respaldo' };
+    return { datos: limpiar(c.respaldo), fuente: 'respaldo', motivo };
   }
   function buscarReunion(d) {
     const activas = D().reuniones.filter(r => ACTIVA.includes(r.estado));
@@ -331,11 +334,23 @@
   let lectura = 0;
   async function procesarCorreo(c) {
     const yo = ++lectura;
-    abrir({ titulo: 'El agente está leyendo el correo…', sub: c.asunto, campos: `<div class="leyendo">${UI.esqueleto(2)}</div>` });
-    const leyendo = accion;
-    const { datos: d, fuente } = await leerConAgente(c);
+    // Mientras lee: cuenta los segundos y, si tarda, deja seguir con la respuesta de respaldo sin esperar.
+    let noEsperar;
+    const atajo = new Promise(res => { noEsperar = () => res({ datos: limpiar(c.respaldo), fuente: 'respaldo', motivo: 'no se esperó al agente' }); });
+    abrir({ titulo: 'El agente está leyendo el correo…', sub: c.asunto, campos: `<p class="meta" id="reSeg" aria-live="polite">Leyendo… 0 s</p><div class="leyendo">${UI.esqueleto(2)}</div>`,
+      secundario: 'No esperar: usar el respaldo', alSecundario: () => noEsperar() });
+    $('reSecundario').hidden = true;
+    const leyendo = accion, t0 = Date.now();
+    const reloj = setInterval(() => {
+      const seg = Math.round((Date.now() - t0) / 1000), el = $('reSeg');
+      if (!el || accion !== leyendo) { clearInterval(reloj); return; }
+      el.textContent = seg < 8 ? `Leyendo… ${seg} s` : `Leyendo… ${seg} s. Gemini gratis a veces tarda; si quieres, sigue con la respuesta de respaldo.`;
+      if (seg >= 5) $('reSecundario').hidden = false;
+    }, 1000);
+    const { datos: d, fuente, motivo } = await Promise.race([leerConAgente(c), atajo]);
+    clearInterval(reloj);
     if (yo !== lectura || $('shReu').hidden || accion !== leyendo) return;   // la cerraron o abrieron otra cosa mientras leía
-    const etiqueta = fuente === 'gemini' ? A().pill('Leído por Gemini', 's-disco', 'check') : A().pill('Respuesta de respaldo: el agente no está conectado o no respondió', 's-pend', 'info');
+    const etiqueta = fuente === 'gemini' ? A().pill('Leído por Gemini', 's-disco', 'check') : A().pill('Respuesta de respaldo: ' + motivo, 's-pend', 'info');
     const encabezado = `<div class="row">${etiqueta}</div><div class="card agente-res"><b>Lo que entendió</b><span>${esH(d.resumen || 'Sin resumen')}</span></div>
       <details class="correo-orig"><summary>Ver el correo</summary><pre>${esH(c.texto)}</pre></details>`;
     const r = d.tipo === 'nueva' ? null : buscarReunion(d);

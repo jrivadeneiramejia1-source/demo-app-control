@@ -136,26 +136,46 @@ function sacarJSON(t) {
   try { return JSON.parse(s); } catch (e) { const m = /\{[\s\S]*\}/.exec(s); if (m) { try { return JSON.parse(m[0]); } catch (e2) {} } }
   return null;
 }
-/** Llama a Gemini. Si el modelo no existe prueba el siguiente; si no acepta el esquema, lo pide solo como JSON. */
+/** Mensaje corto del error de Gemini (sin la clave), para saber qué pasó. */
+async function motivoGemini(r) {
+  const j = await r.json().catch(() => null);
+  const m = j && j.error && (j.error.message || j.error.status);
+  return `Gemini respondió ${r.status}${m ? ': ' + String(m).replace(/key=[^&\s]+/gi, 'key=…').slice(0, 160) : ''}`;
+}
+/** Llama a Gemini. Por cada modelo prueba tres formas, de la más completa a la más simple, por si el modelo no acepta
+    alguna opción (error 400). Si el modelo no existe o no está disponible (404/403) o falla el servidor (5xx), prueba el siguiente. */
+// El último modelo que respondió bien: la próxima vez se prueba primero (así no se pierde tiempo con los que no existen).
+let modeloBueno = '';
+const ESPERA_POR_LLAMADA = 15000, ESPERA_TOTAL = 24000;
 async function preguntarGemini(env, prompt, correo) {
-  const lista = env.MODELO ? [env.MODELO].concat(MODELOS.filter(m => m !== env.MODELO)) : MODELOS;
+  const base = env.MODELO ? [env.MODELO].concat(MODELOS.filter(m => m !== env.MODELO)) : MODELOS;
+  const lista = !env.MODELO && modeloBueno ? [modeloBueno].concat(base.filter(m => m !== modeloBueno)) : base;
+  const inicio = Date.now();
   let ultimo = 'sin respuesta';
   for (const modelo of lista) {
-    for (const conEsquema of [true, false]) {
-      // Gemini 3 pide dejar la temperatura por defecto y pensar poco para responder rápido; Gemini 2 va con temperatura 0.
-      const g3 = !/^gemini-2/.test(modelo);
-      const generationConfig = Object.assign({ responseMimeType: 'application/json' }, conEsquema ? { responseSchema: ESQUEMA } : {}, g3 ? { thinkingConfig: { thinkingLevel: 'low' } } : { temperature: 0 });
+    // Gemini 3 pide dejar la temperatura por defecto y pensar poco para responder rápido; Gemini 2 va con temperatura 0.
+    const g3 = !/^gemini-2/.test(modelo);
+    const formas = [
+      Object.assign({ responseMimeType: 'application/json', responseSchema: ESQUEMA }, g3 ? { thinkingConfig: { thinkingLevel: 'low' } } : { temperature: 0 }),
+      { responseMimeType: 'application/json', responseSchema: ESQUEMA },
+      { responseMimeType: 'application/json' }
+    ];
+    for (const generationConfig of formas) {
+      // Si ya se fue mucho tiempo, se para: la app usa el respaldo en vez de dejar a la Jefe esperando.
+      if (Date.now() - inicio > ESPERA_TOTAL) return { error: 'lento', detalle: `${ultimo}; Gemini tardó demasiado` };
       const cuerpo = { systemInstruction: { parts: [{ text: prompt }] }, contents: [{ role: 'user', parts: [{ text: 'Correo:\n' + correo }] }], generationConfig };
-      const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify(cuerpo) });
-      if (r.status === 404 || r.status === 403) { ultimo = 'modelo ' + modelo + ' no disponible'; break; }
-      if (r.status === 400 && conEsquema) { ultimo = 'esquema no aceptado'; continue; }
-      if (r.status === 429) return { error: 'cupo', detalle: 'Gemini llegó al límite gratis por ahora' };
-      if (!r.ok) return { error: 'gemini', detalle: 'Gemini respondió ' + r.status };
+      let r;
+      try {
+        r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify(cuerpo), signal: AbortSignal.timeout(Math.min(ESPERA_POR_LLAMADA, ESPERA_TOTAL + 2000 - (Date.now() - inicio))) });
+      } catch (e) { ultimo = `${modelo}: no respondió a tiempo`; break; }
+      if (r.status === 429) return { error: 'cupo', detalle: await motivoGemini(r) };
+      if (r.status === 400) { ultimo = `${modelo}: ${await motivoGemini(r)}`; continue; }
+      if (!r.ok) { ultimo = `${modelo}: ${await motivoGemini(r)}`; break; }
       const j = await r.json().catch(() => null);
       const texto = j && j.candidates && j.candidates[0] && j.candidates[0].content && (j.candidates[0].content.parts || []).map(p => p.text || '').join('');
       const datos = sacarJSON(texto);
-      if (datos) return { datos, modelo };
-      ultimo = 'respuesta sin JSON';
+      if (datos) { if (!env.MODELO) modeloBueno = modelo; return { datos, modelo }; }
+      ultimo = `${modelo}: respuesta sin JSON`;
     }
   }
   return { error: 'gemini', detalle: ultimo };

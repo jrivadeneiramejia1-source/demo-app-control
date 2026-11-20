@@ -485,6 +485,14 @@ try {
   await tocarReu('correo', 'reprograma');
   await hasta(t.page, () => !!document.getElementById('rcFecha') && document.getElementById('rcFecha').value !== '');
   log('al reprogramar, los carros y la comida vuelven a revisarse y el viaje se cancela', await guardarReu() && await (async () => { o = await oriente(); return o.r.estado === 'reprogramada' && o.ns.find(n => n.tipo === 'carros').estado === 'pendiente' && o.ns.filter(n => n.tipo === 'viaje').every(n => ['cancelado', 'no-va'].includes(n.estado)) && o.ns.find(n => n.tipo === 'refrigerios').estado === 'pendiente'; })());
+  // Agente lento: a los 5 s aparece «No esperar» y se sigue con el respaldo.
+  await t.ctx.route('https://agente-lento.prueba/', () => new Promise(() => {}));
+  await t.page.evaluate(() => { window.AGENTE_DEMO = { url: 'https://agente-lento.prueba/' }; });
+  await tocarReu('correo', 'cancela');
+  log('si el agente tarda, cuenta los segundos y a los 5 s ofrece no esperar', await hasta(t.page, () => /Leyendo… [5-9] s/.test(document.getElementById('reCampos').textContent) && !document.getElementById('reSecundario').hidden, null, 9000));
+  await t.page.click('#reSecundario');
+  log('«No esperar» sigue con la respuesta de respaldo', await hasta(t.page, () => /no se esperó/.test(document.getElementById('reCampos').textContent) && !!document.getElementById('rcMotivo')));
+  await t.page.keyboard.press('Escape');
   // El agente conectado: se finge el Worker para ver que manda el token y se usa su respuesta.
   let tokenRecibido = '';
   await t.ctx.route('https://agente.prueba/', async r => { tokenRecibido = r.request().headers().authorization || ''; return r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ok: true, reunion: { tipo: 'cancela', reunionId: '', comunidad: 'Comunidad Ejemplo Oriente', fecha: '', hora: '', lugar: '', asistentes: 0, refrigerios: false, almuerzo: false, carros: 0, logistica: [], faltan: [], motivo: 'Lo pidió la autoridad tradicional', resumen: 'Se cancela la reunión <b>ya</b>.' } }) }); });

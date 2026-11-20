@@ -45,6 +45,8 @@ globalThis.fetch = async (url, op = {}) => {
     const conEsquema = !!cuerpo.generationConfig.responseSchema;
     if (modoGemini === 'sin-modelo' && url.includes('gemini-3.1-flash-lite')) return new Response('{}', { status: 404 });
     if (modoGemini === 'sin-esquema' && conEsquema) return new Response('{}', { status: 400 });
+    if (modoGemini === 'sin-pensar' && cuerpo.generationConfig.thinkingConfig) return new Response(JSON.stringify({ error: { code: 400, message: 'Thinking level is not supported for this model.' } }), { status: 400 });
+    if (modoGemini === 'roto') return new Response(JSON.stringify({ error: { code: 500, message: 'Internal error' } }), { status: 500 });
     if (modoGemini === 'cupo') return new Response('{}', { status: 429 });
     const texto = modoGemini === 'cercado' ? '```json\n' + JSON.stringify(respuesta || RESP_BIEN) + '\n```' : JSON.stringify(respuesta || RESP_BIEN);
     return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: texto }] } }] }), { status: 200 });
@@ -110,10 +112,16 @@ llamadas = []; modoGemini = 'bien';
 }
 llamadas = []; modoGemini = 'sin-modelo';
 { const { r, j } = await pedir(); t('si el modelo no existe, prueba el siguiente', r.status === 200 && j.modelo === 'gemini-flash-latest' && llamadas.length === 2, llamadas.map(x => x.url.split('/models/')[1]).join(' ')); }
+llamadas = [];
+{ const { r } = await pedir(); t('la siguiente lectura va directo al modelo que sí respondió (más rápido)', r.status === 200 && llamadas.length === 1 && llamadas[0].url.includes('gemini-flash-latest'), llamadas.map(x => x.url.split('/models/')[1]).join(' ')); }
 llamadas = []; modoGemini = 'bien';
 { const { r } = await pedir({ entorno: { GEMINI_API_KEY: 'x', MODELO: 'gemini-2.5-flash' } }); t('con un modelo Gemini 2 usa temperatura 0', r.status === 200 && llamadas[0].url.includes('gemini-2.5-flash') && llamadas[0].cuerpo.generationConfig.temperature === 0 && !llamadas[0].cuerpo.generationConfig.thinkingConfig); }
 llamadas = []; modoGemini = 'sin-esquema';
-{ const { r } = await pedir(); t('si no acepta el esquema, lo pide solo como JSON', r.status === 200 && llamadas.length === 2 && !llamadas[1].cuerpo.generationConfig.responseSchema); }
+{ const { r } = await pedir(); t('si no acepta el esquema, lo pide solo como JSON', r.status === 200 && llamadas.length === 3 && !llamadas[2].cuerpo.generationConfig.responseSchema); }
+llamadas = []; modoGemini = 'sin-pensar';
+{ const { r } = await pedir(); t('si el modelo no acepta «pensar poco», lo pide sin eso pero con el esquema', r.status === 200 && llamadas.length === 2 && llamadas[1].cuerpo.generationConfig.responseSchema && !llamadas[1].cuerpo.generationConfig.thinkingConfig); }
+llamadas = []; modoGemini = 'roto';
+{ const { r, j } = await pedir(); t('si Gemini falla en todos los modelos, dice el motivo (sin la clave)', r.status === 502 && /Gemini respondió 500: Internal error/.test(j.detalle) && llamadas.length === 4 && !/clave-de-prueba/.test(j.detalle), j && j.detalle); }
 llamadas = []; modoGemini = 'cercado';
 { const { r, j } = await pedir(); t('entiende el JSON aunque venga entre ```', r.status === 200 && j.reunion.tipo === 'nueva'); }
 llamadas = []; modoGemini = 'bien'; respuesta = { tipo: 'borrar-todo', reunionId: 're-999', comunidad: 'X'.repeat(300), fecha: 'mañana', hora: '25:99', asistentes: -4, carros: 999, logistica: ['Sillas', 'Cohetes'], faltan: 'lugar', refrigerios: 'si', resumen: 'a\u0000b' };
