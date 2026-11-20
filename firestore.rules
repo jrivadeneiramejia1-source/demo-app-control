@@ -198,7 +198,8 @@ service cloud.firestore {
         && nuevo().tipo in ['llanta', 'choque', 'rayon', 'mantenimiento', 'otro']
         && nuevo().foto is string && nuevo().foto.size() < 400000 && nuevo().foto.matches('^data:image/jpeg;base64,.*')
         && nuevo().costo is number && (nuevo().costo == 0 || rol() != 'conductor'));
-      allow update: if (esJefe() || (esDemo() && rol() in ['carros', 'asistente']))
+      // La Jefe de prueba la reescribe al cargar o reiniciar los datos de ejemplo.
+      allow update: if (esJefe() && esPrueba()) || (esJefe() || (esDemo() && rol() in ['carros', 'asistente']))
         && soloCambia(['costo', 'revisada', 'revisadaPor', 'revisadaEn', 'nota']) && nuevo().costo is number && nuevo().costo >= 0
         && antes().revisada == false && nuevo().revisada == true && nuevo().get('nota', '').size() <= 160;
       allow delete: if esJefe();
