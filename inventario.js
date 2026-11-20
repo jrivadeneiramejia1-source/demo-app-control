@@ -673,10 +673,10 @@
         if (!puedoDecidir(c)) return fallar(c.pideRol === 'gerente' ? 'Esta compra la autoriza otro Gerente.' : `Esta compra la autoriza ${nombreRol(autorizadorDe(c))}.`);
         const porRespaldo = esGerente() && respaldoVencido(c);
         if (pasaAlGerente) {
-          return [['mezclar', 'compras', c.id, { estado: 'por-gerente', autorizaJefe: persona().nombre, historial: paso(c, `Autorizó y la pasó al Gerente (vale ${App.cop(c.valorAprox)}, desde ${App.cop(monto)} decide él)`) }],
+          return [['mezclar', 'compras', c.id, { estado: 'por-gerente', autorizaJefe: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, `Autorizó y la pasó al Gerente (vale ${App.cop(c.valorAprox)}, desde ${App.cop(monto)} decide él)`) }],
             aviso('gerente', 'Compra por autorizar (segundo paso)', `${persona().nombre} autorizó ${c.que} por ${App.cop(c.valorAprox)} y la pasa a tu decisión.`)];
         }
-        const campos = { estado: 'autorizado', autoriza: persona().nombre, historial: paso(c, porRespaldo ? 'El Gerente autorizó la compra (la Jefe no respondió en 2 días)' : segundo ? 'El Gerente autorizó la compra' : c.pideRol === 'gerente' ? 'Otro Gerente autorizó la compra' : 'Autorizó la compra') };
+        const campos = { estado: 'autorizado', autoriza: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, porRespaldo ? 'El Gerente autorizó la compra (la Jefe no respondió en 2 días)' : segundo ? 'El Gerente autorizó la compra' : c.pideRol === 'gerente' ? 'Otro Gerente autorizó la compra' : 'Autorizó la compra') };
         if (esJefe() && !segundo) campos.autorizaJefe = persona().nombre;
         return [['mezclar', 'compras', c.id, campos],
           aviso('compras', 'Compra autorizada: hay que comprar', `${persona().nombre} autorizó comprar ${cantTxt(c.cantidad, c.unidad)} de ${c.que}.`),
@@ -695,7 +695,7 @@
         if (!valor('acMotivo')) return fallar('Escribe el motivo.', 'acMotivo');
         if (esMiaLaCompra(c)) return fallar('No puedes decidir sobre una compra que pediste tú.');
         if (!puedoDecidir(c)) return fallar(c.pideRol === 'gerente' ? 'Esta compra la decide otro Gerente.' : `Esta compra la decide ${nombreRol(autorizadorDe(c))}.`);
-        return [['mezclar', 'compras', c.id, { estado: 'rechazado', motivoRechazo: valor('acMotivo'), autoriza: persona().nombre, historial: paso(c, `Rechazó la compra: ${valor('acMotivo')}`) }],
+        return [['mezclar', 'compras', c.id, { estado: 'rechazado', motivoRechazo: valor('acMotivo'), autoriza: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, `Rechazó la compra: ${valor('acMotivo')}`) }],
           aviso(c.pideRol, 'Rechazaron tu compra', `${c.que}: ${valor('acMotivo')}.`, c.pideRol === 'gerente'),
           c.estado === 'por-gerente' && c.autorizaJefe ? aviso('jefe', 'El Gerente rechazó la compra', `${c.que}: ${valor('acMotivo')}.`) : null];
       }
@@ -830,7 +830,7 @@
       titulo: 'Marcar como revisada', sub: `${c.que}: ${A().cop(c.valorReal || c.valorAprox)}, compró ${c.pide} sin autorización.`,
       campos: campoTxt('acNota', 'Qué se habló (opcional)', '', 'Ej: hablé con Andrés, fue una urgencia', 160),
       primario: 'Marcar como revisada', icono: 'check', listo: 'Listo: compra revisada. Sigue contando en el resumen del mes.',
-      ops: () => [['mezclar', 'compras', c.id, { revisada: true, historial: paso(c, 'Revisó la compra sin autorización' + (valor('acNota') ? ': ' + valor('acNota') : '')) }]]
+      ops: () => [['mezclar', 'compras', c.id, { revisada: true, revisadaPorCorreo: window.nube.correo(), historial: paso(c, 'Revisó la compra sin autorización' + (valor('acNota') ? ': ' + valor('acNota') : '')) }]]
     });
   }
 

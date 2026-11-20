@@ -107,7 +107,7 @@ Las reglas (`firestore.rules`) no preguntan «¿qué rol tiene?» sino «¿qué 
 2. Authentication > Sign-in method: activar **Correo/contraseña** y **Google**. En Settings > **Authorized domains** debe estar la dirección donde se publica la app (por ejemplo `usuario.github.io`).
 3. Authentication > Settings > **Password policy**: poner el mínimo en 10 caracteres y activar «Require email verification» si aparece (la app ya exige el correo confirmado, y las reglas también). En Templates puedes poner en español el correo de confirmación.
 4. Crear a mano el **primer código de Jefe** (ver «Cómo entra cada persona»).
-5. Cuando se use con datos de la empresa: entrar con la cuenta de la Jefe > Personas y permisos > Seguridad > **Apagar las personas de prueba**, y poner `window.PERSONAS_PRUEBA = false` en `config.js` para quitarlas de la pantalla de entrada.
+5. Cuando se use con datos de la empresa: entrar con la cuenta de la Jefe > Personas y permisos > Seguridad > **Apagar las personas de prueba**, y poner `window.PERSONAS_PRUEBA = false` en `config.js` para quitarlas de la pantalla de entrada. **Ojo:** borrar las cuentas de prueba en Firebase Authentication **no** las apaga (cualquiera puede volver a crearlas con la clave pública y las reglas las aceptan por su correo): lo que las apaga es **el interruptor de la Jefe**. Con el interruptor apagado, las reglas y el Worker de avisos ya no las aceptan.
 6. Recomendado (aún no está en el código): activar **App Check** (reCAPTCHA v3, gratis) en Firebase > App Check para que solo la app pueda hablar con la base de datos. Ver `SEGURIDAD.md`.
 
 ## Correo real (Gmail de prueba)

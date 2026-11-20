@@ -109,7 +109,8 @@ service cloud.firestore {
     function extrasPrueba() {
       return request.auth.token.email == 'soporte.angel.ortiz@example.com' ? ['actas'] : request.auth.token.email == 'administrativo.solanyi.surquira@example.com' ? ['encargada'] : [];
     }
-    function tieneExtra(x) { return x in extras(); }
+    // Cada permiso extra solo vale para su rol (igual que personas.js): «compra» en Bodega, «actas» en Soporte y «encargada» en Administrativo.
+    function tieneExtra(x) { return x in extras() && rol() == (x == 'compra' ? 'asistente' : x == 'actas' ? 'soporte' : 'administrativo'); }
     // Compras, la Jefe, o la persona de Bodega con el permiso extra «compra».
     function esCompras() {
       let n = nivel('inventario');
@@ -126,13 +127,19 @@ service cloud.firestore {
     // Cada línea de la compra trae su valor total; el valor de la compra no puede ser menor que la suma (máximo 5 líneas).
     function valorLinea(i) { return nuevo().get('lineas', []).size() > i ? nuevo().lineas[i].valor : 0; }
     function sumaLineas() { return valorLinea(0) + valorLinea(1) + valorLinea(2) + valorLinea(3) + valorLinea(4); }
+    // Cada cotización es una foto JPEG pequeña (como las que arma la app), no cualquier texto.
+    function cotOk(i) {
+      let c = nuevo().get('cotizaciones', []);
+      return c.size() <= i || (c[i] is string && c[i].size() < 200000 && c[i].matches('^data:image/jpeg;base64,.*'));
+    }
     function pedidoOk() {
       return nuevo().get('pideUid', request.auth.uid) == request.auth.uid
         && nuevo().get('pideCorreo', '') == request.auth.token.email && nuevo().get('creadoEn', null) == request.time
         && nuevo().valorAprox is number && nuevo().valorAprox >= 0
         && nuevo().get('lineas', []) is list && nuevo().get('lineas', []).size() <= 5
         && nuevo().valorAprox >= sumaLineas()
-        && nuevo().get('cotizaciones', []) is list && nuevo().get('cotizaciones', []).size() <= 3;
+        && nuevo().get('cotizaciones', []) is list && nuevo().get('cotizaciones', []).size() <= 3
+        && cotOk(0) && cotOk(1) && cotOk(2);
     }
     function veVehiculos() { return esDemo() && nivel('vehiculos') != 'no'; }
     function veReuniones() { return esDemo() && nivel('reuniones') != 'no'; }
@@ -391,7 +398,8 @@ service cloud.firestore {
     //   Cada paso revisa primero el estado (lo barato) para no pasarse del límite de expresiones de las reglas.
     function rutaMonto() { return /databases/$(database)/documents/ajustesApp/compras; }
     function montoGerente() { return exists(rutaMonto()) ? get(rutaMonto()).data.get('montoGerente', 1000000) : 1000000; }
-    function decideCampos() { return soloCambia(['estado', 'autoriza', 'autorizaJefe', 'motivoRechazo', 'historial']) && historialSigue(); }
+    // Quien decide deja su correo (el del token): el nombre que escribe no se puede usar para hacerse pasar por otra persona.
+    function decideCampos() { return soloCambia(['estado', 'autoriza', 'autorizaCorreo', 'autorizaJefe', 'motivoRechazo', 'historial']) && nuevo().autorizaCorreo == request.auth.token.email && historialSigue(); }
     // Quién decide un pedido que todavía no tiene respuesta (antes().estado == 'pedido').
     function decidePedido() {
       return antes().get('pideRol', '') == 'jefe' ? esGerente() && nuevo().estado in ['autorizado', 'rechazado']
@@ -412,13 +420,13 @@ service cloud.firestore {
         // Decidir un pedido (rechazar, autorizar o pasarlo al Gerente según quién lo pidió y el monto).
         || (antes().estado == 'pedido' && nuevo().estado in ['autorizado', 'por-gerente', 'rechazado'] && decideCampos() && decidePedido())
         // El Gerente decide lo que la Jefe le pasó por el monto.
-        || (antes().estado == 'por-gerente' && nuevo().estado in ['autorizado', 'rechazado'] && decideCampos() && esGerente())
+        || (antes().estado == 'por-gerente' && nuevo().estado in ['autorizado', 'rechazado'] && decideCampos() && nuevo().get('autorizaJefe', '') == antes().get('autorizaJefe', '') && esGerente())
         // Comprar (autorizada -> comprada): Compras, sin tocar lo autorizado.
         || (antes().estado == 'autorizado' && nuevo().estado == 'comprado' && soloCambia(['estado', 'proveedor', 'valorReal', 'fechaCompra', 'factura', 'historial']) && historialSigue() && esCompras())
         // Recibir (comprada -> recibida): la bodega.
         || (antes().estado == 'comprado' && nuevo().estado == 'recibido' && soloCambia(['estado', 'entregadoA', 'historial']) && historialSigue() && esBodega())
         // La Jefe marca como revisada una compra hecha sin autorización.
-        || (antes().estado == 'sin-autorizar' && antes().revisada == false && nuevo().revisada == true && soloCambia(['revisada', 'historial']) && historialSigue() && esJefe());
+        || (antes().estado == 'sin-autorizar' && antes().revisada == false && nuevo().revisada == true && soloCambia(['revisada', 'revisadaPorCorreo', 'historial']) && nuevo().revisadaPorCorreo == request.auth.token.email && historialSigue() && esJefe());
       // Las compras no se borran (son el rastro de lo que se gastó); solo la Jefe de prueba, al reiniciar los datos de ejemplo.
       allow delete: if esPrueba() && rol() == 'jefe';
     }
