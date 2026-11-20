@@ -66,7 +66,7 @@ function entrar(clave) {
 function subir(token, m) {
   const id = String(m.getId()).replace(/[^A-Za-z0-9]/g, '').slice(0, 40);
   const texto = Array.from(tapar(limpiar(m.getPlainBody()))).slice(0, MAX_TEXTO).join('');   // por letras completas (no parte emojis)
-  if (texto.length < 10) return 'ok';   // vacío: no hay nada que leer
+  if (texto.length < 10) { console.log('El correo «' + m.getSubject() + '» no tiene texto: no se pasó a la app. Mándalo otra vez con los datos de la reunión.'); return 'ok'; }
   const cuerpo = { fields: {
     asunto: { stringValue: Array.from(tapar(String(m.getSubject() || ''))).slice(0, 200).join('') },
     texto: { stringValue: texto },
