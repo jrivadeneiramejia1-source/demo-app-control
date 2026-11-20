@@ -386,12 +386,13 @@ try {
   await enviarHoja();
   log('el Gerente autoriza y ahora sí queda «autorizado», con las dos firmas y aviso a Compras', await hasta(t.page, id => { const d = JSON.parse(localStorage.getItem('__fb_datos')), c = d.compras[id]; return c.estado === 'autorizado' && c.autoriza === 'Oscar Muñoz' && c.autorizaJefe === 'Carolina Castillo' && Object.values(d.avisos).some(a => a.para === 'compras' && /Taladro percutor/.test(a.texto)); }, cv.id));
 
-  // El Gerente también puede pedir una compra: nace autorizada.
+  // El Gerente también puede pedir una compra, pero no nace autorizada: la decide otro Gerente.
   await abrirHojaInv('#btnPedirCompra');
   await t.page.fill('#acQue', 'Cafetera para sala'); await t.page.fill('#acCant', '1'); await t.page.fill('#acValor', '250000'); await t.page.fill('#acPara', 'Para la sala de reuniones');
   await enviarHoja();
   const cg = await (async () => { await hasta(t.page, () => Object.values(JSON.parse(localStorage.getItem('__fb_datos')).compras).some(c => c.que === 'Cafetera para sala')); return compraPor(c => c.que === 'Cafetera para sala'); })();
-  log('la compra que pide el Gerente nace autorizada, marcada como suya, con aviso a Compras y a la Jefe', cg.estado === 'autorizado' && cg.pideRol === 'gerente' && cg.autoriza === 'Oscar Muñoz' && Object.values((await dI()).avisos).some(a => a.para === 'compras' && /Cafetera/.test(a.texto)) && Object.values((await dI()).avisos).some(a => a.para === 'jefe' && /Gerente pidió/.test(a.titulo)));
+  log('la compra que pide el Gerente nace «pedido», con su correo y la hora, y avisa a los otros Gerentes (no a Compras)', cg.estado === 'pedido' && cg.pideRol === 'gerente' && cg.autoriza === '' && cg.pideCorreo === 'gerente.oscar.munoz@example.com' && !!cg.creadoEn && Object.values((await dI()).avisos).some(a => a.para === 'gerente' && /Cafetera/.test(a.texto)) && !Object.values((await dI()).avisos).some(a => a.para === 'compras' && /Cafetera/.test(a.texto)));
+  log('el Gerente que la pidió no ve el botón de autorizarla (la decide otro Gerente)', await t.page.evaluate(id => { const b = document.querySelector(`#invContenido [data-accion="autorizar"][data-id="${id}"]`); return !b; }, cg.id));
 
   // Compras registra la compra de 1.200.000 pagando de más; la Jefe y el Gerente se enteran.
   log('cambia a Mauricio Giraldo (Compras)', await cambiar(t.page, 'compras'));
@@ -596,7 +597,7 @@ try {
 
   log('cambia de nuevo a Mauricio Giraldo', await cambiar(t.page, 'compras'));
   await t.page.reload();
-  log('al recargar sigue con Luis, y la campana trae los 4 avisos nuevos (llanta, taladro, cafetera y «Llegó tu compra»)', await hasta(t.page, () => document.getElementById('avatarTop').classList.contains('av-compras') && document.getElementById('badgeAvisos').textContent === '4', null, 8000), await texto(t.page, '#badgeAvisos'));
+  log('al recargar sigue con Luis, y la campana trae los 3 avisos nuevos (llanta, taladro y «Llegó tu compra»)', await hasta(t.page, () => document.getElementById('avatarTop').classList.contains('av-compras') && document.getElementById('badgeAvisos').textContent === '3', null, 8000), await texto(t.page, '#badgeAvisos'));
 
   console.log('5. Reiniciar los datos (solo Jefe)');
   await t.page.click('#btnPersona'); await t.page.waitForSelector('#shPersona:not([hidden])');
@@ -647,7 +648,7 @@ try {
   log('la Jefe de prueba tampoco tiene «Personas y permisos» (su clave es pública)', !(await visible(t.page, '#ajustesGente')));
   await t.page.keyboard.press('Escape');
   // Jeiler crea a mano en Firebase el primer código de Jefe (así lo haría en la consola).
-  await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); d.codigosDireccion = { 'JEF-PRUE-BA23': { rol: 'jefe', activo: true, por: 'consola', en: new Date().toISOString() } }; localStorage.setItem('__fb_datos', JSON.stringify(d)); });
+  await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); d.codigosDireccion = { 'JEF-PRUE-BA23': { rol: 'jefe', activo: true, por: 'consola', en: new Date().toISOString() }, 'GER-PRUE-BA23': { rol: 'gerente', activo: true, por: 'consola', en: new Date().toISOString() } }; localStorage.setItem('__fb_datos', JSON.stringify(d)); });
   await salir();
 
   // --- La primera Jefe: clave de 10 o más, correo confirmado ---
@@ -675,7 +676,8 @@ try {
   if (descPlantilla) { const ruta = path.join(CAPTURAS, 'plantilla-descPlantillada.xlsx'); await descPlantilla.saveAs(ruta); const l = await xlsxLeer(ruta); log('la plantilla trae 3 ejemplos con el correo example.com y una hoja de ayuda', l.filas.length === 3 && l.filas.every(x => /@example\.com$/.test(x.Correo)) && l.hojas.includes('Ayuda')); }
   const rutaXlsx = path.join(CAPTURAS, 'personas-de-prueba.xlsx');
   await xlsxCrear([
-    { Nombre: ' Gina   Gerente ', 'Correo electrónico': 'GINA.Gerente@ejemplo.test', Cargo: 'Gerente' },
+    { Nombre: ' Gina   Gerente ', 'Correo electrónico': 'GINA.Gerente@ejemplo.test', Cargo: 'Profesional' },
+    { Nombre: 'Gerardo Dirección', Correo: 'gerardo.direccion@ejemplo.test', Rol: 'Gerente' },
     { Nombre: 'Bruno Bodega', Correo: 'bruno.bodega@ejemplo.test', Rol: 'Bodeguero', Equipos: 'Solo ver' },
     { Nombre: 'Nora Admin', Correo: 'nora.admin@ejemplo.test', Rol: 'Administrativa', Extras: 'encargada' },
     { Nombre: 'Mario Prueba', Correo: 'mario.prueba@ejemplo.test', Rol: 'Logística' },
@@ -684,14 +686,14 @@ try {
     { Nombre: '=1+1', Correo: 'formula@ejemplo.test', Rol: 'Conductor' }
   ], rutaXlsx);
   await t.page.setInputFiles('#genteArchivo', rutaXlsx);
-  log('al subir el Excel muestra lo que entendió: 4 listas y 3 con problema', await hasta(t.page, () => /4 listas para guardar/.test(document.getElementById('genteCuerpo').textContent) && /3 con problema/.test(document.getElementById('genteCuerpo').textContent)), await texto(t.page, '#genteCuerpo'));
-  log('marca el correo repetido, el rol que no entiende y el nombre con fórmula', await t.page.evaluate(() => { const x = document.getElementById('genteCuerpo').textContent; return /repetido en el Excel/.test(x) && /No entendí el rol «Presidente»/.test(x) && /no puede empezar con/.test(x); }));
+  log('al subir el Excel muestra lo que entendió: 4 listas y 4 con problema', await hasta(t.page, () => /4 listas para guardar/.test(document.getElementById('genteCuerpo').textContent) && /4 con problema/.test(document.getElementById('genteCuerpo').textContent)), await texto(t.page, '#genteCuerpo'));
+  log('marca el correo repetido, el rol que no entiende y el nombre con fórmula', await t.page.evaluate(() => { const x = document.getElementById('genteCuerpo').textContent; return /repetido en el Excel/.test(x) && /No entendí el rol «Presidente»/.test(x) && /no puede empezar con/.test(x) && /Los Gerentes y las Jefes se crean desde la consola de Firebase/.test(x); }));
   log('todavía no guardó nada', !Object.keys((await fb()).invitaciones || {}).length);
   await t.page.screenshot({ path: path.join(CAPTURAS, '07-panel-excel.png'), fullPage: true });
   await t.page.click('#genteCuerpo [data-g="guardarinv"]');
   log('«Guardar» deja 4 invitaciones, una por correo en minúscula', await hasta(t.page, () => Object.keys(JSON.parse(localStorage.getItem('__fb_datos')).invitaciones || {}).sort().join() === 'bruno.bodega@ejemplo.test,gina.gerente@ejemplo.test,mario.prueba@ejemplo.test,nora.admin@ejemplo.test'));
   const inv = (await fb()).invitaciones;
-  log('la invitación de Bruno lleva su rol, el permiso «Equipos: solo ver» y el nombre limpio', inv['bruno.bodega@ejemplo.test'].rol === 'asistente' && inv['bruno.bodega@ejemplo.test'].permisos.equipos === 'ver' && inv['gina.gerente@ejemplo.test'].nombre === 'Gina Gerente' && inv['gina.gerente@ejemplo.test'].rol === 'gerente', JSON.stringify(inv['bruno.bodega@ejemplo.test']));
+  log('la invitación de Bruno lleva su rol, el permiso «Equipos: solo ver» y el nombre limpio', inv['bruno.bodega@ejemplo.test'].rol === 'asistente' && inv['bruno.bodega@ejemplo.test'].permisos.equipos === 'ver' && inv['gina.gerente@ejemplo.test'].nombre === 'Gina Gerente' && inv['gina.gerente@ejemplo.test'].rol === 'profesional', JSON.stringify(inv['bruno.bodega@ejemplo.test']));
   log('las invitaciones quedan en la lista del panel para borrarlas', await hasta(t.page, () => /Invitaciones esperando que la persona entre \(4\)/.test(document.getElementById('genteCuerpo').textContent)));
   await t.page.keyboard.press('Escape'); await salir();
 
@@ -716,9 +718,9 @@ try {
   log('Nora encargada ve todas las tareas y la sección Correos', await hasta(t.page, () => !!document.querySelector('#reuSecciones [data-sec="correos"]') && /Le toca a/.test(document.getElementById('reuContenido').textContent)));
   await t.page.click('.tab[data-vista="inicio"]'); await salir();
 
-  // --- Gina: Gerente por invitación. Mario: Logística ---
-  await crearCuenta('gina.gerente@ejemplo.test', 'clave-gina-12345'); await pideConfirmar(); await confirmar('gina.gerente@ejemplo.test');
-  log('Gina entra como Gerente por invitación', await enApp('Gerente'));
+  // --- Gerardo: Gerente con un código que se puso a mano en la consola. Mario: Logística ---
+  await crearCuenta('gerardo.direccion@ejemplo.test', 'clave-gerardo-12345', { nombre: 'Gerardo Dirección', codigo: 'GER-PRUE-BA23' }); await pideConfirmar(); await confirmar('gerardo.direccion@ejemplo.test');
+  log('Gerardo entra como Gerente con el código de la consola, y el código se gastó', await enApp('Gerente') && !((await fb()).codigosDireccion || {})['GER-PRUE-BA23']);
   await t.page.click('#btnPersona'); await t.page.waitForSelector('#shPersona:not([hidden])');
   log('el Gerente con cuenta propia ya NO ve «Personas y permisos»', await visible(t.page, '#cuentaPropia') && !(await visible(t.page, '#ajustesGente')));
   await t.page.keyboard.press('Escape'); await salir();
@@ -746,9 +748,9 @@ try {
 
   // --- La Jefe cambia permisos por persona, pausa y apaga las personas de prueba ---
   await entrarCuenta('jefa.real@ejemplo.test', 'clave-jefa-12345'); await enApp('Jefe'); await abrirPanel();
-  const uidBruno = pBruno.id, uidMario = (await perfilDe('mario.prueba@ejemplo.test')).id, uidGina = (await perfilDe('gina.gerente@ejemplo.test')).id;
+  const uidBruno = pBruno.id, uidMario = (await perfilDe('mario.prueba@ejemplo.test')).id, uidGerardo = (await perfilDe('gerardo.direccion@ejemplo.test')).id;
   log('la Jefe ve a las personas registradas', await hasta(t.page, () => /Bruno Bodega/.test(document.getElementById('genteCuerpo').textContent) && /Mario Prueba/.test(document.getElementById('genteCuerpo').textContent) && /Nora Admin/.test(document.getElementById('genteCuerpo').textContent)));
-  log('al Gerente no se le cambia nada desde la app', await t.page.evaluate(i => !document.querySelector(`#genteCuerpo [data-g="rol"][data-id="${i}"]`) && !document.querySelector(`#genteCuerpo [data-g="pausar"][data-id="${i}"]`) && !document.querySelector(`#genteCuerpo [data-g="permiso"][data-id="${i}"]`), uidGina));
+  log('al Gerente no se le cambia nada desde la app', await t.page.evaluate(i => !document.querySelector(`#genteCuerpo [data-g="rol"][data-id="${i}"]`) && !document.querySelector(`#genteCuerpo [data-g="pausar"][data-id="${i}"]`) && !document.querySelector(`#genteCuerpo [data-g="permiso"][data-id="${i}"]`), uidGerardo));
   log('cada persona (no Gerente) trae un nivel para cada módulo', await t.page.evaluate(i => ['equipos', 'inventario', 'vehiculos', 'reuniones'].every(m => !!document.getElementById(`pm-${i}-${m}`)), uidBruno));
   await t.page.selectOption(`#pm-${uidBruno}-inventario`, 'ver');
   log('la Jefe le pone a Bruno «Inventario: solo ver» y queda guardado junto al de Equipos', await hasta(t.page, i => { const p = JSON.parse(localStorage.getItem('__fb_datos')).usuarios[i].permisos; return p && p.inventario === 'ver' && p.equipos === 'ver'; }, uidBruno));

@@ -79,27 +79,27 @@ service cloud.firestore {
         : tipo == 'acta' ? ['listo'] : [];
     }
     // Nivel base de cada rol en cada módulo (debe coincidir con personas.js; lo comprueba pruebas/reglas.mjs).
-    function BASE() {
-      return {
-        'gerente': { 'equipos': 'ver', 'inventario': 'gerente', 'vehiculos': 'ver', 'reuniones': 'ver' },
-        'jefe': { 'equipos': 'jefe', 'inventario': 'jefe', 'vehiculos': 'jefe', 'reuniones': 'jefe' },
-        'equipos': { 'equipos': 'encargado', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'no' },
-        'soporte': { 'equipos': 'soporte', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'no' },
-        'compras': { 'equipos': 'no', 'inventario': 'compra', 'vehiculos': 'no', 'reuniones': 'informa' },
-        'asistente': { 'equipos': 'no', 'inventario': 'bodega', 'vehiculos': 'autoriza', 'reuniones': 'informa' },
-        'carros': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'autoriza', 'reuniones': 'informa' },
-        'conductor': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'reporta', 'reuniones': 'asiste' },
-        'logistica': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'logistica' },
-        'profesional': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'asiste' },
-        'administrativo': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'actas' },
-        'colaborador': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'ver' },
-        'financiero': { 'equipos': 'no', 'inventario': 'finanzas', 'vehiculos': 'no', 'reuniones': 'ver' },
-        'consulta': { 'equipos': 'no', 'inventario': 'ver', 'vehiculos': 'ver', 'reuniones': 'no' }
-      };
+    // (Una cadena de «si» en vez de un mapa grande: así cada consulta gasta pocas de las 1000 expresiones que permite Firebase.)
+    function baseDe(r) {
+      return r == 'gerente' ? { 'equipos': 'ver', 'inventario': 'gerente', 'vehiculos': 'ver', 'reuniones': 'ver' }
+        : r == 'jefe' ? { 'equipos': 'jefe', 'inventario': 'jefe', 'vehiculos': 'jefe', 'reuniones': 'jefe' }
+        : r == 'equipos' ? { 'equipos': 'encargado', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'no' }
+        : r == 'soporte' ? { 'equipos': 'soporte', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'no' }
+        : r == 'compras' ? { 'equipos': 'no', 'inventario': 'compra', 'vehiculos': 'no', 'reuniones': 'informa' }
+        : r == 'asistente' ? { 'equipos': 'no', 'inventario': 'bodega', 'vehiculos': 'autoriza', 'reuniones': 'informa' }
+        : r == 'carros' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'autoriza', 'reuniones': 'informa' }
+        : r == 'conductor' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'reporta', 'reuniones': 'asiste' }
+        : r == 'logistica' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'logistica' }
+        : r == 'profesional' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'asiste' }
+        : r == 'administrativo' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'actas' }
+        : r == 'colaborador' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'ver' }
+        : r == 'financiero' ? { 'equipos': 'no', 'inventario': 'finanzas', 'vehiculos': 'no', 'reuniones': 'ver' }
+        : r == 'consulta' ? { 'equipos': 'no', 'inventario': 'ver', 'vehiculos': 'ver', 'reuniones': 'no' }
+        : {};
     }
     // Lo que la Jefe le marcó a una cuenta propia (permisos por módulo); las personas de prueba usan siempre el de su rol.
     function nivel(m) {
-      return esCuenta() ? perfil().get('permisos', {}).get(m, BASE()[perfil().rol][m]) : BASE()[rol()][m];
+      return esCuenta() ? perfil().get('permisos', {}).get(m, baseDe(perfil().rol)[m]) : baseDe(rol())[m];
     }
     function esJefe() { return esDemo() && rol() == 'jefe'; }
     function esGerente() { return esDemo() && rol() == 'gerente'; }
@@ -111,7 +111,10 @@ service cloud.firestore {
     }
     function tieneExtra(x) { return x in extras(); }
     // Compras, la Jefe, o la persona de Bodega con el permiso extra «compra».
-    function esCompras() { return esDemo() && (nivel('inventario') in ['compra', 'jefe'] || (nivel('inventario') == 'bodega' && tieneExtra('compra'))); }
+    function esCompras() {
+      let n = nivel('inventario');
+      return esDemo() && (n in ['compra', 'jefe'] || (n == 'bodega' && tieneExtra('compra')));
+    }
     // Puede pedir material y compras a su nombre (con «solo ver» o «sin acceso» no).
     function puedePedir() { return esDemo() && nivel('inventario') in ['pide', 'finanzas', 'compra', 'bodega', 'gerente', 'jefe']; }
     function veInventario() { return esDemo() && nivel('inventario') != 'no'; }
@@ -120,9 +123,15 @@ service cloud.firestore {
     function veMovimientos() { return veInventario() && nivel('inventario') != 'pide'; }
     function veLoSuyo() { return veInventario() && (nivel('inventario') != 'pide' || esPrueba() || antes().get('pideUid', '') == request.auth.uid); }
     // Lo que la persona pone al pedir: marca de su propia cuenta, máximo 5 líneas y 3 cotizaciones.
+    // Cada línea de la compra trae su valor total; el valor de la compra no puede ser menor que la suma (máximo 5 líneas).
+    function valorLinea(i) { return nuevo().get('lineas', []).size() > i ? nuevo().lineas[i].valor : 0; }
+    function sumaLineas() { return valorLinea(0) + valorLinea(1) + valorLinea(2) + valorLinea(3) + valorLinea(4); }
     function pedidoOk() {
       return nuevo().get('pideUid', request.auth.uid) == request.auth.uid
+        && nuevo().get('pideCorreo', '') == request.auth.token.email && nuevo().get('creadoEn', null) == request.time
+        && nuevo().valorAprox is number && nuevo().valorAprox >= 0
         && nuevo().get('lineas', []) is list && nuevo().get('lineas', []).size() <= 5
+        && nuevo().valorAprox >= sumaLineas()
         && nuevo().get('cotizaciones', []) is list && nuevo().get('cotizaciones', []).size() <= 3;
     }
     function veVehiculos() { return esDemo() && nivel('vehiculos') != 'no'; }
@@ -356,27 +365,34 @@ service cloud.firestore {
     // Compras. Pasos: pedido -> autorizado (o rechazado) -> comprado -> recibido.
     //   Quién autoriza: lo que pide la Jefe lo decide siempre el Gerente. Lo que pide cualquier otra persona lo autoriza la Jefe;
     //   si vale el monto del Gerente (ajustesApp/compras.montoGerente, por defecto 1.000.000) o más, queda «por-gerente»
-    //   y el Gerente lo autoriza después. Lo que pide el Gerente nace «autorizado» (nadie está por encima). Nadie decide lo suyo.
+    //   y el Gerente lo autoriza después. Lo que pide un Gerente lo decide OTRO Gerente (nadie decide lo suyo).
+    //   Respaldo: si la Jefe no responde en 2 días, el Gerente puede autorizar o rechazar lo que pidió otra persona.
+    //   Cada compra guarda el correo de quien la pidió y la hora del servidor (pideCorreo, creadoEn): no se pueden inventar.
     //   Cada paso revisa primero el estado (lo barato) para no pasarse del límite de expresiones de las reglas.
     function rutaMonto() { return /databases/$(database)/documents/ajustesApp/compras; }
     function montoGerente() { return exists(rutaMonto()) ? get(rutaMonto()).data.get('montoGerente', 1000000) : 1000000; }
     function decideCampos() { return soloCambia(['estado', 'autoriza', 'autorizaJefe', 'motivoRechazo', 'historial']); }
+    // Quién decide un pedido que todavía no tiene respuesta (antes().estado == 'pedido').
+    function decidePedido() {
+      return antes().get('pideRol', '') == 'jefe' ? esGerente() && nuevo().estado in ['autorizado', 'rechazado']
+        : antes().get('pideRol', '') == 'gerente' ? esGerente() && antes().get('pideCorreo', '') != request.auth.token.email && nuevo().estado in ['autorizado', 'rechazado']
+        : (esJefe() && (nuevo().estado == 'rechazado' || nuevo().estado == (antes().valorAprox >= montoGerente() ? 'por-gerente' : 'autorizado')))
+          || (esGerente() && nuevo().estado in ['autorizado', 'rechazado'] && request.time > antes().get('creadoEn', request.time) + duration.value(2, 'd'));
+    }
     match /compras/{id} {
       allow read: if veLoSuyo();
-      // Pedir: a su propio nombre y en estado "pedido". Compras también registra compras hechas sin autorización.
-      // La Jefe de prueba crea cualquier compra porque carga y reinicia los datos de ejemplo.
+      // Pedir: a su propio nombre y en estado "pedido" (también el Gerente: otro Gerente la decide). Compras también registra
+      // compras hechas sin autorización (nacen sin revisar). La Jefe de prueba crea cualquier compra porque carga y reinicia los datos de ejemplo.
       allow create: if (esJefe() && esPrueba())
-        || (nuevo().estado == 'pedido' && nuevo().pideRol == rol() && rol() != 'gerente' && puedePedir() && pedidoOk())
-        || (nuevo().estado == 'autorizado' && nuevo().pideRol == 'gerente' && esGerente() && pedidoOk())
-        || (nuevo().estado == 'sin-autorizar' && esCompras() && pedidoOk());
+        || (nuevo().estado == 'pedido' && nuevo().pideRol == rol() && puedePedir() && pedidoOk())
+        || (nuevo().estado == 'sin-autorizar' && nuevo().revisada == false && esCompras() && pedidoOk());
       allow update:
         // La Jefe de prueba puede todo (reinicia los datos de ejemplo).
         if (esPrueba() && rol() == 'jefe')
-        // La Jefe decide lo que pidió otra persona (rechaza, autoriza o lo pasa al Gerente según el monto).
-        || (antes().estado == 'pedido' && antes().get('pideRol', '') != 'jefe' && nuevo().estado in ['autorizado', 'por-gerente', 'rechazado'] && decideCampos()
-            && (nuevo().estado == 'rechazado' || nuevo().estado == (antes().valorAprox >= montoGerente() ? 'por-gerente' : 'autorizado')) && esJefe())
-        // El Gerente decide lo que pidió la Jefe (cualquier monto) y lo que la Jefe le pasó por el monto.
-        || ((antes().estado == 'por-gerente' || (antes().estado == 'pedido' && antes().get('pideRol', '') == 'jefe')) && nuevo().estado in ['autorizado', 'rechazado'] && decideCampos() && esGerente())
+        // Decidir un pedido (rechazar, autorizar o pasarlo al Gerente según quién lo pidió y el monto).
+        || (antes().estado == 'pedido' && nuevo().estado in ['autorizado', 'por-gerente', 'rechazado'] && decideCampos() && decidePedido())
+        // El Gerente decide lo que la Jefe le pasó por el monto.
+        || (antes().estado == 'por-gerente' && nuevo().estado in ['autorizado', 'rechazado'] && decideCampos() && esGerente())
         // Comprar (autorizada -> comprada): Compras, sin tocar lo autorizado.
         || (antes().estado == 'autorizado' && nuevo().estado == 'comprado' && soloCambia(['estado', 'proveedor', 'valorReal', 'fechaCompra', 'factura', 'historial']) && esCompras())
         // Recibir (comprada -> recibida): la bodega.

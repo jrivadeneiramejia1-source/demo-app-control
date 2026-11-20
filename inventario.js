@@ -74,8 +74,14 @@
   const esBodega = () => perm() === 'bodega' || esJefe();       // la Jefe también puede mover la bodega
   const secciones = () => SECCIONES_NIVEL[perm()] || SECCIONES_NIVEL.ver;
   // Las compras pasan por la Jefe y, si valen el monto del Gerente o más (o las pidió la Jefe), por el Gerente. Nadie autoriza lo suyo.
-  const autorizadorDe = c => (c.estado === 'por-gerente' || c.pideRol === 'jefe' ? 'gerente' : 'jefe');
+  const autorizadorDe = c => (c.estado === 'por-gerente' || c.pideRol === 'jefe' || c.pideRol === 'gerente' ? 'gerente' : 'jefe');
   const esPorAutorizar = c => c.estado === 'pedido' || c.estado === 'por-gerente';
+  // Nadie decide lo suyo (se compara el correo que dejó la compra al crearse; las de antes, sin correo, por el nombre).
+  const esMiaLaCompra = c => (c.pideCorreo ? c.pideCorreo === persona().correo : c.pide === persona().nombre);
+  // Si la Jefe no responde en 2 días, el Gerente puede autorizar o rechazar lo que pidió otra persona (lo mismo que exigen las reglas).
+  const hora = f => (f && typeof f.toMillis === 'function' ? f.toMillis() : Date.parse(f));
+  const respaldoVencido = c => c.estado === 'pedido' && !['jefe', 'gerente'].includes(c.pideRol) && Number.isFinite(hora(c.creadoEn)) && Date.now() > hora(c.creadoEn) + 2 * 86400000;
+  const puedoDecidir = c => esPorAutorizar(c) && !esMiaLaCompra(c) && (puedoHacer(autorizadorDe(c)) || (esGerente() && respaldoVencido(c)));
   // Qué papel hace la persona en el flujo, según su NIVEL (no su rol): así sirve también cuando la Jefe le sube o le baja el nivel.
   const miFuncion = () => (esJefe() ? 'jefe' : esGerente() ? 'gerente' : perm() === 'bodega' ? 'asistente' : perm() === 'compra' ? 'compras' : '');
   // Bodega con el permiso extra «compra» también hace y registra compras (como Compras).
@@ -87,7 +93,8 @@
   const veMovs = () => veTodo() && !esGerente();                                // el Gerente ve el resumen, no cada movimiento
   const puedoPedirMaterial = () => ['pide', 'finanzas', 'compra', 'bodega', 'jefe'].includes(perm());
   const puedoPedirCompra = () => ['pide', 'finanzas', 'compra', 'bodega', 'gerente', 'jefe'].includes(perm());
-  const misMarcas = () => ({ pideUid: window.nube.uid() });
+  // Marcas que exigen las reglas al pedir: la cuenta, su correo y la hora del servidor (no se pueden inventar).
+  const misMarcas = () => ({ pideUid: window.nube.uid(), pideCorreo: window.nube.correo(), creadoEn: window.nube.ahoraServidor() });
   const ahora = () => new Date().toISOString();
   const delMes = f => String(f || '').slice(0, 7) === A().hoyISO().slice(0, 7);
   const texto = (...partes) => partes.filter(Boolean).join(' ').toLowerCase();
@@ -105,7 +112,10 @@
     });
     d.compras.forEach(c => {
       const a = c.articuloId ? artPorId(c.articuloId) : null;
-      if (esPorAutorizar(c)) out.push({ tipo: 'autorizar', rol: autorizadorDe(c), urg: a && estadoArt(a) === 'agotado' ? 0 : 2, compra: c, art: a });
+      if (esPorAutorizar(c)) {
+        out.push({ tipo: 'autorizar', rol: autorizadorDe(c), urg: a && estadoArt(a) === 'agotado' ? 0 : 2, compra: c, art: a });
+        if (respaldoVencido(c)) out.push({ tipo: 'autorizar', rol: 'gerente', urg: 1, compra: c, art: a, respaldo: true });
+      }
       else if (c.estado === 'autorizado') out.push({ tipo: 'comprar', rol: 'compras', urg: 3, compra: c, art: a });
       else if (c.estado === 'comprado') out.push({ tipo: 'recibir', rol: 'asistente', urg: 3, compra: c, art: a });
       else if (c.estado === 'sin-autorizar' && !c.revisada) out.push({ tipo: 'revisar', rol: 'jefe', urg: 4, compra: c, art: a });
@@ -225,6 +235,8 @@
       detalle.push(cantTxt(c.cantidad, c.unidad), 'aprox. ' + cop(c.valorAprox), 'pidió ' + c.pide, c.paraQue);
       if (a && estadoArt(a) !== 'bien') extra = pill(estadoArt(a) === 'agotado' ? 'En bodega: agotado' : `En bodega: quedan ${cantTxt(a.cantidad, a.unidad)}`, EST_ART[estadoArt(a)][1]);
       if (c.pideRol === 'jefe') extra += pill('La pidió la Jefe: la autoriza el Gerente', 's-pend', 'info');
+      if (c.pideRol === 'gerente') extra += pill('La pidió un Gerente: la autoriza otro Gerente', 's-pend', 'info');
+      if (t.respaldo) extra += pill('La Jefe no ha respondido en 2 días: puedes autorizarla tú', 's-pend', 'info');
       if (c.estado === 'por-gerente') extra += pill(`La Jefe ya la autorizó${c.autorizaJefe ? ' (' + c.autorizaJefe + ')' : ''}: falta el Gerente`, 's-pend', 'info');
       botones = boton('autorizar', 'Autorizar', 'check', ` data-id="${esH(c.id)}"`, 'primary small') + boton('rechazar', 'Rechazar', '', ` data-id="${esH(c.id)}"`, 'ghost small');
     } else if (t.tipo === 'comprar') {
@@ -247,7 +259,7 @@
     }
     const detalleBtn = c ? boton('vercompra', 'Ver detalle', '', ` data-id="${esH(c.id)}"`, 'ghost small') : '';
     // Nadie autoriza ni rechaza lo que pidió.
-    const puede = puedoHacer(t.rol) && !(t.tipo === 'autorizar' && c && c.pide === persona().nombre);
+    const puede = puedoHacer(t.rol) && !(t.tipo === 'autorizar' && c && esMiaLaCompra(c));
     const pie = puede ? botones + detalleBtn : App.pill('Le toca a ' + nombreRol(t.rol), 'none', 'persona') + detalleBtn;
     return `<div class="card tarea st-${tono}">
       <div class="tarea-cab"><span class="ico t-${tono}" aria-hidden="true">${window.ico(icono)}</span>
@@ -500,8 +512,8 @@
   const entero = id => { const v = valor(id); return /^-?\d+$/.test(v) ? Number(v) : NaN; };
   function fallar(msg, id) { const e = $('acErr'); e.textContent = msg; e.hidden = false; if (id && $(id)) $(id).focus(); return false; }
   /** Aviso en la campana de un rol; después de guardar también va al teléfono de quien tenga ese rol. No se avisa a uno mismo. */
-  function aviso(para, titulo, txt) {
-    if (!para || (persona() && para === persona().rol)) return null;
+  function aviso(para, titulo, txt, aOtros) {
+    if (!para || (!aOtros && persona() && para === persona().rol)) return null;
     pushPendientes.push({ para, titulo, texto: txt });
     return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'inventario', leido: {} }];
   }
@@ -552,8 +564,8 @@
     const elGerente = esGerente(), aut = autorizadorDe({ pideRol: persona().rol, estado: 'pedido' }), monto = A().montoGerente();
     cotizaciones = []; extrasN = 0;
     abrirAccion({
-      titulo: hagoCompras() || elGerente ? 'Hacer una compra' : 'Pedir una compra',
-      sub: elGerente ? 'Como Gerente nadie la autoriza antes: queda autorizada y le llega el aviso a Compras.'
+      titulo: hagoCompras() ? 'Hacer una compra' : 'Pedir una compra',
+      sub: elGerente ? 'Como Gerente no te autorizas tú: la autoriza otro Gerente (le llega el aviso).'
         : hagoCompras() ? `Escribe qué vas a comprar. Antes de comprar, ${nombreRol(aut)} la autoriza (le llega el aviso)${aut === 'jefe' ? `; si vale ${A().cop(monto)} o más, después la autoriza el Gerente` : ''}.`
         : `Escribe qué se va a comprar. Le llega el aviso a ${nombreRol(aut)} para que la autorice${aut === 'jefe' ? `; si vale ${A().cop(monto)} o más, después la autoriza el Gerente` : ''}.`,
       campos: campoSel('acArt', '¿Es para la bodega?', opsArt('No va a bodega'), a ? a.id : '') +
@@ -565,8 +577,8 @@
         campoTxt('acPara', 'Para qué', a ? 'Reponer la bodega' : '', 'Ej: para la cuadrilla de campo', 140) +
         campoSel('acProy', 'Proyecto', PROYECTOS.map(p => [p, p]), PROYECTOS[0]) +
         `<div class="field"><span class="lbl">Cotizaciones (opcional, hasta 3 fotos)</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="acCotTxt">Adjuntar fotos de cotizaciones</span><input id="acCot" class="archivo-oculto" type="file" accept="image/*" multiple></label><div id="acCotVer" class="cot-mini"></div></div>`,
-      primario: elGerente ? 'Guardar la compra' : hagoCompras() ? 'Enviar para autorizar' : 'Pedir la compra', icono: 'enviar',
-      listo: elGerente ? 'Listo: compra autorizada. Le llegó el aviso a Compras.' : hagoCompras() ? `Listo: le llegó el aviso a ${nombreRol(aut)}. Cuando la autorice, haces la compra y la registras.` : `Listo: compra pedida. Le llegó el aviso a ${nombreRol(aut)} para autorizarla.`,
+      primario: hagoCompras() ? 'Enviar para autorizar' : 'Pedir la compra', icono: 'enviar',
+      listo: elGerente ? 'Listo: compra pedida. Le llegó el aviso a los otros Gerentes para autorizarla.' : hagoCompras() ? `Listo: le llegó el aviso a ${nombreRol(aut)}. Cuando la autorice, haces la compra y la registras.` : `Listo: compra pedida. Le llegó el aviso a ${nombreRol(aut)} para autorizarla.`,
       ops: () => {
         const art = artPorId(valor('acArt')), n = entero('acCant'), v = entero('acValor');
         if (!valor('acQue')) return fallar('Escribe qué se va a comprar.', 'acQue');
@@ -586,22 +598,14 @@
         const abierta = lineas.find(l => l.articuloId && compraAbierta(l.articuloId));
         if (abierta) return fallar(`Ya hay una compra en curso de ${abierta.que}. Revísala en Compras.`, 'acArt');
         const unico = lineas.length === 1, total = lineas.reduce((x, l) => x + l.valor, 0);
-        const proyecto = valor('acProy'), quien = window.DEMO.porRol(aut), resumenTxt = unico ? valor('acQue') : `${valor('acQue')} y ${lineas.length - 1} más`;
+        const proyecto = valor('acProy'), resumenTxt = unico ? valor('acQue') : `${valor('acQue')} y ${lineas.length - 1} más`;
         const doc = Object.assign({ que: resumenTxt, cantidad: unico ? n : lineas.reduce((x, l) => x + l.cantidad, 0), unidad: unico ? valor('acUni') : 'artículos', categoria: valor('acCat'), valorAprox: total,
           paraQue: valor('acPara') + (proyecto ? ` (${proyecto})` : ''), proyecto, proveedorSug: valor('acProvSug'), lineas, cotizaciones: cotizaciones.slice(),
           pide: persona().nombre, pideRol: persona().rol, autoriza: '', autorizaJefe: '', estado: 'pedido', proveedor: '', valorReal: 0, fechaPedido: A().hoyISO(), fechaCompra: '', entregadoA: '', motivoRechazo: '',
           articuloId: unico && art ? art.id : '', factura: '', revisada: false }, misMarcas());
-        if (elGerente) {
-          // El Gerente no tiene a nadie por encima: la compra nace autorizada y queda marcada como pedida por él.
-          Object.assign(doc, { estado: 'autorizado', autoriza: persona().nombre });
-          doc.historial = [{ fecha: ahora(), texto: 'Pidió y autorizó la compra (Gerente)', por: persona().nombre }];
-          return [['set', 'compras', window.nube.idNuevo('co'), doc],
-            aviso('compras', 'Compra autorizada: hay que comprar', `${persona().nombre} (Gerente) pide comprar ${resumenTxt} por ${A().cop(total)}.`),
-            aviso('jefe', 'El Gerente pidió una compra', `${persona().nombre} pidió ${resumenTxt} por ${A().cop(total)}; ya está autorizada.`)];
-        }
         doc.historial = [{ fecha: ahora(), texto: 'Pidió la compra', por: persona().nombre }];
         return [['set', 'compras', window.nube.idNuevo('co'), doc],
-          aviso(aut, 'Compra por autorizar', `${persona().nombre} pide comprar ${resumenTxt} por ${A().cop(total)}${quien ? '' : ''}.`)];
+          aviso(aut, 'Compra por autorizar', `${persona().nombre} pide comprar ${resumenTxt} por ${A().cop(total)}.`, elGerente)];
       }
     });
     // Al escoger un artículo de bodega se llenan solos el nombre, la unidad, la categoría y el valor.
@@ -660,25 +664,26 @@
   function autorizar(c) {
     const App = A(), monto = App.montoGerente(), segundo = c.estado === 'por-gerente';
     // La Jefe pasa al Gerente lo que vale el monto o más (salvo lo que pidió ella: eso siempre lo decide el Gerente).
-    const pasaAlGerente = !segundo && esJefe() && c.pideRol !== 'jefe' && num(c.valorAprox) >= monto;
+    const pasaAlGerente = !segundo && esJefe() && !['jefe', 'gerente'].includes(c.pideRol) && num(c.valorAprox) >= monto;
     abrirAccion({
       titulo: segundo ? 'Autorizar compra (segundo paso)' : 'Autorizar compra', sub: `${c.que}: aprox. ${App.cop(c.valorAprox)}.${segundo ? ` La Jefe ya la autorizó${c.autorizaJefe ? ' (' + c.autorizaJefe + ')' : ''}.` : ''}`,
       campos: detalleCompra(c, true) + (pasaAlGerente ? `<div class="aviso warn"><span>Vale ${esH(App.cop(monto))} o más: al autorizarla pasa al Gerente, que la autoriza después. Aún no se puede comprar.</span></div>` : ''),
       primario: pasaAlGerente ? 'Autorizar y pasar al Gerente' : 'Autorizar', icono: 'check', secundario: 'Rechazar',
       listo: pasaAlGerente ? 'Listo: autorizada. Le llegó el aviso al Gerente para el segundo paso.' : `Listo: compra autorizada. Le llegó el aviso a ${nombreRol('compras')} para comprarla.`,
       ops: () => {
-        if (c.pide === persona().nombre) return fallar('No puedes autorizar una compra que pediste tú.');
-        if (!puedoHacer(autorizadorDe(c))) return fallar(`Esta compra la autoriza ${nombreRol(autorizadorDe(c))}.`);
+        if (esMiaLaCompra(c)) return fallar('No puedes autorizar una compra que pediste tú.');
+        if (!puedoDecidir(c)) return fallar(c.pideRol === 'gerente' ? 'Esta compra la autoriza otro Gerente.' : `Esta compra la autoriza ${nombreRol(autorizadorDe(c))}.`);
+        const porRespaldo = esGerente() && respaldoVencido(c);
         if (pasaAlGerente) {
           return [['mezclar', 'compras', c.id, { estado: 'por-gerente', autorizaJefe: persona().nombre, historial: paso(c, `Autorizó y la pasó al Gerente (vale ${App.cop(c.valorAprox)}, desde ${App.cop(monto)} decide él)`) }],
             aviso('gerente', 'Compra por autorizar (segundo paso)', `${persona().nombre} autorizó ${c.que} por ${App.cop(c.valorAprox)} y la pasa a tu decisión.`)];
         }
-        const campos = { estado: 'autorizado', autoriza: persona().nombre, historial: paso(c, segundo ? 'El Gerente autorizó la compra' : 'Autorizó la compra') };
+        const campos = { estado: 'autorizado', autoriza: persona().nombre, historial: paso(c, porRespaldo ? 'El Gerente autorizó la compra (la Jefe no respondió en 2 días)' : segundo ? 'El Gerente autorizó la compra' : c.pideRol === 'gerente' ? 'Otro Gerente autorizó la compra' : 'Autorizó la compra') };
         if (esJefe() && !segundo) campos.autorizaJefe = persona().nombre;
         return [['mezclar', 'compras', c.id, campos],
           aviso('compras', 'Compra autorizada: hay que comprar', `${persona().nombre} autorizó comprar ${cantTxt(c.cantidad, c.unidad)} de ${c.que}.`),
-          c.pideRol !== 'compras' ? aviso(c.pideRol, 'Te autorizaron la compra', `${persona().nombre} autorizó tu compra de ${c.que}.`) : null,
-          segundo && c.autorizaJefe ? aviso('jefe', 'El Gerente autorizó la compra', `${persona().nombre} autorizó ${c.que}.`) : null];
+          c.pideRol !== 'compras' ? aviso(c.pideRol, 'Te autorizaron la compra', `${persona().nombre} autorizó tu compra de ${c.que}.`, c.pideRol === 'gerente') : null,
+          (segundo && c.autorizaJefe) || porRespaldo ? aviso('jefe', porRespaldo ? 'El Gerente autorizó una compra que esperaba tu respuesta' : 'El Gerente autorizó la compra', `${persona().nombre} autorizó ${c.que}.`) : null];
       },
       alSecundario: () => rechazar(c)
     });
@@ -690,10 +695,10 @@
       primario: 'Rechazar', listo: 'Listo: compra rechazada. Quien la pidió ya tiene el aviso.',
       ops: () => {
         if (!valor('acMotivo')) return fallar('Escribe el motivo.', 'acMotivo');
-        if (c.pide === persona().nombre) return fallar('No puedes decidir sobre una compra que pediste tú.');
-        if (!puedoHacer(autorizadorDe(c))) return fallar(`Esta compra la decide ${nombreRol(autorizadorDe(c))}.`);
+        if (esMiaLaCompra(c)) return fallar('No puedes decidir sobre una compra que pediste tú.');
+        if (!puedoDecidir(c)) return fallar(c.pideRol === 'gerente' ? 'Esta compra la decide otro Gerente.' : `Esta compra la decide ${nombreRol(autorizadorDe(c))}.`);
         return [['mezclar', 'compras', c.id, { estado: 'rechazado', motivoRechazo: valor('acMotivo'), autoriza: persona().nombre, historial: paso(c, `Rechazó la compra: ${valor('acMotivo')}`) }],
-          aviso(c.pideRol, 'Rechazaron tu compra', `${c.que}: ${valor('acMotivo')}.`),
+          aviso(c.pideRol, 'Rechazaron tu compra', `${c.que}: ${valor('acMotivo')}.`, c.pideRol === 'gerente'),
           c.estado === 'por-gerente' && c.autorizaJefe ? aviso('jefe', 'El Gerente rechazó la compra', `${c.que}: ${valor('acMotivo')}.`) : null];
       }
     });
@@ -742,7 +747,7 @@
         if (sinAutorizacion) {
           return [['set', 'compras', window.nube.idNuevo('co'), { que: valor('acQue'), cantidad: entero('acCant'), unidad: valor('acUni'), categoria: valor('acCat'), valorAprox: v, paraQue: valor('acPara') || 'Sin dato',
             pide: valor('acQuien'), pideRol: persona().rol, autoriza: '', estado: 'sin-autorizar', proveedor: valor('acProv'), valorReal: v, fechaPedido: A().hoyISO(), fechaCompra: A().hoyISO(), entregadoA: '', motivoRechazo: '', articuloId: '',
-            factura: fotoFactura, revisada: false, historial: [{ fecha: ahora(), texto: `Registró una compra de ${valor('acQuien')} hecha sin autorización en ${valor('acProv')}`, por: persona().nombre }] }],
+            factura: fotoFactura, revisada: false, historial: [{ fecha: ahora(), texto: `Registró una compra de ${valor('acQuien')} hecha sin autorización en ${valor('acProv')}`, por: persona().nombre }], ...misMarcas() }],
             aviso('jefe', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} en ${valor('acProv')} (${A().cop(v)}) sin autorización.`),
             aviso('compras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} (${A().cop(v)}) sin autorización.`)];
         }
@@ -836,7 +841,7 @@
   function verCompra(c) {
     const App = A(), e = EST_CO[c.estado] || ['Sin estado', 'none'], sobre = sobrecosto(c);
     const botones = [];
-    if (esPorAutorizar(c) && puedoHacer(autorizadorDe(c)) && c.pide !== persona().nombre) botones.push(boton('autorizar', 'Autorizar', 'check', ` data-id="${esH(c.id)}"`, 'primary small'), boton('rechazar', 'Rechazar', '', ` data-id="${esH(c.id)}"`, 'ghost small'));
+    if (puedoDecidir(c)) botones.push(boton('autorizar', 'Autorizar', 'check', ` data-id="${esH(c.id)}"`, 'primary small'), boton('rechazar', 'Rechazar', '', ` data-id="${esH(c.id)}"`, 'ghost small'));
     if (c.estado === 'autorizado' && puedoHacer('compras')) botones.push(boton('comprar', 'Registrar compra', 'carrito', ` data-id="${esH(c.id)}"`, 'primary small'));
     if (c.estado === 'comprado' && puedoHacer('asistente')) botones.push(boton('recibir', lineasDe(c).length > 1 ? 'Recibir la compra' : c.articuloId ? 'Recibir en bodega' : 'Marcar como recibida', 'caja', ` data-id="${esH(c.id)}"`, 'primary small'));
     if (c.estado === 'sin-autorizar' && !c.revisada && esJefe()) botones.push(boton('revisada', 'Marcar como revisada', 'check', ` data-id="${esH(c.id)}"`, 'small'));

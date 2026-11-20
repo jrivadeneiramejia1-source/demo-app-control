@@ -43,7 +43,7 @@ Las 46 personas de la demo son las del organigrama (versión 18, febrero de 2023
 
 | Rol en la app | Quiénes | Equipos | Inventario | Vehículos | Reuniones |
 |---|---|---|---|---|---|
-| Gerente | Oscar Muñoz, Santiago Valencia, Alejandro Giraldo (Proyectos) | Solo ver | Resumen a detalle; autoriza lo que pide la Jefe y las compras grandes | Solo ver | Solo ver |
+| Gerente | Oscar Muñoz, Santiago Valencia, Alejandro Giraldo (Proyectos) | Solo ver | Resumen a detalle; autoriza lo que pide la Jefe, las compras grandes, lo que pide otro Gerente y, si la Jefe no responde en 2 días, las demás | Solo ver | Solo ver |
 | Jefe | Carolina Castillo (Líder de Abastecimiento) | Todo | Panorama; autoriza compras y maneja personas | Todo | Todo |
 | Encargado de equipos | Fabián Barbosa (Auxiliar TI) | Mantenimiento y entregas | Pide | No | No |
 | Soporte | Ángel Ortiz (Asistente TI; permiso extra: revisa actas) | Recibe y revisa | Pide | No | No |
@@ -95,7 +95,7 @@ Colecciones de primer nivel: `reuniones` y `necesidades` (una tarea por document
 ## Permisos (los hace cumplir Firebase, no solo la pantalla)
 Las reglas (`firestore.rules`) no preguntan «¿qué rol tiene?» sino «¿qué **nivel** tiene en este módulo?» (el de su rol, o el que le puso la Jefe). Cada nivel solo lee lo que le toca: sin acceso no lee nada del módulo, y quien solo pide material no ve los movimientos de la bodega y, con cuenta propia, solo ve **sus** pedidos y compras.
 - **Compras**: alguien pide → la Jefe autoriza → Compras la compra → Bodega la recibe. Nadie autoriza su propio pedido.
-  - Si la compra vale el **monto del Gerente** (por defecto 1.000.000; lo cambia solo el Gerente con su cuenta, así la Jefe no lo puede subir) **o más**, después de la Jefe la autoriza el Gerente (estado «Falta el Gerente»). Si la pidió la Jefe, la decide siempre el Gerente. Si la pide el Gerente, nace autorizada y queda marcada como suya.
+  - Si la compra vale el **monto del Gerente** (por defecto 1.000.000; lo cambia solo el Gerente con su cuenta, así la Jefe no lo puede subir) **o más**, después de la Jefe la autoriza el Gerente (estado «Falta el Gerente»). Si la pidió la Jefe, la decide siempre el Gerente. Si la pide un Gerente, **la autoriza otro Gerente** (nadie se autoriza solo). **Respaldo:** si la Jefe no responde en 2 días, el Gerente puede autorizar o rechazar lo que pidió otra persona (queda autorizada directo). Cada compra guarda el correo de quien la pidió y la hora del servidor, así no se pueden inventar.
   - Antes de decidir se ve todo: cada artículo con su precio, el total, a quién se compra, para qué, las cotizaciones (hasta 3 fotos), lo que hay en bodega y el último precio pagado.
   - Si pagan más del 10 % de lo autorizado, o llega menos de lo comprado, la Jefe recibe el aviso (y el Gerente si él la había autorizado).
 - Cualquiera con nivel de pedir pide material y compras a su nombre. Compras registra la compra sin tocar lo autorizado. Las compras y los movimientos no se borran ni se editan (el rastro de lo gastado).

@@ -44,6 +44,9 @@ function operacion(fn) {
 const copia = (x) => structuredClone(x);
 const esPlano = (x) => Object.prototype.toString.call(x) === '[object Object]';
 
+// serverTimestamp(): la hora del servidor (aquí, la de este navegador, como texto).
+export function serverTimestamp() { return new Date().toISOString(); }
+
 // increment(n): como el de Firebase, suma n al número guardado (o lo pone en n si no había número).
 export function increment(n) { return { __incremento: Number(n) }; }
 const esIncremento = (x) => esPlano(x) && Object.keys(x).length === 1 && typeof x.__incremento === 'number';

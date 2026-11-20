@@ -32,7 +32,7 @@ Por decisión de Jeiler (20-nov-2026), la demo pública lleva los **nombres y ca
 - **OWASP ZAP** (ataque a la app en marcha) y **Gitleaks** no se corrieron (no se pudieron bajar desde el entorno).
 - **Las reglas con el Firebase real:** se probaron en el emulador, no en el proyecto publicado. Hay que pegarlas y entrar una vez con cada nivel.
 - **Entrar con Google y los correos de confirmar clave** se probaron con un Firebase falso. Con el real hay que activar Google, autorizar el dominio de la app y probar una vez con un correo de verdad.
-- **Revisión por la Jefe del total de una compra:** las reglas no pueden sumar las líneas de una compra (no hay bucles), así que el total (`valorAprox`) lo calcula la app. Una persona con conocimientos podría escribir un total menor que la suma de sus líneas para no pasar por el Gerente. Mitigación: el Gerente y la Jefe ven la tabla con cada precio antes de decidir.
+- **Total de una compra (arreglado):** las reglas ahora suman el valor de cada línea (hasta 5) y exigen que el total (`valorAprox`) no sea menor, que sea un número y que no sea negativo. Una compra «sin autorizar» nace sin revisar.
 - **Avisos (`avisos`)**: todos los que entran a la app pueden leer los avisos de todos (cada pantalla muestra solo los suyos). No llevan montos sensibles más allá de lo que dice la compra. Pendiente cerrarlo por destinatario.
 - **El Firebase SDK de la app** se carga desde `gstatic.com` en la versión 10.12.2 (antigua). Conviene subirla a una versión actual y probar con Firebase real.
 - **Reuniones**: con un nivel puesto por la Jefe solo se puede subir o bajar a «solo ver»/«sin acceso»; las tareas de cada rol siguen atadas al rol.

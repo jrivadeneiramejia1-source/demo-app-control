@@ -136,6 +136,8 @@
 
   /* ---------- cuentas reales (con el código del rol) ---------- */
   const uid = () => (auth && auth.currentUser ? auth.currentUser.uid : '');
+  /** Correo de la sesión (el mismo que las reglas leen en el token). */
+  const correo = () => (auth && auth.currentUser && auth.currentUser.email ? auth.currentUser.email : '');
   /** Token de la sesión (lo revisa el Worker del agente para saber que es alguien de la app). */
   const token = () => (auth && auth.currentUser ? auth.currentUser.getIdToken() : Promise.reject(new Error('sin sesión')));
   const limpiarCodigo = c => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z]{3})([A-Z0-9]{4})([A-Z0-9]{4})$/, '$1-$2-$3');
@@ -256,6 +258,8 @@
   const idNuevo = pref => `${pref}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   /** Suma o resta a un número guardado sin pisar lo que otra persona haya cambiado al mismo tiempo. */
   const incremento = n => FS.increment(n);
+  /** La hora del servidor de Firebase (no se puede inventar desde el teléfono). */
+  const ahoraServidor = () => FS.serverTimestamp();
   /** Varias escrituras que se guardan todas juntas o ninguna. ops: [['set'|'mezclar'|'update'|'borrar', col, id, datos]]. */
   async function lote(ops) {
     const b = FS.writeBatch(db);
@@ -267,5 +271,5 @@
   }
 
   window.nube = Object.freeze({ configLista, explicar, iniciar, entrar, salir, escuchar, guardar, mezclar, borrar, sembrar, idNuevo, incremento, lote, COLECCIONES,
-    uid, token, entrarCuenta, crearCuenta, usarCodigo, codigoNuevo, limpiarCodigo, entrarGoogle, reenviarConfirmacion, yaConfirme, invitar, recuperarClave });
+    uid, correo, ahoraServidor, token, entrarCuenta, crearCuenta, usarCodigo, codigoNuevo, limpiarCodigo, entrarGoogle, reenviarConfirmacion, yaConfirme, invitar, recuperarClave });
 })();
