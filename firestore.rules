@@ -247,7 +247,7 @@ service cloud.firestore {
         && nuevo().foto is string && nuevo().foto.size() < 400000 && nuevo().foto.matches('^data:image/jpeg;base64,.*')
         && nuevo().costo is number && (nuevo().costo == 0 || nivel('vehiculos') != 'reporta'));
       // La Jefe de prueba la reescribe al cargar o reiniciar los datos de ejemplo.
-      allow update: if (esJefe() && esPrueba()) || (esJefe() || nivel('vehiculos') == 'autoriza')
+      allow update: if (esJefe() && esPrueba()) || (esJefe() || (esDemo() && nivel('vehiculos') == 'autoriza'))
         && soloCambia(['costo', 'revisada', 'revisadaPor', 'revisadaEn', 'nota']) && nuevo().costo is number && nuevo().costo >= 0
         && antes().revisada == false && nuevo().revisada == true && nuevo().get('nota', '').size() <= 160;
       allow delete: if esJefe();
@@ -440,7 +440,7 @@ service cloud.firestore {
         && p.get('reuniones', 'ver') in ['no', 'ver'];
     }
     function porCodigo() {
-      return nuevo().keys().hasOnly(['nombre', 'correo', 'rol', 'codigo', 'activo', 'en'])
+      return request.auth.token.email_verified == true && nuevo().keys().hasOnly(['nombre', 'correo', 'rol', 'codigo', 'activo', 'en'])
         && nuevo().codigo is string && nuevo().codigo != 'invitacion'
         && exists(rutaCodigo(nuevo().codigo, nuevo().rol))
         && get(rutaCodigo(nuevo().codigo, nuevo().rol)).data.activo == true

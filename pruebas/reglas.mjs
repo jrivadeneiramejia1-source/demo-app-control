@@ -383,6 +383,26 @@ for (const [nombre, quien, semilla, cambio] of pasos4) {
     await assertSucceeds(updateDoc(d, Object.assign({}, cambio, { historial: H1.concat([lineaH]) }))); });
 }
 
+console.log('Revisión de seguridad, paso 5: pausar detiene todo y el código exige correo confirmado');
+await limpiar();
+await prueba('una cuenta pausada de Transporte no revisa una novedad (pausar sí detiene todo)', async () => {
+  await sembrar(db => setDoc(doc(db, 'novedades', 'nv-p'), { placa: 'AAA111', costo: 0, revisada: false, tipo: 'llanta' }));
+  const pausada = await cuenta('carP', 'carros', { activo: false }), activa = await cuenta('carA', 'carros');
+  const cambio = { costo: 10, revisada: true, revisadaPor: 'X', revisadaEn: '2026-11-20', nota: '' };
+  await assertFails(updateDoc(doc(pausada, 'novedades', 'nv-p'), cambio));
+  await assertSucceeds(updateDoc(doc(activa, 'novedades', 'nv-p'), cambio)); });
+await prueba('una cuenta sin perfil o con el correo sin confirmar tampoco revisa novedades', async () => {
+  await sembrar(db => setDoc(doc(db, 'novedades', 'nv-q'), { placa: 'AAA111', costo: 0, revisada: false, tipo: 'llanta' }));
+  const cambio = { costo: 10, revisada: true, revisadaPor: 'X', revisadaEn: '2026-11-20', nota: '' };
+  await sembrar(db => setDoc(doc(db, 'usuarios', 'carS'), { nombre: 'Sin Confirmar', correo: 'cars@correo-inventado.test', rol: 'carros', codigo: 'X', activo: true, en: '2026-11-20' }));
+  await assertFails(updateDoc(doc(env.authenticatedContext('carS', { email: 'cars@correo-inventado.test', email_verified: false }).firestore(), 'novedades', 'nv-q'), cambio));
+  await assertFails(updateDoc(doc(env.authenticatedContext('sinPerfil2', { email: 'sp2@correo-inventado.test', email_verified: true }).firestore(), 'novedades', 'nv-q'), cambio)); });
+await prueba('con el código, el perfil solo se crea con el correo confirmado', async () => {
+  await sembrar(db => setDoc(doc(db, 'codigos', 'BOD-SINC-ONFI'), { rol: 'asistente', activo: true, por: 'Jefa', en: '2026-11-20' }));
+  const perfilCod = correo => ({ nombre: 'Persona Nueva', correo, rol: 'asistente', codigo: 'BOD-SINC-ONFI', activo: true, en: '2026-11-20' });
+  await assertFails(setDoc(doc(nuevoCtx('cc1', 'cc1@correo-inventado.test', false), 'usuarios', 'cc1'), perfilCod('cc1@correo-inventado.test')));
+  await assertSucceeds(setDoc(doc(nuevoCtx('cc2', 'cc2@correo-inventado.test', true), 'usuarios', 'cc2'), perfilCod('cc2@correo-inventado.test'))); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }
