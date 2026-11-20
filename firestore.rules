@@ -11,6 +11,8 @@ rules_version = '2';
 //   Reuniones: la Jefe confirma lo que entendió el agente y reparte; Compras, Transporte y Bodega informan lo que hay y la Jefe
 //   autoriza la comida y los carros (escoge el conductor);
 //   el Conductor confirma el viaje, Logística alista, el Profesional confirma si va y Administrativo registra el acta.
+//   Vehículos: el Conductor reporta novedades con foto y registra salidas y llegadas; Transporte y Bodega revisan, asignan y
+//   actualizan documentos.
 //   Todos: piden material y piden compras a su nombre, y marcan sus avisos como leídos.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -56,6 +58,13 @@ service cloud.firestore {
         : tipo == 'logistica' ? ['asistente'] : [];
     }
     function rutaNec(id) { return /databases/$(database)/documents/necesidades/$(id); }
+    function rutaEnt(id) { return /databases/$(database)/documents/entregas/$(id); }
+    function esFecha(f) { return f is string && f.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    // El historial solo crece: una línea nueva al final y las viejas iguales.
+    function historialSigue() {
+      return nuevo().historial is list && nuevo().historial.size() == antes().get('historial', []).size() + 1
+        && nuevo().historial[0:antes().get('historial', []).size()] == antes().get('historial', []);
+    }
     // ¿Ya llegó ese día (AAAA-MM-DD) en Colombia (UTC-5)? Desde las 00:00 hora de Colombia.
     function yaFue(f) {
       return f is string && f.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
@@ -88,8 +97,58 @@ service cloud.firestore {
 
     // Módulos que en esta fase solo se ven: los escribe la Jefe al cargar los datos de prueba.
     match /{col}/{id} {
-      allow read: if esDemo() && col in ['equipos', 'vehiculos'];
-      allow write: if esJefe() && col in ['equipos', 'vehiculos'];
+      allow read: if esDemo() && col in ['equipos'];
+      allow write: if esJefe() && col in ['equipos'];
+    }
+
+    // Vehículos: hoja de vida de cada carro. Transporte y Bodega asignan, actualizan documentos y estado;
+    // el Conductor solo cambia estado (salida/llegada), kilometraje (nunca hacia atrás) y conductor, con una línea de historial.
+    match /vehiculos/{id} {
+      allow read: if esDemo();
+      allow create, delete: if esJefe();
+      allow update: if esJefe()
+        || (esDemo() && rol() in ['carros', 'asistente'] && soloCambia(['conductor', 'soat', 'tecno', 'estado', 'km', 'historial', 'ultimaEntrega'])
+            && nuevo().km is number && nuevo().km >= antes().km && nuevo().estado in ['disponible', 'en-uso', 'en-taller']
+            && esFecha(nuevo().soat) && esFecha(nuevo().tecno) && historialSigue())
+        // El Conductor solo pasa el carro de disponible a en uso (o al revés) junto con la salida o llegada que registra en ese mismo momento.
+        || (esDemo() && rol() == 'conductor' && soloCambia(['estado', 'km', 'conductor', 'historial', 'ultimaEntrega'])
+            && antes().estado in ['disponible', 'en-uso'] && nuevo().estado in ['disponible', 'en-uso'] && nuevo().estado != antes().estado
+            && nuevo().km is number && nuevo().km >= antes().km && nuevo().km <= antes().km + 3000 && historialSigue()
+            && nuevo().ultimaEntrega is string && !exists(rutaEnt(nuevo().ultimaEntrega))
+            && getAfter(rutaEnt(nuevo().ultimaEntrega)).data.vehiculoId == id
+            && getAfter(rutaEnt(nuevo().ultimaEntrega)).data.km == nuevo().km
+            && getAfter(rutaEnt(nuevo().ultimaEntrega)).data.tipo == (nuevo().estado == 'en-uso' ? 'salida' : 'llegada'));
+    }
+
+    // Novedades de un carro: siempre con foto, sin revisar al nacer. Las revisan Transporte, Bodega o la Jefe.
+    match /novedades/{id} {
+      allow read: if esDemo();
+      // La Jefe de prueba las crea al cargar los datos de ejemplo.
+      allow create: if (esJefe() && esPrueba()) || (esDemo() && rol() in ['conductor', 'carros', 'asistente', 'jefe']
+        && nuevo().keys().hasOnly(['vehiculoId', 'placa', 'tipo', 'fecha', 'km', 'descripcion', 'foto', 'reporta', 'reportaRol', 'costo', 'revisada', 'revisadaPor', 'revisadaEn', 'nota'])
+        && nuevo().reportaRol == rol() && nuevo().revisada == false
+        && nuevo().tipo in ['llanta', 'choque', 'rayon', 'mantenimiento', 'otro']
+        && nuevo().foto is string && nuevo().foto.size() < 400000 && nuevo().foto.matches('^data:image/jpeg;base64,.*')
+        && nuevo().costo is number && (nuevo().costo == 0 || rol() != 'conductor'));
+      allow update: if (esJefe() || (esDemo() && rol() in ['carros', 'asistente']))
+        && soloCambia(['costo', 'revisada', 'revisadaPor', 'revisadaEn', 'nota']) && nuevo().costo is number && nuevo().costo >= 0
+        && antes().revisada == false && nuevo().revisada == true && nuevo().get('nota', '').size() <= 160;
+      allow delete: if esJefe();
+    }
+
+    // Salidas y llegadas de los carros: con las 5 fotos (cada una pequeña) y la revisión. No se cambian después.
+    match /entregas/{id} {
+      allow read: if esDemo();
+      allow create: if (esJefe() && esPrueba()) || (esDemo() && rol() in ['conductor', 'carros', 'asistente', 'jefe']
+        && nuevo().porRol == rol() && nuevo().tipo in ['salida', 'llegada']
+        && nuevo().fotos.keys().hasOnly(['frente', 'atras', 'izquierda', 'derecha', 'llantas'])
+        && nuevo().fotos.keys().hasAll(['frente', 'atras', 'izquierda', 'derecha', 'llantas'])
+        && nuevo().fotos.frente is string && nuevo().fotos.frente.size() < 200000
+        && nuevo().fotos.atras is string && nuevo().fotos.atras.size() < 200000
+        && nuevo().fotos.izquierda is string && nuevo().fotos.izquierda.size() < 200000
+        && nuevo().fotos.derecha is string && nuevo().fotos.derecha.size() < 200000
+        && nuevo().fotos.llantas is string && nuevo().fotos.llantas.size() < 200000);
+      allow update, delete: if esJefe();
     }
 
     // Reuniones: las arma la Jefe con lo que entendió el agente. Administrativo la marca como realizada al registrar el acta.
@@ -112,7 +171,6 @@ service cloud.firestore {
     // sin tocar de qué reunión es, qué es ni a quién le toca.
     match /necesidades/{id} {
       allow read: if esDemo();
-      // Las crea la Jefe; Transporte crea el viaje del conductor al autorizar los carros.
       // Las crea la Jefe (también el viaje del conductor, al autorizar los carros).
       allow create: if esJefe();
       // Cada quien decide SU tarea una vez (mientras está pendiente). El acta, el día de la reunión o después.
@@ -129,8 +187,13 @@ service cloud.firestore {
             && nuevo().informes[nuevo().informes.size() - 1].texto is string
             && nuevo().informes[nuevo().informes.size() - 1].texto.size() <= 200)
         // El conductor que no puede devuelve los carros para que la Jefe escoja otro.
+        //   Tiene que decir cuál de sus viajes deja (y ese viaje queda en «no-va» en la misma escritura).
         || (esDemo() && rol() == 'conductor' && antes().tipo == 'carros' && antes().estado == 'autorizado'
-            && nuevo().estado == 'pendiente' && nuevo().conductor == '' && soloCambia(['estado', 'conductor', 'motivo']));
+            && nuevo().estado == 'pendiente' && nuevo().conductor == '' && soloCambia(['estado', 'conductor', 'motivo', 'devuelto'])
+            && nuevo().devuelto is string && get(rutaNec(nuevo().devuelto)).data.tipo == 'viaje'
+            && get(rutaNec(nuevo().devuelto)).data.estado in ['pendiente', 'listo']
+            && getAfter(rutaNec(nuevo().devuelto)).data.carrosId == id
+            && getAfter(rutaNec(nuevo().devuelto)).data.estado == 'no-va');
       allow delete: if esJefe();
     }
 

@@ -222,28 +222,36 @@
     };
 
     // ---------- VEHÍCULOS ----------
+    // Cada carro tiene su hoja de vida aquí; las novedades y las entregas (salida y llegada) van aparte, con sus fotos.
     const vehiculos = {
-      've-abc123': {
-        placa: 'ABC 123', marca: 'Toyota', modelo: 'Hilux', anio: 2022, conductor: 'Carlos Pinto', km: 45210,
-        soat: dias(12), tecno: dias(200), estado: 'en-uso',
-        novedades: [
-          { id: 'no-001', tipo: 'rayon', fecha: dias(-2), km: 45150, desc: 'Rayón en la puerta derecha, cerca de la manija',
-            reporta: 'Carlos Pinto', costo: 0, revisada: false }
-        ]
-      },
-      've-def456': {
-        placa: 'DEF 456', marca: 'Chevrolet', modelo: 'D-Max', anio: 2021, conductor: '', km: 62800,
-        soat: dias(150), tecno: dias(-5), estado: 'disponible',
-        novedades: []
-      },
-      've-ghi789': {
-        placa: 'GHI 789', marca: 'Mitsubishi', modelo: 'L200', anio: 2020, conductor: '', km: 88450,
-        soat: dias(90), tecno: dias(120), estado: 'en-taller',
-        novedades: [
-          { id: 'no-002', tipo: 'mantenimiento', fecha: dias(-8), km: 88200, desc: 'Cambio de aceite, filtros y revisión de frenos',
-            reporta: 'Carlos Pinto', costo: 380000, revisada: true }
-        ]
-      }
+      've-abc123': { placa: 'ABC 123', marca: 'Toyota', modelo: 'Hilux', anio: 2022, color: 'Blanco', conductor: 'Carlos Pinto', km: 45210,
+        soat: dias(12), tecno: dias(200), estado: 'en-uso', historial: [{ fecha: iso(-1, 6, 40), texto: 'Salió con Carlos Pinto (45.180 km)', por: 'Carlos Pinto' }] },
+      've-def456': { placa: 'DEF 456', marca: 'Chevrolet', modelo: 'D-Max', anio: 2021, color: 'Gris', conductor: '', km: 62800,
+        soat: dias(150), tecno: dias(-5), estado: 'disponible', historial: [] },
+      've-ghi789': { placa: 'GHI 789', marca: 'Mitsubishi', modelo: 'L200', anio: 2020, color: 'Rojo', conductor: '', km: 88450,
+        soat: dias(90), tecno: dias(120), estado: 'en-taller', historial: [{ fecha: iso(-8, 9, 0), texto: 'Entró al taller por mantenimiento', por: 'Marta Gómez' }] },
+      've-jkl012': { placa: 'JKL 012', marca: 'Toyota', modelo: 'Fortuner', anio: 2023, color: 'Plata', conductor: '', km: 21340,
+        soat: dias(240), tecno: dias(300), estado: 'disponible', historial: [] }
+    };
+    // Foto de ejemplo (pequeña e inventada) para las novedades y entregas de muestra.
+    const FOTO = 'data:image/jpeg;base64,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';
+    const novedades = {
+      'no-001': { vehiculoId: 've-abc123', placa: 'ABC 123', tipo: 'rayon', fecha: iso(-2, 17, 50), km: 45150, descripcion: 'Rayón en la puerta derecha, cerca de la manija',
+        foto: FOTO, reporta: 'Carlos Pinto', reportaRol: 'conductor', costo: 0, revisada: false, revisadaPor: '', revisadaEn: '', nota: '' },
+      'no-002': { vehiculoId: 've-ghi789', placa: 'GHI 789', tipo: 'mantenimiento', fecha: iso(-8, 8, 30), km: 88200, descripcion: 'Cambio de aceite, filtros y revisión de frenos',
+        foto: FOTO, reporta: 'Carlos Pinto', reportaRol: 'conductor', costo: 380000, revisada: true, revisadaPor: 'Marta Gómez', revisadaEn: iso(-8, 9, 0), nota: 'Se llevó al taller del convenio' },
+      'no-003': { vehiculoId: 've-def456', placa: 'DEF 456', tipo: 'llanta', fecha: iso(-15, 14, 0), km: 62500, descripcion: 'Pinchazo en la llanta trasera izquierda',
+        foto: FOTO, reporta: 'Carlos Pinto', reportaRol: 'conductor', costo: 45000, revisada: true, revisadaPor: 'Sofía Herrera', revisadaEn: iso(-15, 16, 0), nota: 'Se despinchó en la vulcanizadora' }
+    };
+    const fotos5 = { frente: FOTO, atras: FOTO, izquierda: FOTO, derecha: FOTO, llantas: FOTO };
+    const revisionOk = { luces: true, llantas: true, documentos: true, herramienta: true };
+    const entregas = {
+      'en-001': { vehiculoId: 've-def456', placa: 'DEF 456', tipo: 'salida', fecha: iso(-4, 6, 30), km: 62700, combustible: '3/4', conductor: 'Carlos Pinto', con: 'Sofía Herrera',
+        fotos: fotos5, revision: revisionOk, observaciones: '', por: 'Carlos Pinto', porRol: 'conductor', reunionId: '' },
+      'en-002': { vehiculoId: 've-def456', placa: 'DEF 456', tipo: 'llegada', fecha: iso(-4, 18, 10), km: 62800, combustible: '1/4', conductor: 'Carlos Pinto', con: 'Sofía Herrera',
+        fotos: fotos5, revision: revisionOk, observaciones: 'Llegó con poco combustible', por: 'Carlos Pinto', porRol: 'conductor', reunionId: '' },
+      'en-003': { vehiculoId: 've-abc123', placa: 'ABC 123', tipo: 'salida', fecha: iso(-1, 6, 40), km: 45180, combustible: 'lleno', conductor: 'Carlos Pinto', con: 'Marta Gómez',
+        fotos: fotos5, revision: revisionOk, observaciones: '', por: 'Carlos Pinto', porRol: 'conductor', reunionId: '' }
     };
 
     // ---------- REUNIONES ----------
@@ -279,15 +287,17 @@
     function nec(reunionId, tipo, detalle, cantidad, responsableRol, estado, extra) {
       const r = reuniones[reunionId];
       return Object.assign({ reunionId, comunidad: r.comunidad, fechaReunion: r.fecha, tipo, detalle, cantidad, responsableRol, estado,
-        por: '', en: '', motivo: '', conductor: '', items: [], acta: null, informes: [] }, extra || {});
+        por: '', en: '', motivo: '', conductor: '', items: [], acta: null, informes: [], vehiculos: [], vehiculoId: '', placa: '' }, extra || {});
     }
     const hecho = (por, n, h) => ({ por, en: iso(n, h, 0) });
     // Lo que informan Compras, Transporte o Bodega para que la Jefe decida.
     const inf = (rol, por, texto, n, h) => ({ rol, por, texto, en: iso(n, h, 0) });
     const necesidades = {
-      'ne-001': nec('re-001', 'carros', 'Dos camionetas para el equipo de campo', 2, 'jefe', 'autorizado', Object.assign({ conductor: 'Carlos Pinto',
+      'ne-001': nec('re-001', 'carros', 'Dos camionetas para el equipo de campo', 2, 'jefe', 'autorizado', Object.assign({ conductor: 'Carlos Pinto, Rafael Ospino',
+        vehiculos: [{ vehiculoId: 've-abc123', placa: 'ABC 123', conductor: 'Carlos Pinto' }, { vehiculoId: 've-jkl012', placa: 'JKL 012', conductor: 'Rafael Ospino' }],
         informes: [inf('carros', 'Marta Gómez', 'Están libres la ABC 123 y la DEF 456. Carlos puede manejar.', -2, 8)] }, hecho('Ana Pérez', -2, 9))),
-      'ne-002': nec('re-001', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Norte', 2, 'conductor', 'pendiente', { conductor: 'Carlos Pinto' }),
+      'ne-002': nec('re-001', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Norte en el ABC 123', 1, 'conductor', 'pendiente', { conductor: 'Carlos Pinto', vehiculoId: 've-abc123', placa: 'ABC 123', carrosId: 'ne-001' }),
+      'ne-025': nec('re-001', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Norte en el JKL 012', 1, 'conductor', 'listo', Object.assign({ conductor: 'Rafael Ospino', vehiculoId: 've-jkl012', placa: 'JKL 012', carrosId: 'ne-001' }, hecho('Carlos Pinto', -1, 18))),
       'ne-003': nec('re-001', 'refrigerios', 'Refrigerios para 30 personas', 30, 'jefe', 'pendiente', { informes: [inf('asistente', 'Sofía Herrera', 'En bodega hay 12 refrigerios; faltan 18 por comprar.', -1, 10)] }),
       'ne-004': nec('re-001', 'almuerzo', 'Almuerzo para 30 personas', 30, 'jefe', 'pendiente'),
       'ne-005': nec('re-001', 'logistica', 'Alistar el salón para 30 personas', 30, 'logistica', 'pendiente', { items: items([1]) }),
@@ -298,15 +308,15 @@
       'ne-010': nec('re-002', 'logistica', 'Alistar el kiosco para 20 personas', 20, 'logistica', 'pendiente', { items: items([]) }),
       'ne-011': nec('re-002', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Laura Medina', -1, 16)),
       'ne-012': nec('re-002', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'pendiente'),
-      'ne-013': nec('re-003', 'carros', 'Una camioneta para el equipo', 1, 'jefe', 'autorizado', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Ana Pérez', -16, 10))),
-      'ne-014': nec('re-003', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Centro', 1, 'conductor', 'listo', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Carlos Pinto', -15, 8))),
+      'ne-013': nec('re-003', 'carros', 'Una camioneta para el equipo', 1, 'jefe', 'autorizado', Object.assign({ conductor: 'Carlos Pinto', vehiculos: [{ vehiculoId: 've-abc123', placa: 'ABC 123', conductor: 'Carlos Pinto' }] }, hecho('Ana Pérez', -16, 10))),
+      'ne-014': nec('re-003', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Centro en el ABC 123', 1, 'conductor', 'listo', Object.assign({ conductor: 'Carlos Pinto', vehiculoId: 've-abc123', placa: 'ABC 123' }, hecho('Carlos Pinto', -15, 8))),
       'ne-015': nec('re-003', 'almuerzo', 'Almuerzo para 15 personas', 15, 'jefe', 'autorizado', hecho('Ana Pérez', -16, 11)),
       'ne-016': nec('re-003', 'logistica', 'Alistar la escuela para 15 personas', 15, 'logistica', 'listo', Object.assign({ items: items([0, 1, 2, 3]) }, hecho('Pedro Castillo', -11, 15))),
       'ne-017': nec('re-003', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Laura Medina', -14, 9)),
       'ne-018': nec('re-003', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'listo', Object.assign({
         acta: { asistentes: 14, inicio: '10:00', fin: '12:30', observaciones: 'Se presentó el proyecto. La comunidad pidió una segunda reunión para revisar el cronograma.', foto: '' } }, hecho('Natalia Vargas', -10, 16))),
-      'ne-019': nec('re-004', 'carros', 'Una camioneta para el equipo', 1, 'jefe', 'autorizado', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Ana Pérez', -6, 9))),
-      'ne-020': nec('re-004', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Occidente', 1, 'conductor', 'listo', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Carlos Pinto', -5, 8))),
+      'ne-019': nec('re-004', 'carros', 'Una camioneta para el equipo', 1, 'jefe', 'autorizado', Object.assign({ conductor: 'Carlos Pinto', vehiculos: [{ vehiculoId: 've-def456', placa: 'DEF 456', conductor: 'Carlos Pinto' }] }, hecho('Ana Pérez', -6, 9))),
+      'ne-020': nec('re-004', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Occidente en el DEF 456', 1, 'conductor', 'listo', Object.assign({ conductor: 'Carlos Pinto', vehiculoId: 've-def456', placa: 'DEF 456' }, hecho('Carlos Pinto', -5, 8))),
       'ne-021': nec('re-004', 'refrigerios', 'Refrigerios para 25 personas', 25, 'jefe', 'autorizado', hecho('Ana Pérez', -6, 11)),
       'ne-022': nec('re-004', 'logistica', 'Alistar la cancha para 25 personas', 25, 'logistica', 'listo', Object.assign({ items: items([0, 1, 2, 3]) }, hecho('Pedro Castillo', -2, 15))),
       'ne-023': nec('re-004', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Laura Medina', -4, 9)),
@@ -331,8 +341,8 @@
       'av-006': aviso('asistente', 'Pedidos de material por entregar', 'Tienes 3 pedidos de material por entregar.', iso(-1, 17, 10), 'inventario')
     };
 
-    return { equipos, compras, vehiculos, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
+    return { equipos, compras, vehiculos, novedades, entregas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 7, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 8, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

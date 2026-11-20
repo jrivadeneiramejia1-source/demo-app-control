@@ -15,7 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], reuniones: [], necesidades: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [] },
+    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], reuniones: [], necesidades: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     oyentes: [],
     filtro: { equipos: '', inventario: '', vehiculos: '', reuniones: '' },
@@ -32,7 +32,6 @@
   const diasHasta = s => { const f = aFecha(s); if (!f) return null; const h = aFecha(hoyISO()); return Math.round((f - h) / 86400000); };
   const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
   const fechaCorta = s => { const f = aFecha(s); if (!f) return ''; const y = f.getFullYear() !== new Date().getFullYear() ? ' ' + f.getFullYear() : ''; return `${f.getDate()} ${MESES[f.getMonth()]}${y}`; };
-  const cuando = d => d == null ? '' : d === 0 ? 'hoy' : d === 1 ? 'mañana' : d === -1 ? 'ayer' : d > 0 ? `en ${d} días` : `hace ${-d} días`;
   const hace = iso => {
     const t = Date.parse(iso); if (!Number.isFinite(t)) return '';
     const m = Math.round((Date.now() - t) / 60000);
@@ -188,7 +187,7 @@
   // Los arreglos dañados (null, texto, mapa o con elementos null) se vuelven arreglos de objetos para que nada se rompa.
   const objetos = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
   const LIMPIAR = {
-    vehiculos: v => Object.assign({}, v, { novedades: objetos(v.novedades) }),
+    vehiculos: v => Object.assign({}, v, { historial: objetos(v.historial) }),
     reuniones: r => Object.assign({}, r, { historial: objetos(r.historial), faltan: Array.isArray(r.faltan) ? r.faltan.filter(x => typeof x === 'string') : [], correos: Array.isArray(r.correos) ? r.correos : [] }),
     necesidades: n => Object.assign({}, n, { items: objetos(n.items) })
   };
@@ -196,7 +195,7 @@
   function escucharTodo() {
     // Las personas y los códigos solo los leen el Gerente y el Jefe (para el panel «Personas y códigos»).
     const p = S.persona, panel = !p.real ? [] : p.rol === 'gerente' ? ['usuarios', 'codigos', 'codigosDireccion'] : p.rol === 'jefe' ? ['usuarios', 'codigos'] : [];
-    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'necesidades', 'avisos', 'suscripciones'].concat(panel).forEach(col => {
+    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'reuniones', 'necesidades', 'avisos', 'suscripciones'].concat(panel).forEach(col => {
       S.oyentes.push(nube.escuchar(col, lista => {
         S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
         // «Faltan los datos de prueba» se quita cuando llegan artículos. Un error de permiso al cargar o al leer
@@ -292,12 +291,12 @@
   function pendientes() {
     const d = S.datos, p = S.persona, rol = p ? p.rol : '';
     const inv = window.Inventario.resumen(rol);
-    const docsPorVencer = d.vehiculos.reduce((n, v) => n + [v.soat, v.tecno].filter(f => { const x = diasHasta(f); return x != null && x <= 30; }).length, 0);
-    const novedades = d.vehiculos.reduce((n, v) => n + (v.novedades || []).filter(x => !x.revisada).length, 0);
+    const veh = window.Vehiculos.resumen();
+    const docsPorVencer = veh.docs, novedades = veh.novedades;
     const reu = window.Reuniones.resumen();
     const recibidos = d.equipos.filter(e => e.estado === 'recibido').length;
     const proximas = d.reuniones.filter(r => r.estado === 'programada' || r.estado === 'reprogramada').length;
-    return { inv, reu, docsPorVencer, novedades, recibidos, proximas };
+    return { inv, reu, veh, docsPorVencer, novedades, recibidos, proximas };
   }
 
   function pintarInicio() {
@@ -313,8 +312,9 @@
       { mod: 'inventario', k: 'i-cur', n: n.inv.enCurso, lbl: 'Compras en curso', icono: 'carrito', tono: 'listo', roles: ['gerente'] },
       { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['gerente', 'jefe', 'compras'] },
       { mod: 'inventario', k: 'i-mis', n: n.inv.misPedidos, lbl: 'Tus pedidos de material en espera', icono: 'caja', tono: 'listo', roles: () => permiso('inventario') === 'pide' },
-      { mod: 'vehiculos', k: 'i-nov', n: n.novedades, lbl: 'Novedades sin revisar', icono: 'carro', tono: 'org', roles: ['jefe', 'carros', 'conductor'] },
-      { mod: 'vehiculos', k: 'i-doc', n: n.docsPorVencer, lbl: 'SOAT o revisión por vencer', icono: 'calendario', tono: 'peligro', roles: ['jefe', 'carros', 'conductor'] },
+      { mod: 'vehiculos', k: 'i-nov', n: n.novedades, lbl: 'Novedades de carros sin revisar', icono: 'carro', tono: 'org', roles: ['jefe', 'carros', 'asistente'] },
+      { mod: 'vehiculos', k: 'i-via', n: n.veh.mias, lbl: 'Viajes por registrar', icono: 'llave', tono: 'listo', roles: ['conductor'] },
+      { mod: 'vehiculos', k: 'i-doc', n: n.docsPorVencer, lbl: 'SOAT o técnico-mecánica por vencer o vencidos', icono: 'calendario', tono: 'peligro', roles: ['gerente', 'jefe', 'carros', 'asistente'] },
       { mod: 'reuniones', k: 'i-reu', n: n.reu.conPend, lbl: 'Reuniones con algo pendiente', icono: 'reunion', tono: 'org', roles: ['jefe'] },
       { mod: 'reuniones', k: 'i-act', n: n.reu.actas, lbl: 'Actas por registrar', icono: 'hojas', tono: 'peligro', roles: ['jefe', 'administrativo'] },
       { mod: 'reuniones', k: 'i-rmi', n: n.reu.mias, lbl: 'Tareas de reuniones para ti', icono: 'reunion', tono: 'listo', roles: ['compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional'] },
@@ -382,40 +382,6 @@
     }).join(''), 'No hay equipos con ese filtro');
   }
 
-  const EST_VE = { disponible: ['Disponible', 's-disco', 'disco'], 'en-uso': ['En uso', 's-listo', 'listo'], 'en-taller': ['En taller', 's-org', 'org'] };
-  const NOV_TXT = { llanta: 'Llanta', choque: 'Choque', rayon: 'Rayón', mantenimiento: 'Mantenimiento', otro: 'Otro' };
-  function docPill(nombre, fecha) {
-    const d = diasHasta(fecha);
-    if (d == null) return pill(nombre + ' sin fecha', 's-warn', 'calendario');
-    if (d < 0) return pill(`${nombre} vencido ${cuando(d)}`, 's-peligro', 'aviso');
-    if (d <= 30) return pill(`${nombre} vence ${cuando(d)}`, 's-warn', 'calendario');
-    return pill(`${nombre} hasta ${fechaCorta(fecha)}`, 's-pend', 'calendario');
-  }
-  function pintarVehiculos() {
-    const todos = S.datos.vehiculos.slice().sort((a, b) => String(a.placa).localeCompare(String(b.placa)));
-    const vence = v => [v.soat, v.tecno].some(f => { const x = diasHasta(f); return x != null && x <= 30; });
-    const nov = v => (v.novedades || []).filter(x => !x.revisada).length;
-    tablero('vehiculos', [
-      { k: 'v-disp', n: todos.filter(v => v.estado === 'disponible').length, lbl: 'Disponibles', icono: 'carro', tono: 'disco', filtro: 'disponible' },
-      { k: 'v-nov', n: todos.filter(nov).length, lbl: 'Con novedades sin revisar', icono: 'aviso', tono: 'org', filtro: 'novedad' },
-      { k: 'v-doc', n: todos.filter(vence).length, lbl: 'Documentos por vencer', icono: 'calendario', tono: 'peligro', filtro: 'docs' }
-    ]);
-    const f = S.filtro.vehiculos;
-    const vis = todos.filter(v => !f || (f === 'disponible' && v.estado === 'disponible') || (f === 'novedad' && nov(v)) || (f === 'docs' && vence(v)));
-    contar('cntVehiculos', vis.length, todos.length, 'carros');
-    lista('listaVehiculos', 'vehiculos', vis.map(v => {
-      const st = EST_VE[v.estado] || ['Sin estado', 'none', 'pend'];
-      const pend = (v.novedades || []).filter(x => !x.revisada);
-      return `<div class="card st-${pend.length ? 'org' : st[2]}">
-        <div class="card-head"><div class="card-title"><span class="placa">${esH(v.placa)}</span></div>${pill(st[0], st[1])}</div>
-        <p class="card-sub">${esH(v.marca)} ${esH(v.modelo)} ${esH(v.anio)}</p>
-        <div class="facts"><span>${ico('persona')} <b>${esH(v.conductor || 'Sin conductor')}</b></span><span class="valor">${esH((Number(v.km) || 0).toLocaleString('es-CO'))} km</span></div>
-        <div class="docs">${docPill('SOAT', v.soat)}${docPill('Técnico-mecánica', v.tecno)}</div>
-        ${pend.map(x => `<div class="aviso warn"><span><b>${esH(NOV_TXT[x.tipo] || 'Novedad')} sin revisar</b> · ${esH(x.desc)} (${esH(x.reporta)}, ${esH(fechaCorta(x.fecha))})</span></div>`).join('')}
-      </div>`;
-    }).join(''), 'No hay carros con ese filtro');
-  }
-
   /* ---------- avisos (campana) ---------- */
   const misAvisos = () => {
     const rol = S.persona ? S.persona.rol : '';
@@ -456,7 +422,7 @@
     const b = {
       equipos: ['jefe', 'equipos', 'soporte'].includes(rol) ? n.recibidos : 0,
       inventario: n.inv.mias,
-      vehiculos: ['jefe', 'carros', 'conductor'].includes(rol) ? n.novedades : 0,
+      vehiculos: n.veh.mias,
       reuniones: rol === 'jefe' ? n.reu.conPend : n.reu.mias
     };
     Object.entries(b).forEach(([k, v]) => UI.insignia(document.querySelector(`[data-badge="${k}"]`), puedeVer(k) ? v : 0));
@@ -466,7 +432,7 @@
     if (!S.persona) return;
     pintarInsignias();
     pintarAvisos();
-    ({ inicio: pintarInicio, equipos: pintarEquipos, inventario: () => window.Inventario.pintar(), vehiculos: pintarVehiculos, reuniones: () => window.Reuniones.pintar() })[S.vista]();
+    ({ inicio: pintarInicio, equipos: pintarEquipos, inventario: () => window.Inventario.pintar(), vehiculos: () => window.Vehiculos.pintar(), reuniones: () => window.Reuniones.pintar() })[S.vista]();
     if (window.Gente) window.Gente.pintar();
   }
 
@@ -569,7 +535,7 @@
   /* ---------- ayudas para inventario.js ---------- */
   window.App = Object.freeze({
     S, $, esH, pill, cop, hace, fechaCorta, hoyISO, toast, permiso, tablero, cargando, iniciales,
-    abrirHoja, cerrarHoja, confirmar, pintarTodo
+    abrirHoja, cerrarHoja, confirmar, pintarTodo, diasHasta
   });
 
   /* ---------- arranque ---------- */

@@ -21,7 +21,7 @@
     { rol: 'compras', area: 'Inventario', rolTxt: 'Compras', cargo: 'Encargado de compras', pref: 'COM',
       permisos: { equipos: 'no', inventario: 'compra', vehiculos: 'no', reuniones: 'informa' } },
     { rol: 'asistente', area: 'Inventario', rolTxt: 'Bodega', cargo: 'Encargada de bodega', pref: 'BOD',
-      permisos: { equipos: 'no', inventario: 'bodega', vehiculos: 'no', reuniones: 'informa' } },
+      permisos: { equipos: 'no', inventario: 'bodega', vehiculos: 'autoriza', reuniones: 'informa' } },
     { rol: 'carros', area: 'Vehículos', rolTxt: 'Transporte', cargo: 'Coordinadora de transporte', pref: 'TRA',
       permisos: { equipos: 'no', inventario: 'pide', vehiculos: 'autoriza', reuniones: 'informa' } },
     { rol: 'conductor', area: 'Vehículos', rolTxt: 'Conductor', cargo: 'Conductor', pref: 'CON',

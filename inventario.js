@@ -515,18 +515,20 @@
 
   // Foto de la factura: se achica en el teléfono (máximo 1280 px, JPEG) y se guarda con la compra.
   let fotoFactura = '';
-  function leerFoto(archivo) {
+  // lado: medida máxima en píxeles; maximo: tamaño máximo del texto de la foto (las entregas llevan 5 fotos, por eso más chicas).
+  function leerFoto(archivo, lado, maximo) {
+    const L = lado || 1280, M = maximo || 700000;
     return new Promise((res, rej) => {
       if (!archivo || !/^image\//.test(archivo.type) || /svg/i.test(archivo.type)) { rej(new Error('tipo')); return; }
       const url = URL.createObjectURL(archivo), img = new Image();
       img.onload = () => { try {
-        const esc = Math.min(1, 1280 / Math.max(img.width, img.height)), cv = document.createElement('canvas');
+        const esc = Math.min(1, L / Math.max(img.width, img.height)), cv = document.createElement('canvas');
         cv.width = Math.round(img.width * esc); cv.height = Math.round(img.height * esc);
         cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
         URL.revokeObjectURL(url);
         let q = 0.62, dato = cv.toDataURL('image/jpeg', q);
-        while (dato.length > 700000 && q > 0.3) { q -= 0.1; dato = cv.toDataURL('image/jpeg', q); }
-        if (dato.length > 900000) rej(new Error('grande')); else res(dato);
+        while (dato.length > M && q > 0.25) { q -= 0.08; dato = cv.toDataURL('image/jpeg', q); }
+        if (dato.length > M * 1.25) rej(new Error('grande')); else res(dato);
       } catch (e) { URL.revokeObjectURL(url); rej(new Error('tipo')); } };
       img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('tipo')); };
       img.src = url;

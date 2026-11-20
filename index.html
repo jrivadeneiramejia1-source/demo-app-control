@@ -18,7 +18,7 @@
 <link rel="preload" href="fuentes/bricolage.woff2" as="font" type="font/woff2" crossorigin>
 <script>try { var t = localStorage.getItem('cp_tema'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
 <link rel="stylesheet" href="comun.css?v=1">
-<link rel="stylesheet" href="demo.css?v=11">
+<link rel="stylesheet" href="demo.css?v=12">
 <link rel="stylesheet" href="caribe.css?v=2">
 </head>
 <body>
@@ -139,11 +139,10 @@
   <!-- VEHÍCULOS -->
   <section class="view" id="vVehiculos" aria-labelledby="tVehiculos" hidden>
     <div class="vista-cab"><h2 class="titulo-vista" id="tVehiculos">Vehículos</h2><span class="pill s-pend" id="permVehiculos"></span></div>
-    <div class="summary" id="sumVehiculos"></div>
-    <div class="count" id="cntVehiculos" aria-live="polite"></div>
-    <div class="list" id="listaVehiculos"></div>
-    <div class="note fase"><b>Fase 4:</b> hoja de vida de cada carro, novedades con foto obligatoria, y entrega y recibo con fotos.</div>
-    <button class="pagada" type="button" data-pagada="vehiculos"><span data-ico="pagada"></span>Versión pagada: avisos automáticos antes de que venza el SOAT</button>
+    <div class="summary cuatro" id="sumVehiculos"></div>
+    <div class="chips secciones" id="vehSecciones" role="group" aria-label="Partes de vehículos"></div>
+    <div id="vehContenido" class="inv-contenido" tabindex="-1"></div>
+    <button class="pagada" type="button" data-pagada="vehiculos"><span data-ico="pagada"></span>Versión pagada: avisos al teléfono antes de que venza el SOAT, aunque nadie abra la app</button>
   </section>
 
   <!-- REUNIONES -->
@@ -261,6 +260,18 @@
   </form>
 </div>
 
+<!-- HOJA: ACCIÓN DE VEHÍCULOS (hoja de vida, novedad, salida y llegada, documentos) -->
+<div class="backdrop" id="shVeh" hidden>
+  <form class="sheet" id="veForm" novalidate aria-labelledby="veT">
+    <div class="grab" aria-hidden="true"></div>
+    <h2 id="veT"></h2>
+    <p class="sub" id="veSub"></p>
+    <div id="veCampos" class="fields"></div>
+    <div class="err" id="veErr" role="alert" hidden></div>
+    <div class="sheet-actions"><div class="row"><button class="btn" type="button" data-cerrar id="veCerrar">Cancelar</button><button class="btn primary" type="submit" id="vePrimario"></button></div></div>
+  </form>
+</div>
+
 <!-- HOJA: CONFIRMAR -->
 <div class="backdrop confirm" id="shConfirmar" hidden>
   <div class="sheet" aria-labelledby="cfT">
@@ -275,14 +286,15 @@
 <script src="iconos.js?v=3"></script>
 <script src="comun.js?v=1"></script>
 <script src="config.js?v=5"></script>
-<script src="personas.js?v=6"></script>
-<script src="datos-demo.js?v=7"></script>
-<script src="nube.js?v=6"></script>
+<script src="personas.js?v=7"></script>
+<script src="datos-demo.js?v=8"></script>
+<script src="nube.js?v=7"></script>
 <script src="push.js?v=1"></script>
-<script src="inventario.js?v=6"></script>
+<script src="inventario.js?v=7"></script>
 <script src="correos-demo.js?v=1"></script>
-<script src="reuniones.js?v=6"></script>
+<script src="reuniones.js?v=7"></script>
+<script src="vehiculos.js?v=1"></script>
 <script src="gente.js?v=2"></script>
-<script src="app.js?v=10"></script>
+<script src="app.js?v=11"></script>
 </body>
 </html>

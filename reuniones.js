@@ -146,7 +146,7 @@
     if (puedeInformar(n) && !puedeDecidir(n)) titulo = `Informar: ${tt[0].toLowerCase()}`;
     else if (n.tipo === 'refrigerios' || n.tipo === 'almuerzo') titulo = `Autorizar ${tt[0].toLowerCase()}`;
     else if (n.tipo === 'carros') titulo = 'Autorizar carros y escoger conductor';
-    else if (n.tipo === 'viaje') { titulo = 'Confirmar el viaje'; extra = `<span class="meta">Conductor: ${esH(n.conductor || 'sin nombre')}</span>`; }
+    else if (n.tipo === 'viaje') { titulo = 'Confirmar el viaje'; extra = `<span class="meta">Conductor: ${esH(n.conductor || 'sin nombre')}${n.placa ? ' · carro ' + esH(n.placa) : ''}</span>`; }
     else if (n.tipo === 'logistica') { const it = Array.isArray(n.items) ? n.items : []; titulo = 'Alistar la reunión'; extra = `<span class="meta">${it.filter(x => x && x.ok).length} de ${it.length} listos</span>`; }
     else if (n.tipo === 'asistencia') titulo = '¿Vas a la reunión?';
     else if (n.tipo === 'acta') titulo = 'Registrar el acta y el formato diario';
@@ -501,18 +501,40 @@
           .concat(informantes(n).map(rol => aviso(rol, `No se autorizó: ${(TIPO[n.tipo] || [''])[0].toLowerCase()}`, `${r ? r.comunidad : n.comunidad}: ${valor('rcMotivo')}.`)));
       } });
   }
+  /** Autorizar carros: por cada camioneta se escoge el carro (solo los libres y con papeles al día ese día) y su conductor.
+      Se crea un viaje por cada camioneta, unido a su carro (la salida y la llegada se registran en Vehículos). */
   function carros(n) {
-    const r = reunionPorId(n.reunionId);
+    const r = reunionPorId(n.reunionId), pedidos = Math.max(1, Math.min(6, num(n.cantidad) || 1));
+    // Si un carro de esta reunión ya salió, primero se registra su llegada (si no, quedaría en uso sin viaje).
+    const ent = (A().S.datos.entregas || []);
+    const yaSalio = necDe(n.reunionId).some(x => x.tipo === 'viaje' && ['pendiente', 'listo'].includes(x.estado) && ent.some(e => e.reunionId === n.reunionId && e.vehiculoId === x.vehiculoId && e.tipo === 'salida') && !ent.some(e => e.reunionId === n.reunionId && e.vehiculoId === x.vehiculoId && e.tipo === 'llegada'));
+    const libres = yaSalio ? [] : window.Vehiculos ? window.Vehiculos.libresPara(n.fechaReunion, n.reunionId) : [];
+    const cant = Math.min(pedidos, libres.length, CONDUCTORES.length);
+    const opcVeh = libres.map(v => [v.id, `${v.placa} · ${v.marca} ${v.modelo}${v.estado === 'en-uso' ? ' (hoy en uso)' : ''}`]);
+    const filas = Array.from({ length: cant }, (_, k) => `<div class="fields cols">${campoSel('rcVeh' + k, `Camioneta ${cant > 1 ? k + 1 : ''}`.trim(), opcVeh, (opcVeh[k] || opcVeh[0] || [''])[0])}${campoSel('rcCond' + k, 'Conductor', CONDUCTORES.map(x => [x, x]), CONDUCTORES[k % CONDUCTORES.length])}</div>`).join('');
     abrir({ titulo: 'Autorizar carros y escoger conductor', sub: `${n.detalle}. ${r ? r.comunidad + ', ' + fechaTxt(r) : ''}`,
-      campos: htmlInformes(n) + campoSel('rcCond', 'Conductor', CONDUCTORES.map(x => [x, x]), CONDUCTORES[0]),
-      primario: 'Autorizar y avisar al conductor', icono: 'carro', listo: 'Listo: carros autorizados. El conductor ya tiene el aviso.',
+      campos: htmlInformes(n) + (yaSalio ? '<div class="note">Un carro de esta reunión ya salió. Primero registren su llegada en Vehículos.</div>'
+        : opcVeh.length ? (cant < pedidos ? `<div class="note">Pidieron ${pedidos} camionetas, pero ese día solo hay ${cant} con carro y conductor libres.</div>` : '') + filas + '<p class="meta">Solo salen los carros que no están en el taller, tienen el SOAT y la técnico-mecánica al día ese día y no van a otra reunión.</p>'
+        : '<div class="note">No hay carros libres con los papeles al día para esa fecha. Revisa Vehículos.</div>'),
+      primario: opcVeh.length ? 'Autorizar y avisar' : '', icono: 'carro', listo: 'Listo: carros autorizados. Los conductores ya tienen el aviso.',
       ops: () => {
-        const cond = valor('rcCond');
-        return [['mezclar', 'necesidades', n.id, hecho({ estado: 'autorizado', conductor: cond, motivo: '' })],
-          ['set', 'necesidades', window.nube.idNuevo('ne'), { reunionId: n.reunionId, comunidad: n.comunidad, fechaReunion: n.fechaReunion, tipo: 'viaje', detalle: `Llevar al equipo a la ${n.comunidad}`, cantidad: n.cantidad,
-            responsableRol: 'conductor', estado: 'pendiente', por: '', en: '', motivo: '', conductor: cond, items: [], acta: null, carrosId: n.id }],
-          aviso('conductor', 'Tienes un viaje', `${cond}: llevar al equipo a la ${n.comunidad}${r ? ', ' + fechaTxt(r) : ''}. Confírmalo.`),
-          aviso('carros', 'Carros autorizados', `${n.comunidad}: ${n.detalle}. Conductor: ${cond}.`)];
+        const asign = Array.from({ length: cant }, (_, k) => ({ vehiculoId: valor('rcVeh' + k), conductor: valor('rcCond' + k) }));
+        const ids = asign.map(a => a.vehiculoId), conds = asign.map(a => a.conductor);
+        if (new Set(ids).size !== ids.length) return fallar('Escogiste el mismo carro dos veces.');
+        if (new Set(conds).size !== conds.length) return fallar('Escogiste el mismo conductor dos veces.');
+        const vs = asign.map(a => Object.assign({}, a, { placa: (libres.find(v => v.id === a.vehiculoId) || {}).placa || '' }));
+        if (vs.some(a => !a.placa)) return fallar('Ese carro ya no está libre. Cierra y abre otra vez.');
+        // Si había viajes viejos de esta reunión (por ejemplo, un conductor dijo que no podía), se cancelan.
+        const ops = necDe(n.reunionId).filter(x => x.tipo === 'viaje' && ['pendiente', 'listo'].includes(x.estado)).map(x => ['mezclar', 'necesidades', x.id, { estado: 'cancelado', motivo: 'La Jefe volvió a asignar los carros' }]);
+        ops.push(['mezclar', 'necesidades', n.id, hecho({ estado: 'autorizado', conductor: conds.join(', '), vehiculos: vs, motivo: '' })]);
+        vs.forEach(a => {
+          ops.push(['set', 'necesidades', window.nube.idNuevo('ne'), { reunionId: n.reunionId, comunidad: n.comunidad, fechaReunion: n.fechaReunion, tipo: 'viaje', detalle: `Llevar al equipo a la ${n.comunidad} en el ${a.placa}`, cantidad: 1,
+            responsableRol: 'conductor', estado: 'pendiente', por: '', en: '', motivo: '', conductor: a.conductor, items: [], acta: null, informes: [], vehiculoId: a.vehiculoId, placa: a.placa, carrosId: n.id }]);
+        });
+        ops.push(aviso('conductor', 'Tienes un viaje', `${n.comunidad}${r ? ', ' + fechaTxt(r) : ''}: ${vs.map(a => `${a.conductor} en el ${a.placa}`).join('; ')}. Confírmalo.`));
+        ops.push(aviso('carros', 'Carros autorizados', `${n.comunidad}: ${vs.map(a => `${a.placa} con ${a.conductor}`).join('; ')}.`));
+        ops.push(aviso('asistente', 'Carros autorizados', `${n.comunidad}: ${vs.map(a => `${a.placa} con ${a.conductor}`).join('; ')}.`));
+        return ops;
       } });
   }
   function informar(n) {
@@ -541,7 +563,8 @@
         const ops = [['mezclar', 'necesidades', n.id, hecho({ estado: 'no-va', motivo: valor('rcMotivo') })]];
         if (viaje) {
           const carro = necDe(n.reunionId).find(x => x.tipo === 'carros' && x.estado === 'autorizado');
-          if (carro) ops.push(['mezclar', 'necesidades', carro.id, { estado: 'pendiente', conductor: '', motivo: `${n.conductor} no puede: ${valor('rcMotivo')}` }]);
+          const carro2 = (n.carrosId && necDe(n.reunionId).find(x => x.id === n.carrosId && x.estado === 'autorizado')) || carro;
+          if (carro2) ops.push(['mezclar', 'necesidades', carro2.id, { estado: 'pendiente', conductor: '', motivo: `${n.conductor} no puede: ${valor('rcMotivo')}`, devuelto: n.id }]);
           ['jefe', 'carros'].forEach(rol => ops.push(aviso(rol, 'El conductor no puede', `${n.comunidad}: ${n.conductor} no puede (${valor('rcMotivo')}). Hay que escoger otro conductor.`)));
         } else ops.push(aviso('jefe', 'Alguien no va a una reunión', `${persona().nombre} no va a la ${n.comunidad}: ${valor('rcMotivo')}.`));
         return ops;
@@ -601,7 +624,7 @@
     const filas = ns.slice().sort((a, b) => orden.indexOf(a.tipo) - orden.indexOf(b.tipo)).map(n => {
       const e = EST_NE[n.estado] || [n.estado, 'none'];
       const quien = n.por ? `${n.por}${n.en ? ', ' + App.hace(n.en) : ''}` : n.responsableRol === 'jefe' ? 'Lo autoriza ' + nombreRol('jefe') : 'Le toca a ' + nombreRol(n.responsableRol);
-      const mas = [n.conductor && `conductor: ${n.conductor}`, n.tipo === 'logistica' && Array.isArray(n.items) && `${n.items.filter(x => x && x.ok).length} de ${n.items.length} listos`, n.motivo].filter(Boolean).join(' · ');
+      const mas = [Array.isArray(n.vehiculos) && n.vehiculos.length ? `carros: ${n.vehiculos.map(x => x && `${x.placa} (${x.conductor})`).filter(Boolean).join(', ')}` : n.conductor && `conductor: ${n.conductor}`, n.placa && `carro: ${n.placa}`, n.tipo === 'logistica' && Array.isArray(n.items) && `${n.items.filter(x => x && x.ok).length} de ${n.items.length} listos`, n.motivo].filter(Boolean).join(' · ');
       // Si a quien mira le toca esta tarea (o es la Jefe), puede hacerla desde aquí mismo.
       const bts = botonesDe(n), acc = bts ? `<div class="tarea-pie">${bts}</div>` : '';
       return `<li><span class="nf-cab"><span class="nf-t"><b>${esH((TIPO[n.tipo] || [n.tipo])[0])}</b><span class="meta">${esH(n.detalle)}</span><span class="meta">${esH(quien)}${mas ? ' · ' + esH(mas) : ''}</span></span>${App.pill(e[0], e[1])}</span>${htmlInformes(n)}${acc}</li>`;

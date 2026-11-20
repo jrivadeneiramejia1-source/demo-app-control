@@ -81,6 +81,7 @@ y cada tipo de equipo tiene su placa de color con icono.
 - **Versión pagada:** franja azul con borde punteado y el ícono `pagada` (chispa). Siempre al final de la vista, nunca tapa una acción.
 - **Peligro en el tablero:** `t-peligro` (rojo) solo para lo que es un problema: compra sin autorizar, documento vencido o por vencer.
 - **Placa del carro:** amarilla con borde oscuro y letra monoespaciada, como la placa real.
+- **Fotos de los carros:** botón «Tomar foto» que abre la cámara (el campo de archivo queda oculto pero accesible); al tomarla sale la miniatura y el botón dice «Cambiar». Salida y llegada en cuadrícula de 5 (frente, atrás, lados y llantas); en la hoja de vida, fila de miniaturas por cada salida o llegada.
 - **Fases por venir:** nota con borde punteado y fondo transparente, para que no se confunda con un aviso.
 
 
