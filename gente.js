@@ -36,8 +36,8 @@
     'lider gestion de contratos': 'profesional', 'coord licitaciones': 'profesional', 'profesional licitaciones': 'profesional',
     colaborador: 'colaborador', colaboradora: 'colaborador', recepcionista: 'colaborador', mensajero: 'colaborador', 'servicios generales': 'colaborador', 'asistente sgi': 'colaborador',
     'coord gestion humana': 'colaborador', 'asist gestion humana': 'colaborador', 'aux gestion humana': 'colaborador', 'gerente administrativa': 'colaborador',
-    financiero: 'financiero', financiera: 'financiero', contador: 'financiero', contadora: 'financiero', 'asist contable': 'financiero', 'profesional contable': 'financiero',
-    'auxiliar contable': 'financiero', 'asist nomina': 'financiero', 'asist reembolsables': 'financiero', 'gerente financiera': 'financiero', 'gerente financiero': 'financiero',
+    financiero: 'financiero', financiera: 'financiero', contador: 'financiero', contadora: 'financiero', 'profesional contable': 'financiero',
+    'asist contable': 'colaborador', 'auxiliar contable': 'colaborador', 'asist nomina': 'colaborador', 'asist reembolsables': 'colaborador', 'gerente financiera': 'financiero', 'gerente financiero': 'financiero',
     consulta: 'consulta', 'revisor fiscal': 'consulta', 'oficial de cumplimiento': 'consulta', auditor: 'consulta', auditora: 'consulta'
   };
   const NIVEL_ALIAS = {

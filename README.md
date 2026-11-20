@@ -54,8 +54,8 @@ Las 46 personas de la demo son las del organigrama (versión 18, febrero de 2023
 | Logística | Elkin Bruno, Julio Flórez (Logístico HSE) | No | Pide | No | Logística |
 | Profesional | 13 personas: SGI, Contratos, Control de Gestión, Licitaciones | No | Pide | No | Asiste |
 | Administrativo | Paola Martínez; Solanyi Surquira (permiso extra: encargada de reuniones) | No | Pide | No | Registra actas |
-| **Colaborador** (nuevo) | 9 personas: recepción, mensajería, servicios generales, Gestión Humana, Gerencia Administrativa, Asistente SGI | No | Pide | No | Solo ver |
-| **Financiero** (nuevo) | 7 personas: Gerente Financiera y Contabilidad | No | Ve todas las compras, facturas y movimientos, y también pide | No | Solo ver |
+| **Colaborador** (nuevo) | 13 personas: recepción, mensajería, servicios generales, Gestión Humana, Gerencia Administrativa, Asistente SGI y el apoyo de contabilidad (Asist. Contable, Auxiliar Contable, Asist. Nómina, Asist. Reembolsables: solo ven lo suyo) | No | Pide | No | Solo ver |
+| **Financiero** (nuevo) | 3 personas: Gerente Financiera, Contador y Profesional Contable (los únicos que ven todo el inventario y las compras) | No | Ve todas las compras, facturas y movimientos, y también pide | No | Solo ver |
 | **Consulta** (nuevo) | Revisor Fiscal y Oficial de Cumplimiento (el organigrama no trae persona) | No | Solo ver | Solo ver | No |
 
 En Equipos, el **Encargado** hace el mantenimiento y entrega los equipos con el acta (nombre, firma y computador); **Soporte** recibe esos registros y está pendiente de las entregas.

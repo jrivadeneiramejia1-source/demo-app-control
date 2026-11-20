@@ -79,9 +79,9 @@
     ['colaborador', 'Marcela Tamayo', 'Gerente Administrativa', U_ADM], ['colaborador', 'Osler Monroy', 'Coord. Gestión Humana', U_ADM],
     ['colaborador', 'Alejandra Nivia', 'Asist. Gestión Humana', U_ADM], ['colaborador', 'Melissa Arias', 'Asist. Gestión Humana', U_ADM], ['colaborador', 'Arturo Tovar', 'Aux. Gestión Humana', U_ADM],
     ['soporte', 'Ángel Ortiz', 'Asistente TI', U_ADM, ['actas']], ['equipos', 'Fabián Barbosa', 'Auxiliar TI', U_ADM],
-    ['financiero', 'Adriana Patiño', 'Gerente Financiera', U_FIN], ['financiero', 'Nury Acosta', 'Contador', U_FIN], ['financiero', 'Andrea Correa', 'Asist. Contable', U_FIN],
-    ['financiero', 'Fanny Benavides', 'Profesional Contable', U_FIN], ['financiero', 'Heidy Lorena Castillo', 'Auxiliar Contable', U_FIN],
-    ['financiero', 'Harold Beltrán', 'Asist. Nómina', U_FIN], ['financiero', 'Leidy Ramos', 'Asist. Reembolsables', U_FIN]
+    ['financiero', 'Adriana Patiño', 'Gerente Financiera', U_FIN], ['financiero', 'Nury Acosta', 'Contador', U_FIN], ['colaborador', 'Andrea Correa', 'Asist. Contable', U_FIN],
+    ['financiero', 'Fanny Benavides', 'Profesional Contable', U_FIN], ['colaborador', 'Heidy Lorena Castillo', 'Auxiliar Contable', U_FIN],
+    ['colaborador', 'Harold Beltrán', 'Asist. Nómina', U_FIN], ['colaborador', 'Leidy Ramos', 'Asist. Reembolsables', U_FIN]
   ];
   const sinTildes = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
   /** Correo inventado de una persona de prueba: «rol.nombre.apellido@example.com» (el rol va primero; lo leen las reglas). */
