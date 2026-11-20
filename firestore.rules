@@ -64,8 +64,8 @@ service cloud.firestore {
     function esFecha(f) { return f is string && f.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
     // El historial solo crece: una línea nueva al final y las viejas iguales.
     function historialSigue() {
-      return nuevo().historial is list && nuevo().historial.size() == antes().get('historial', []).size() + 1
-        && nuevo().historial[0:antes().get('historial', []).size()] == antes().get('historial', []);
+      let h = antes().get('historial', []);
+      return nuevo().historial is list && nuevo().historial.size() == h.size() + 1 && (h.size() == 0 || nuevo().historial[0:h.size()] == h);
     }
     // ¿Ya llegó ese día (AAAA-MM-DD) en Colombia (UTC-5)? Desde las 00:00 hora de Colombia.
     function yaFue(f) {
@@ -371,7 +371,7 @@ service cloud.firestore {
     //   Cada paso revisa primero el estado (lo barato) para no pasarse del límite de expresiones de las reglas.
     function rutaMonto() { return /databases/$(database)/documents/ajustesApp/compras; }
     function montoGerente() { return exists(rutaMonto()) ? get(rutaMonto()).data.get('montoGerente', 1000000) : 1000000; }
-    function decideCampos() { return soloCambia(['estado', 'autoriza', 'autorizaJefe', 'motivoRechazo', 'historial']); }
+    function decideCampos() { return soloCambia(['estado', 'autoriza', 'autorizaJefe', 'motivoRechazo', 'historial']) && historialSigue(); }
     // Quién decide un pedido que todavía no tiene respuesta (antes().estado == 'pedido').
     function decidePedido() {
       return antes().get('pideRol', '') == 'jefe' ? esGerente() && nuevo().estado in ['autorizado', 'rechazado']
@@ -394,11 +394,11 @@ service cloud.firestore {
         // El Gerente decide lo que la Jefe le pasó por el monto.
         || (antes().estado == 'por-gerente' && nuevo().estado in ['autorizado', 'rechazado'] && decideCampos() && esGerente())
         // Comprar (autorizada -> comprada): Compras, sin tocar lo autorizado.
-        || (antes().estado == 'autorizado' && nuevo().estado == 'comprado' && soloCambia(['estado', 'proveedor', 'valorReal', 'fechaCompra', 'factura', 'historial']) && esCompras())
+        || (antes().estado == 'autorizado' && nuevo().estado == 'comprado' && soloCambia(['estado', 'proveedor', 'valorReal', 'fechaCompra', 'factura', 'historial']) && historialSigue() && esCompras())
         // Recibir (comprada -> recibida): la bodega.
-        || (antes().estado == 'comprado' && nuevo().estado == 'recibido' && soloCambia(['estado', 'entregadoA', 'historial']) && esBodega())
+        || (antes().estado == 'comprado' && nuevo().estado == 'recibido' && soloCambia(['estado', 'entregadoA', 'historial']) && historialSigue() && esBodega())
         // La Jefe marca como revisada una compra hecha sin autorización.
-        || (antes().estado == 'sin-autorizar' && antes().revisada == false && nuevo().revisada == true && soloCambia(['revisada', 'historial']) && esJefe());
+        || (antes().estado == 'sin-autorizar' && antes().revisada == false && nuevo().revisada == true && soloCambia(['revisada', 'historial']) && historialSigue() && esJefe());
       // Las compras no se borran (son el rastro de lo que se gastó); solo la Jefe de prueba, al reiniciar los datos de ejemplo.
       allow delete: if esPrueba() && rol() == 'jefe';
     }
