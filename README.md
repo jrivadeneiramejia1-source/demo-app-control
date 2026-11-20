@@ -9,7 +9,7 @@ Cada pantalla trae una etiqueta azul **Versión pagada**: al tocarla dice qué c
 |---|---|---|
 | 1. Preparación | Repositorio, diseño y piezas copiadas de Equipos y Entregas | Hecha |
 | 2. Base y entrada | Cuentas de prueba, cambio de persona, menú de los módulos, datos inventados, campana y etiquetas | Hecha |
-| 3. Equipos | Equipos y Entregas juntas | Pendiente |
+| 3. Equipos | Equipos y Entregas juntas, con el **acta virtual** igual a la hoja «Entrega de equipos y herramientas»: fecha, nombre, cédula, proyecto y código; tabla de equipos (serial, cantidad, observaciones) y de «Otros»; firma de quien recibe en la pantalla con su cédula; la devolución se anota en la misma acta con su fecha y firma. Recibidos con mantenimiento y backup, agenda que Soporte le programa al Encargado, revisión de actas por Soporte (nadie revisa las suyas), historial por equipo y por persona, acta imprimible o en PDF | Hecha |
 | 4. Vehículos | Hoja de vida de cada carro; el Conductor reporta novedades con foto y registra la salida y la llegada (kilometraje, combustible, 5 fotos y revisión); Transporte y Bodega revisan novedades (costo, nota, taller), actualizan SOAT y técnico-mecánica y reciben avisos de vencimiento. En Reuniones la Jefe escoge carro y conductor por camioneta, y el viaje queda ligado a ese carro | Hecha |
 | 5. Inventario y compras | Bodega con las compras adentro: Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras (con foto de factura e historial), Conteo físico y Resumen con Excel. Permisos por rol en las reglas y avisos al teléfono | Hecha (va antes que 3 y 4, a pedido de los jefes) |
 | 6. Reuniones y agente | Cuatro correos de ejemplo; el agente (Worker `agente-demo` con Gemini) los lee y la Jefe confirma y reparte: Compras, Transporte y Bodega informan lo que hay y la Jefe autoriza la comida y los carros (escoge el conductor); el Conductor confirma, Logística alista, el Profesional confirma si va y Administrativo registra el acta con foto. Resumen para Jefe y Gerente | Hecha (falta conectar Gemini) |
@@ -40,17 +40,18 @@ Los códigos se manejan en **Cambiar de persona > Personas y códigos**, que sol
 | Reuniones | Laura Medina | Profesional | No | Pide material | No | Asiste |
 | Reuniones | Natalia Vargas | Administrativo | No | Pide material | No | Registra actas y formatos |
 
-Equipos por ahora solo se ve: lo que hace cada rol ahí se arma en su fase. En Equipos, el **Encargado** hace el mantenimiento y entrega los equipos con el acta (nombre, firma y computador); **Soporte** recibe esos registros y está pendiente de las entregas.
+En Equipos, el **Encargado** hace el mantenimiento y entrega los equipos con el acta (nombre, firma y computador); **Soporte** recibe esos registros y está pendiente de las entregas.
 
 **Permisos extra.** Además del rol que da el código, el Gerente o la Jefe le marcan a cada persona lo que hace de más, en **Personas y códigos** (solo con cuentas propias):
 - Bodega: **También hace y recibe compras** (registra las compras autorizadas, como Compras).
-- Soporte: **También sigue las actas de entrega** (se usará en la fase de Equipos).
+- Soporte: **También sigue las actas de entrega** (revisa cada acta: bien o con problema). Valentina, la Soporte de prueba, lo tiene para mostrarlo.
 - Administrativo: **Encargada de reuniones** (ve todas las tareas de todas las reuniones y la bandeja de correos; lo que se autoriza sigue siendo de la Jefe).
 Firebase revisa los permisos extra en las reglas, no solo la pantalla.
 
 ## Archivos
 - `index.html`, `app.js`, `demo.css`: la app. `inventario.js`: el módulo Inventario (bodega y compras).
 - `push.js`, `sw.js`, `manifest.webmanifest`, `iconos/control-*.png`: avisos al teléfono (Web Push) e instalación en la pantalla de inicio.
+- `equipos.js`: el módulo Equipos (Equipos y Entregas juntas, actas virtuales con firma en la pantalla).
 - `vehiculos.js`: el módulo Vehículos (las fotos se achican a JPEG antes de guardarse para no pasar el límite de Firebase).
 - `reuniones.js`: el módulo Reuniones. `correos-demo.js`: los 4 correos de ejemplo y la respuesta de respaldo de cada uno (se usa si el agente no está conectado o falla).
 - `agente/worker.js`: Worker «agente-demo» para Cloudflare. Solo atiende a la Jefe (revisa el token de Firebase y el rol) y tiene límite de lecturas por cuenta; le pasa el correo a Gemini y devuelve en JSON lo que entendió (no escribe en la base). La clave de Gemini debe ser de un proyecto sin facturación. Secreto `GEMINI_API_KEY`; su dirección va en `config.js` (`window.AGENTE_DEMO`).
@@ -68,7 +69,7 @@ Firebase revisa los permisos extra en las reglas, no solo la pantalla.
 - `pruebas/`: Firebase falso (`firebase-*.js`) y pruebas con Playwright.
 
 ## Datos en Firestore
-Colecciones de primer nivel: `reuniones` y `necesidades` (una tarea por documento: comida, carros, viaje, logística, asistencia y acta), `usuarios` (perfil de cada cuenta propia: nombre, rol y si tiene acceso), `codigos` (código de cada rol de trabajo; lo leen Gerente y Jefe con cuenta propia), `codigosDireccion` (códigos de Gerente y Jefe, de un solo uso; solo el Gerente), `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `avisos`, `buzon` (correos del Gmail de prueba; los leen la Jefe y la Administrativa encargada), `suscripciones` (teléfonos con avisos activados; Reiniciar no las borra) y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). Solo la Jefe carga, actualiza y reinicia los datos de prueba (así lo piden las reglas): si otra persona entra primero, la app le dice que entre una vez como Ana. La Jefe de prueba (Ana) tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
+Colecciones de primer nivel: `reuniones` y `necesidades` (una tarea por documento: comida, carros, viaje, logística, asistencia y acta), `usuarios` (perfil de cada cuenta propia: nombre, rol y si tiene acceso), `codigos` (código de cada rol de trabajo; lo leen Gerente y Jefe con cuenta propia), `codigosDireccion` (códigos de Gerente y Jefe, de un solo uso; solo el Gerente), `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `hojas` (actas de entrega y devolución con sus firmas), `tareasEq` (agenda de mantenimientos y backups), `avisos`, `buzon` (correos del Gmail de prueba; los leen la Jefe y la Administrativa encargada), `suscripciones` (teléfonos con avisos activados; Reiniciar no las borra) y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). Solo la Jefe carga, actualiza y reinicia los datos de prueba (así lo piden las reglas): si otra persona entra primero, la app le dice que entre una vez como Ana. La Jefe de prueba (Ana) tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
 
 ## Permisos (los hace cumplir Firebase, no solo la pantalla)
 - Compras: alguien pide → la Jefe autoriza (si la pidió la Jefe, el Gerente) → Compras (Luis) la compra → Bodega (Sofía) la recibe. Nadie autoriza su propio pedido.

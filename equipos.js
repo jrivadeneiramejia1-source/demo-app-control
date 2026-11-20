@@ -1,0 +1,635 @@
+/* equipos.js — Módulo Equipos de la demo: Equipos y Entregas juntas, con el acta VIRTUAL (sin papel).
+   El acta es igual a la hoja «Entrega de equipos y herramientas»: fecha, nombre, cédula, proyecto y código de proyecto;
+   la tabla de equipos (serial, cantidad, observaciones) y la de «Otros»; la firma de quien recibe con su cédula;
+   y abajo la fecha de devolución con su firma, en la misma acta.
+   Encargado de equipos (Daniel): registra equipos, hace las actas (la persona firma en la pantalla), recibe las
+     devoluciones, hace el mantenimiento y el backup de lo que llega a Recibidos y cumple la agenda.
+   Soporte (Valentina): le llegan las actas; con el permiso extra «actas» las revisa (bien o con problema).
+     También le programa mantenimientos y backups al Encargado.
+   La Jefe puede hacer todo menos revisar sus propias actas; el Gerente ve todo a detalle sin botones.
+   El acta se puede imprimir o guardar en PDF. */
+(function () {
+  'use strict';
+  const A = () => window.App;
+  const $ = id => document.getElementById(id);
+  const esH = v => A().esH(v);
+  const D = () => A().S.datos;
+  const persona = () => A().S.persona;
+  const miRol = () => (persona() ? persona().rol : '');
+  const perm = () => A().permiso('equipos');
+  const esJefe = () => perm() === 'jefe';
+  const esGerente = () => miRol() === 'gerente';
+  const esEncargado = () => perm() === 'encargado' || esJefe();          // actas, devoluciones, mantenimiento
+  const esSoporte = () => perm() === 'soporte';
+  const revisaActas = () => esJefe() || (esSoporte() && A().tieneExtra('actas'));
+  const puedeRevisar = h => revisaActas() && h.revision === 'pendiente' && h.porRol !== miRol();   // nadie revisa lo suyo
+  const programa = () => esJefe() || esSoporte();                          // programa tareas al Encargado
+  const ahora = () => new Date().toISOString();
+  const hoy = () => A().hoyISO();
+  const EST = { asignado: ['Asignado', 's-disco', 'disco'], bodega: ['En bodega', 's-pend', 'pend'], recibido: ['En Recibidos', 's-org', 'org'] };
+  const REV = { pendiente: ['Por revisar', 's-org', 'reloj'], ok: ['Revisada', 's-disco', 'check'], problema: ['Con problema', 's-peligro', 'aviso'] };
+  const TIPO_TAREA = { mantenimiento: 'Mantenimiento', backup: 'Backup', revision: 'Revisión' };
+  const TIPOS_EQ = ['Portátil', 'Computador de escritorio', 'Monitor', 'GPS', 'Tableta', 'Cámara semi', 'Cámara digital', 'Celular', 'Video beam', 'Impresora', 'Bafle', 'Radio', 'Disco duro externo', 'Otro'];
+  // Filas fijas de la hoja de papel, y en cuál va cada tipo de equipo.
+  const FILAS_EQ = ['COMPUTADORA PORTÁTIL', 'MONITOR', 'GPS', 'TABLET', 'CÁMARA SEMI', 'CÁMARA DIGITAL', 'CELULAR', 'VIDEO BEAM', 'IMPRESORA', 'BAFLE', 'RADIOS', 'DISCO DURO'];
+  const FILA_DE = { 'Portátil': 'COMPUTADORA PORTÁTIL', 'Monitor': 'MONITOR', 'GPS': 'GPS', 'Tableta': 'TABLET', 'Cámara semi': 'CÁMARA SEMI', 'Cámara digital': 'CÁMARA DIGITAL', 'Cámara': 'CÁMARA DIGITAL',
+    'Celular': 'CELULAR', 'Video beam': 'VIDEO BEAM', 'Impresora': 'IMPRESORA', 'Bafle': 'BAFLE', 'Radio': 'RADIOS', 'Disco duro externo': 'DISCO DURO' };
+  const OTROS = ['Base portátil', 'Base monitor', 'Mouse', 'Teclado', 'Pad mouse', 'Pad teclado', 'Descansapiés', 'Morral', 'Diadema', 'Cargador'];
+  const PROYECTOS = [['Proyecto Costa Norte', 'PCN-01'], ['Proyecto Ruta Alta', 'PRA-02']];
+  const MAX_FIRMA = 79000;
+  let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], buscar = '';
+
+  /* ---------- datos derivados ---------- */
+  const equipos = () => D().equipos.slice().sort((a, b) => String(a.serial).localeCompare(String(b.serial)));
+  const eqPorId = id => D().equipos.find(e => e.id === id) || null;
+  const hojaPorId = id => D().hojas.find(h => h.id === id) || null;
+  const lista = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
+  const devueltos = h => new Set(lista(h.devoluciones).flatMap(d => (Array.isArray(d.equipos) ? d.equipos : [])));
+  const porDevolver = h => lista(h.equipos).filter(x => !devueltos(h).has(x.id));
+  const estadoActa = h => (!lista(h.devoluciones).length ? 'entregada' : porDevolver(h).length ? 'parcial' : 'devuelta');
+  const EST_ACTA = { entregada: ['Entregada', 's-disco'], parcial: ['Devolución parcial', 's-org'], devuelta: ['Devuelta', 's-pend'] };
+  const hojasDe = id => D().hojas.filter(h => lista(h.equipos).some(x => x.id === id)).sort((a, b) => String(b.en).localeCompare(String(a.en)));
+  const pend = e => (e && e.pendientes && typeof e.pendientes === 'object' ? e.pendientes : {});
+  const historial = e => lista(e.historial);
+  const conPaso = (e, paso) => historial(e).concat([Object.assign({ fecha: hoy(), por: persona().nombre }, paso)]);
+  const porRevisar = () => D().hojas.filter(h => h.revision === 'pendiente').sort((a, b) => String(a.en).localeCompare(String(b.en)));
+  const conProblema = () => D().hojas.filter(h => h.revision === 'problema');
+  const tareasPend = () => D().tareasEq.filter(t => t.estado === 'pendiente').sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  const recibidos = () => equipos().filter(e => e.estado === 'recibido');
+  const dias = f => A().diasHasta(f);
+  const viejoMtto = e => { const d = dias(e.ultimoMtto); return d == null || d < -180; };
+  const numActa = h => 'AC-' + String(h.numero || 0).padStart(4, '0');
+  /** Personas con equipos o actas. Se agrupan por cédula (dos personas pueden llamarse igual). */
+  function personas() {
+    const m = new Map();
+    const de = (nombre, cedula) => {
+      const n = String(nombre || '').trim(), c = String(cedula || '').replace(/\D/g, '');
+      if (!n || /^bodega$/i.test(n)) return null;
+      const k = c || 'n:' + n.toLowerCase();
+      if (!m.has(k)) m.set(k, { clave: k, nombre: n, cedula: c, equipos: [], hojas: [] });
+      return m.get(k);
+    };
+    D().hojas.forEach(h => { const p = de(h.persona, h.cedula); if (p) p.hojas.push(h); });
+    D().equipos.forEach(e => { if (e.estado === 'asignado') { const p = de(e.asignadoA, e.asignadoCedula); if (p) p.equipos.push(e); } });
+    return Array.from(m.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
+  }
+  function resumen() {
+    const es = D().equipos;
+    const mias = (esEncargado() ? recibidos().length + tareasPend().length + conProblema().length : 0) + (revisaActas() ? porRevisar().filter(h => h.porRol !== miRol()).length : 0);
+    return {
+      asignados: es.filter(e => e.estado === 'asignado').length, bodega: es.filter(e => e.estado === 'bodega').length,
+      recibidos: es.filter(e => e.estado === 'recibido').length, actas: porRevisar().length,
+      tareas: tareasPend().length, atrasadas: tareasPend().filter(t => String(t.fecha) < hoy()).length, mias
+    };
+  }
+
+  /* ---------- pintar ---------- */
+  function secciones() {
+    if (esGerente()) return [['resumen', 'Resumen'], ['equipos', 'Equipos'], ['actas', 'Actas'], ['personas', 'Personas']];
+    const s = [['hacer', 'Lo que me toca'], ['equipos', 'Equipos'], ['actas', 'Actas'], ['agenda', 'Agenda'], ['personas', 'Personas']];
+    if (esJefe()) s.push(['resumen', 'Resumen']);
+    return s;
+  }
+  function pintar() {
+    const App = A(), S = App.S;
+    if (!S.persona) return;
+    if (rolPintado !== S.persona.rol) { rolPintado = S.persona.rol; seccion = secciones()[0][0]; }
+    const f = S.filtro.equipos;
+    if (['asignado', 'bodega', 'recibido'].includes(f)) seccion = 'equipos';
+    if (f === 'actas') seccion = 'actas';
+    if (!secciones().some(x => x[0] === seccion)) seccion = secciones()[0][0];
+    const n = resumen();
+    App.tablero('equipos', [
+      { k: 'e-asig', n: n.asignados, lbl: 'Asignados', icono: 'persona', tono: 'disco', filtro: 'asignado' },
+      { k: 'e-bod', n: n.bodega, lbl: 'En bodega', icono: 'bolsa', filtro: 'bodega' },
+      { k: 'e-rec', n: n.recibidos, lbl: 'En Recibidos', icono: 'recibidos', tono: 'org', filtro: 'recibido' },
+      { k: 'e-act', n: n.actas, lbl: 'Actas por revisar', icono: 'hojas', tono: 'peligro', filtro: 'actas' }
+    ]);
+    $('eqSecciones').innerHTML = secciones().map(([k, t]) => `<button type="button" class="chip" data-sec="${k}" aria-pressed="${seccion === k}">${esH(t)}${k === 'hacer' && n.mias ? ` <span class="n">${n.mias}</span>` : ''}</button>`).join('');
+    $('eqBotones').hidden = !esEncargado();
+    $('btnNuevoEq').hidden = !esEncargado();
+    const c = $('eqContenido');
+    if (['equipos', 'hojas', 'tareasEq'].some(App.cargando)) { c.innerHTML = UI.esqueleto(3); return; }
+    c.innerHTML = ({ hacer: htmlHacer, equipos: () => htmlEquipos(f), actas: () => htmlActas(f), agenda: htmlAgenda, personas: htmlPersonas, resumen: htmlResumen })[seccion]();
+    window.llenarIconos(c);
+  }
+  const boton = (acc, txt, icono, id, clase, extra) => `<button class="btn ${clase || 'small'}" type="button" data-accion="${acc}" data-id="${esH(id)}"${extra || ''}>${icono ? `<span data-ico="${icono}"></span>` : ''}${esH(txt)}</button>`;
+  const firma = s => (typeof s === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(s) ? s : '');
+  const seriales = h => lista(h.equipos).map(x => x.serial).join(', ');
+
+  /* --- Lo que me toca --- */
+  function htmlHacer() {
+    let h = '';
+    if (esEncargado()) {
+      const rs = recibidos(), ts = tareasPend(), ps = conProblema();
+      h += `<div class="section-label">Recibidos: mantenimiento y backup (${rs.length})</div>`;
+      h += rs.length ? `<div class="list">${rs.map(tarjetaRecibido).join('')}</div>` : '<p class="meta">No hay equipos en Recibidos.</p>';
+      if (ps.length) h += `<div class="section-label">Actas con problema (${ps.length})</div><div class="list">${ps.map(tarjetaActa).join('')}</div>`;
+      h += `<div class="section-label">Agenda (${ts.length})</div>`;
+      h += ts.length ? `<div class="list">${ts.map(tarjetaTarea).join('')}</div>` : '<p class="meta">No hay tareas programadas.</p>';
+    }
+    if (revisaActas()) {
+      const ps = porRevisar();
+      h += `<div class="section-label">Actas por revisar (${ps.length})</div>`;
+      h += ps.length ? `<div class="list">${ps.map(tarjetaActa).join('')}</div>` : '<p class="meta">Todas las actas están revisadas.</p>';
+    }
+    if (esSoporte()) {
+      h += `<div class="barra-botones">${boton('programar', 'Programar mantenimiento o backup', 'programar', '', 'primary')}</div>`;
+      const mias = tareasPend().filter(t => t.pidio === persona().nombre);
+      h += `<div class="section-label">Lo que le programaste al Encargado (${mias.length})</div>`;
+      h += mias.length ? `<div class="list">${mias.map(tarjetaTarea).join('')}</div>` : '<p class="meta">No tienes tareas programadas pendientes.</p>';
+      if (!revisaActas()) h += '<p class="meta">Las actas las revisa el Soporte encargado de actas.</p>';
+    }
+    return h || UI.vacio('checkCirculo', 'Nada pendiente', '');
+  }
+  function tarjetaRecibido(e) {
+    const p = pend(e), listo = !p.mtto && !p.backup;
+    const bts = esEncargado() ? (p.mtto ? boton('mtto', 'Mantenimiento hecho', 'mantenimiento', e.id, 'primary small') : '') + (p.backup ? boton('backup', 'Backup hecho', 'backup', e.id, p.mtto ? 'small' : 'primary small') : '') +
+      (listo ? boton('abodega', 'Pasar a bodega', 'bolsa', e.id, 'primary small') + boton('entregar', 'Entregar', 'entrega', e.id, 'small') : '') : '';
+    return `<div class="card tarea st-org">
+      <div class="tarea-t"><b><span class="serial-chip">${esH(e.serial)}</span> ${esH(e.tipo)} ${esH(e.marca)} ${esH(e.modelo)}</b>
+        <span class="meta">Lo trajo ${esH(e.asignadoA || 'alguien')}${e.obs ? ' · ' + esH(e.obs) : ''}</span></div>
+      <span class="docs">${A().pill(p.mtto ? 'Falta mantenimiento' : 'Mantenimiento listo', p.mtto ? 's-org' : 's-disco', p.mtto ? 'mantenimiento' : 'check')}${A().pill(p.backup ? 'Falta backup' : 'Backup listo', p.backup ? 's-org' : 's-disco', p.backup ? 'backup' : 'check')}</span>
+      <div class="tarea-pie">${bts}${boton('ver', 'Hoja de vida', '', e.id, 'ghost small')}</div>
+    </div>`;
+  }
+  function tarjetaActa(h) {
+    const r = REV[h.revision] || REV.pendiente, f = firma(h.firmaPersona), ea = EST_ACTA[estadoActa(h)];
+    let bts = '';
+    if (puedeRevisar(h)) bts += boton('revisar', 'Revisar el acta', 'check', h.id, 'primary small');
+    if (h.revision === 'problema' && esEncargado()) bts += boton('corregir', 'Corregir', 'lapiz', h.id, 'primary small');
+    const ultimaDev = lista(h.devoluciones).slice(-1)[0];
+    return `<div class="card tarea st-${h.revision === 'problema' ? 'peligro' : h.revision === 'ok' ? 'disco' : 'org'}">
+      <div class="nov-fila">${f ? `<img class="firma-mini" src="${esH(f)}" alt="Firma de ${esH(h.persona)}">` : ''}
+        <div class="tarea-t"><b>Acta ${esH(numActa(h))}: ${esH(h.persona)}</b><span class="meta">${esH(seriales(h))} · entregado el ${esH(A().fechaCorta(h.fecha))}${h.cedula ? ' · C.C. ' + esH(h.cedula) : ''}</span>
+        ${ultimaDev ? `<span class="meta">Devolución: ${esH(A().fechaCorta(ultimaDev.fecha))}</span>` : ''}${h.notaRevision ? `<span class="meta">Problema: ${esH(h.notaRevision)}</span>` : ''}</div></div>
+      <span class="docs">${A().pill(ea[0], ea[1])}${bts ? '' : A().pill(r[0], r[1], r[2])}</span>
+      <div class="tarea-pie">${bts}${boton('veracta', 'Ver acta', '', h.id, 'ghost small')}</div>
+    </div>`;
+  }
+  function tarjetaTarea(t) {
+    const e = eqPorId(t.equipoId), atrasada = t.estado === 'pendiente' && String(t.fecha) < hoy();
+    return `<div class="card tarea st-${t.estado === 'hecha' ? 'disco' : atrasada ? 'peligro' : 'org'}">
+      <div class="tarea-t"><b>${esH(TIPO_TAREA[t.tipo] || 'Tarea')}: <span class="serial-chip">${esH(t.serial)}</span>${e ? ' ' + esH(e.tipo) + ' ' + esH(e.marca) : ''}</b>
+        <span class="meta">${atrasada ? 'Era para el ' : 'Para el '}${esH(A().fechaCorta(t.fecha))} · la pidió ${esH(t.pidio)}</span>${t.nota ? `<span class="meta">${esH(t.nota)}</span>` : ''}
+        ${t.estado === 'hecha' ? `<span class="meta">Hecha por ${esH(t.hechaPor)}${t.resultado ? ': ' + esH(t.resultado) : ''}</span>` : ''}</div>
+      <div class="tarea-pie">${t.estado === 'pendiente' && esEncargado() ? boton('hecha', 'Marcar hecha', 'check', t.id, 'primary small') : A().pill(t.estado === 'hecha' ? 'Hecha' : atrasada ? 'Atrasada' : 'Pendiente', t.estado === 'hecha' ? 's-disco' : atrasada ? 's-peligro' : 's-org')}${e ? boton('ver', 'Hoja de vida', '', e.id, 'ghost small') : ''}</div>
+    </div>`;
+  }
+  const quienTiene = e => (e.estado === 'bodega' ? 'En bodega' : e.estado === 'recibido' ? `En Recibidos (lo trajo ${e.asignadoA || 'alguien'})` : e.asignadoA || 'Sin asignar');
+
+  /* --- Equipos --- */
+  function htmlEquipos(f) {
+    const App = A(), q = buscar.trim().toLowerCase();
+    const vis = equipos().filter(e => (!['asignado', 'bodega', 'recibido'].includes(f) || e.estado === f) && (!q || [e.serial, e.asignadoA, e.marca, e.modelo, e.tipo, e.proyecto].join(' ').toLowerCase().includes(q)));
+    let h = `<input class="search" id="qEq" type="search" placeholder="Buscar serial, persona o modelo" autocomplete="off" aria-label="Buscar equipo" value="${esH(buscar)}">`;
+    h += `<div class="count" aria-live="polite">${vis.length} de ${D().equipos.length} equipos</div>`;
+    if (!vis.length) return h + UI.vacio('equipos', 'No hay equipos con ese filtro', '');
+    return h + `<div class="list">${vis.map(e => {
+      const st = EST[e.estado] || ['Sin estado', 'none', 'pend'];
+      return `<button type="button" class="card st-${st[2]}" data-accion="ver" data-id="${esH(e.id)}">
+        <span class="card-head"><span class="card-title"><small>${esH(e.serial)}</small>${esH(e.tipo)} ${esH(e.marca)}</span>${App.pill(st[0], st[1])}</span>
+        <span class="card-sub">${esH(e.modelo)}</span>
+        <span class="facts"><span>${window.ico('persona')} <b>${esH(quienTiene(e))}</b></span>${e.proyecto ? `<span>${esH(e.proyecto)}</span>` : ''}</span>
+        <span class="docs">${e.ultimoMtto ? App.pill('Mantenimiento ' + App.fechaCorta(e.ultimoMtto), viejoMtto(e) ? 's-warn' : 's-pend', 'mantenimiento') : App.pill('Sin mantenimiento', 's-warn', 'mantenimiento')}${e.ultimoBackup ? App.pill('Backup ' + App.fechaCorta(e.ultimoBackup), 's-pend', 'backup') : ''}</span>
+        ${e.obs ? `<span class="meta">${esH(e.obs)}</span>` : ''}
+      </button>`;
+    }).join('')}</div>`;
+  }
+  /* --- Actas --- */
+  function htmlActas(f) {
+    const hs = D().hojas.slice().sort((a, b) => String(b.en).localeCompare(String(a.en)));
+    const ps = hs.filter(h => h.revision !== 'ok'), ok = hs.filter(h => h.revision === 'ok');
+    let h = f === 'actas' ? '<p class="meta">Mostrando primero las actas por revisar.</p>' : '';
+    h += `<div class="section-label">Por revisar o con problema (${ps.length})</div>` + (ps.length ? `<div class="list">${ps.map(tarjetaActa).join('')}</div>` : '<p class="meta">Ninguna.</p>');
+    h += `<div class="section-label">Revisadas (${ok.length})</div>` + (ok.length ? `<div class="list">${ok.map(tarjetaActa).join('')}</div>` : '<p class="meta">Todavía no hay actas revisadas.</p>');
+    return h;
+  }
+  /* --- Agenda --- */
+  function htmlAgenda() {
+    const ts = D().tareasEq.slice().sort((a, b) => (a.estado === b.estado ? String(a.fecha).localeCompare(String(b.fecha)) : a.estado === 'pendiente' ? -1 : 1));
+    const h = programa() ? `<div class="barra-botones">${boton('programar', 'Programar mantenimiento o backup', 'programar', '', 'primary')}</div>` : '';
+    return h + (ts.length ? `<div class="list">${ts.map(tarjetaTarea).join('')}</div>` : UI.vacio('calendario', 'No hay tareas', 'Soporte o la Jefe le programan al Encargado los mantenimientos y backups.'));
+  }
+  /* --- Personas --- */
+  function htmlPersonas() {
+    const ps = personas();
+    if (!ps.length) return UI.vacio('persona', 'Nadie tiene equipos todavía', '');
+    return `<div class="list">${ps.map(p => `<button type="button" class="card" data-accion="persona" data-clave="${esH(p.clave)}">
+      <span class="card-head"><span class="card-title">${esH(p.nombre)}</span>${A().pill(`${p.equipos.length} ${p.equipos.length === 1 ? 'equipo' : 'equipos'}`, p.equipos.length ? 's-disco' : 'none', 'equipos')}</span>
+      <span class="meta">${p.cedula ? 'C.C. ' + esH(p.cedula) + ' · ' : ''}${p.hojas.length} ${p.hojas.length === 1 ? 'acta' : 'actas'}${p.equipos.length ? ' · ' + esH(p.equipos.map(e => e.serial).join(', ')) : ''}</span>
+    </button>`).join('')}</div>`;
+  }
+  /* --- Resumen (Jefe y Gerente) --- */
+  function htmlResumen() {
+    const App = A(), n = resumen(), mes = hoy().slice(0, 7), hs = D().hojas;
+    const entregas = hs.filter(h => String(h.fecha).slice(0, 7) === mes).length;
+    const devs = hs.reduce((c, h) => c + lista(h.devoluciones).filter(d => String(d.fecha).slice(0, 7) === mes).length, 0);
+    const viejos = D().equipos.filter(viejoMtto);
+    let h = `<div class="resumen-grid">
+      <div class="card"><span class="meta">Equipos</span><span class="rm-n">${D().equipos.length}</span><span class="meta">${n.asignados} asignados · ${n.bodega} en bodega · ${n.recibidos} en Recibidos</span></div>
+      <div class="card"><span class="meta">Actas este mes</span><span class="rm-n">${entregas + devs}</span><span class="meta">${entregas} entregas · ${devs} devoluciones</span></div>
+      <div class="card"><span class="meta">Actas por revisar</span><span class="rm-n">${n.actas}</span>${conProblema().length ? App.pill(`${conProblema().length} con problema`, 's-peligro', 'aviso') : App.pill('Sin problemas', 's-disco', 'check')}</div>
+      <div class="card"><span class="meta">Agenda</span><span class="rm-n">${n.tareas}</span>${n.atrasadas ? App.pill(`${n.atrasadas} atrasadas`, 's-peligro', 'aviso') : App.pill('Al día', 's-disco', 'check')}</div>
+    </div>`;
+    h += `<div class="section-label">Sin mantenimiento hace más de 6 meses (${viejos.length})</div>` + (viejos.length ? `<div class="list">${viejos.map(e => `<button type="button" class="card" data-accion="ver" data-id="${esH(e.id)}"><span class="card-head"><span class="card-title"><small>${esH(e.serial)}</small>${esH(e.tipo)} ${esH(e.marca)}</span>${App.pill(e.ultimoMtto ? 'Último: ' + App.fechaCorta(e.ultimoMtto) : 'Nunca', 's-warn', 'mantenimiento')}</span><span class="meta">${esH(quienTiene(e))}</span></button>`).join('')}</div>` : '<p class="meta">Todos los equipos tienen mantenimiento reciente.</p>');
+    return h;
+  }
+
+  /* ---------- hoja de acción ---------- */
+  const campoTxt = (id, lbl, v, ph, max, tipo, lst) => `<div class="field"><label for="${esH(id)}">${lbl}</label><input id="${esH(id)}" type="${tipo || 'text'}" maxlength="${max || 120}" autocomplete="off" value="${esH(v == null ? '' : v)}" placeholder="${esH(ph || '')}"${lst ? ` list="${esH(lst)}"` : ''}></div>`;
+  const campoSel = (id, lbl, ops, v) => `<div class="field"><label for="${esH(id)}">${lbl}</label><select id="${esH(id)}">${ops.map(([val, t]) => `<option value="${esH(val)}"${val === v ? ' selected' : ''}>${esH(t)}</option>`).join('')}</select></div>`;
+  const marca = (id, lbl, ok, extra) => `<label class="marca-fila"><input type="checkbox" id="${esH(id)}"${ok ? ' checked' : ''}${extra || ''}><span>${lbl}</span></label>`;
+  const valor = id => ($(id) ? $(id).value.trim() : '');
+  function fallar(msg, id) { const e = $('eqErr'); e.textContent = msg; e.hidden = false; if (id && $(id)) $(id).focus(); return false; }
+  function abrir(o) {
+    accion = o;
+    $('eqT').textContent = o.titulo; $('eqSub').textContent = o.sub || '';
+    $('eqCampos').innerHTML = o.campos || '';
+    window.llenarIconos($('eqCampos'));
+    const pri = $('eqPrimario'); pri.hidden = !o.primario; pri.disabled = false;
+    pri.innerHTML = o.primario ? (o.icono ? window.ico(o.icono) : '') + esH(o.primario) : '';
+    $('eqCerrar').textContent = o.primario ? 'Cancelar' : 'Cerrar';
+    $('eqErr').hidden = true;
+    A().abrirHoja('shEq');
+    const sh = $('shEq').querySelector('.sheet'); if (sh) sh.scrollTop = 0;
+  }
+  function aviso(para, titulo, txt, soloActas) {
+    if (!para || para === miRol()) return null;
+    pushPendientes.push({ para, titulo, texto: txt, soloActas: !!soloActas });
+    return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'equipos', leido: {} }];
+  }
+  /** ¿Cambió alguno de estos equipos mientras la hoja estaba abierta? (otra persona actuó) */
+  const cambiaron = ids => ids.some(id => { const e = eqPorId(id), b = (accion.base || {})[id]; return !e || !b || e.estado !== b.estado || historial(e).length !== historial(b).length; });
+  const fotoBase = es => Object.fromEntries(es.map(e => [e.id, Object.assign({}, e)]));
+  async function guardar() {
+    if (guardando || !accion || !accion.ops) return;
+    $('eqErr').hidden = true;
+    if (accion.baseHoja) { const h = hojaPorId(accion.baseHoja.id); if (!h || h.revision !== accion.baseHoja.revision || lista(h.devoluciones).length !== lista(accion.baseHoja.devoluciones).length) return fallar('Esa acta cambió mientras la tenías abierta. Ciérrala y ábrela otra vez.'); }
+    pushPendientes = [];
+    const ops = accion.ops(); if (!ops) return;
+    const lote = ops.filter(Boolean), envios = pushPendientes.slice();
+    guardando = true; $('eqPrimario').disabled = true;
+    try {
+      if (lote.length) await window.nube.lote(lote);
+      A().cerrarHoja('shEq');
+      try { $('eqContenido').focus({ preventScroll: true }); } catch (e) {}
+      A().toast(accion.listo);
+      const volver = accion.volver;
+      accion = null;
+      notificar(envios);
+      if (volver) setTimeout(() => { const e = eqPorId(volver); if (e && $('shEq').hidden) ver(e); }, 350);
+    } catch (e) {
+      // Dos actas con el mismo número a la vez: la segunda se rechaza; al volver a guardar toma el número siguiente.
+      fallar(e && e.code === 'permission-denied' && accion && accion.numerada ? 'Otra persona guardó un acta al mismo tiempo. Toca guardar otra vez.' : window.nube.explicar(e));
+    }
+    finally { guardando = false; $('eqPrimario').disabled = false; }
+  }
+  function notificar(envios) {
+    if (!window.Push || !envios.length) return;
+    const subs = A().S.datos.suscripciones || [];
+    envios.forEach(e => {
+      const destino = subs.filter(s => s.rol === e.para && (!e.soloActas || e.para !== 'soporte' || (Array.isArray(s.extras) && s.extras.includes('actas'))));
+      if (destino.length) Promise.resolve(window.Push.enviar(destino, { titulo: e.titulo, texto: e.texto, url: './#equipos', etiqueta: 'equipos' })).catch(() => {});
+    });
+  }
+
+  /* ---------- firma en la pantalla ---------- */
+  const campoFirma = (id, lbl, cc) => `<div class="field firma-campo"><span class="lbl">${esH(lbl)}</span>
+      <canvas id="${esH(id)}" class="firma-pad" width="600" height="200" aria-label="${esH(lbl)}: firma con el dedo"></canvas>
+      <div class="row"><span class="meta" id="${esH(id)}Txt">Firma con el dedo dentro del cuadro.</span>${boton('borrarfirma', 'Borrar', 'borrar', id, 'ghost small')}</div>
+      ${cc ? `<span class="meta">C.C. <b id="${esH(id)}CC">${esH(cc)}</b></span>` : ''}</div>`;
+  const pads = {};
+  /** Prepara un cuadro de firma: se dibuja con el dedo o el mouse. */
+  function activarFirma(id) {
+    const cv = $(id); if (!cv) return;
+    const ctx = cv.getContext('2d'), pad = { puntos: 0 };
+    ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#13212b';
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    let antes = null;
+    const punto = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height }; };
+    cv.onpointerdown = e => { e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {} antes = punto(e); };
+    cv.onpointermove = e => { if (!antes) return; e.preventDefault(); const p = punto(e); ctx.beginPath(); ctx.moveTo(antes.x, antes.y); ctx.lineTo(p.x, p.y); ctx.stroke(); pad.puntos++; antes = p; const t = $(id + 'Txt'); if (t) t.textContent = 'Firma lista.'; };
+    cv.onpointerup = cv.onpointercancel = () => { antes = null; };
+    pads[id] = pad;
+  }
+  function borrarFirma(id) { const cv = $(id); if (!cv) return; const ctx = cv.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height); pads[id] = { puntos: 0 }; const t = $(id + 'Txt'); if (t) t.textContent = 'Firma con el dedo dentro del cuadro.'; }
+  const firmada = id => !!(pads[id] && pads[id].puntos >= 8);
+  /** La firma como imagen pequeña (PNG). */
+  function leerFirma(id) {
+    const c = document.createElement('canvas'); c.width = 360; c.height = 120;
+    const x = c.getContext('2d'); x.fillStyle = '#ffffff'; x.fillRect(0, 0, c.width, c.height); x.drawImage($(id), 0, 0, c.width, c.height);
+    return c.toDataURL('image/png');
+  }
+
+  /* ---------- acta de entrega (igual a la hoja de papel) ---------- */
+  const siguienteNumero = () => D().hojas.reduce((m, h) => Math.max(m, Number(h.numero) || 0), 0) + 1;
+  const filaEq = (e, marcado) => `<div class="eq-acta" data-fila="${esH(e.id)}">${marca('ehEq_' + e.id, `<b>${esH(e.serial)}</b> ${esH(e.tipo)} ${esH(e.marca)} ${esH(e.modelo)}`, marcado, ` data-eq="${esH(e.id)}"`)}
+      <div class="eq-acta-det"${marcado ? '' : ' hidden'}>${campoTxt('ehObs_' + e.id, 'Observaciones', '', 'Ej: con su funda; pantalla con un rayón', 120)}</div></div>`;
+  const filaOtro = (nombre, k) => `<div class="otro-fila"><label for="ehOt_${k}">${esH(nombre)}</label><input type="number" inputmode="numeric" min="0" max="99" step="1" value="0" id="ehOt_${k}" data-otro="${esH(nombre)}"></div>`;
+  const filaOtroLibre = k => `<div class="otro-fila libre"><input type="text" maxlength="40" id="ehOtN_${k}" placeholder="Otro (ej: grabadora de voz)" aria-label="Otro elemento ${k + 1}"><input type="number" inputmode="numeric" min="0" max="99" step="1" value="0" id="ehOtC_${k}" aria-label="Cantidad del otro elemento ${k + 1}"></div>`;
+  function leerOtros() {
+    const out = [];
+    $('eqCampos').querySelectorAll('input[data-otro]').forEach(i => { const n = Math.round(Number(i.value) || 0); if (n > 0) out.push({ nombre: i.dataset.otro, cantidad: Math.min(99, n) }); });
+    [0, 1].forEach(k => { const nom = valor('ehOtN_' + k), n = Math.round(Number(valor('ehOtC_' + k)) || 0); if (nom && n > 0) out.push({ nombre: nom.slice(0, 40), cantidad: Math.min(99, n) }); });
+    return out;
+  }
+  function entrega(preId) {
+    const libres = equipos().filter(e => e.estado === 'bodega' || (e.estado === 'recibido' && !pend(e).mtto && !pend(e).backup));
+    const nombres = personas().map(p => p.nombre);
+    abrir({ titulo: 'Entrega de equipos y herramientas', sub: 'El acta se llena y se firma aquí mismo, sin papel. Después Soporte la revisa.',
+      campos: `<datalist id="ehNombres">${nombres.map(n => `<option value="${esH(n)}">`).join('')}</datalist>` +
+        `<div class="fields cols">${campoTxt('ehFecha', 'Fecha', hoy(), '', 10, 'date')}${campoTxt('ehCedula', 'Cédula', '', 'Solo números', 12, 'text')}</div>` +
+        campoTxt('ehPersona', 'Nombre', '', 'Nombre completo de quien recibe', 80, 'text', 'ehNombres') +
+        `<div class="fields cols">${campoSel('ehProy', 'Proyecto', PROYECTOS.map(p => [p[0], p[0]]), PROYECTOS[0][0])}${campoTxt('ehCodigo', 'Código del proyecto', PROYECTOS[0][1], '', 20)}</div>` +
+        `<div class="field"><span class="lbl">Equipos (serial, cantidad y observaciones)</span>${libres.length ? libres.map(e => filaEq(e, e.id === preId)).join('') : '<p class="meta">No hay equipos en bodega para entregar.</p>'}</div>` +
+        `<div class="field"><span class="lbl">Otros (cantidad)</span><div class="otros">${OTROS.map(filaOtro).join('')}${filaOtroLibre(0)}${filaOtroLibre(1)}</div></div>` +
+        campoFirma('ehFirmaP', 'Firma de quien recibe', '—'),
+      primario: 'Guardar el acta', icono: 'entrega', listo: 'Listo: acta guardada. Soporte ya la tiene para revisarla.', base: fotoBase(libres), numerada: true,
+      ops: () => {
+        const ids = Array.from($('eqCampos').querySelectorAll('input[data-eq]:checked')).map(x => x.dataset.eq);
+        const p = valor('ehPersona'), ced = valor('ehCedula').replace(/\D/g, ''), fecha = valor('ehFecha'), proy = valor('ehProy'), cod = valor('ehCodigo');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > hoy()) return fallar('Revisa la fecha.', 'ehFecha');
+        if (p.length < 5) return fallar('Escribe el nombre completo de quien recibe.', 'ehPersona');
+        if (ced.length < 5 || ced.length > 12) return fallar('Escribe la cédula (solo números).', 'ehCedula');
+        if (!ids.length) return fallar('Escoge al menos un equipo.');
+        if (cambiaron(ids)) return fallar('Un equipo cambió mientras tenías esto abierto. Ciérralo y ábrelo otra vez.');
+        if (!firmada('ehFirmaP')) return fallar('Falta la firma de quien recibe.');
+        const fp = leerFirma('ehFirmaP'); if (fp.length > MAX_FIRMA) return fallar('La firma quedó muy pesada. Bórrala y fírmala más sencilla.');
+        const es = ids.map(eqPorId), numero = siguienteNumero(), hid = 'ac' + numero;
+        const ops = [['set', 'hojas', hid, { numero, fecha, persona: p, cedula: ced, proyecto: proy, codigoProyecto: cod,
+          equipos: es.map(e => ({ id: e.id, serial: e.serial, tipo: e.tipo, marca: e.marca, modelo: e.modelo || '', cantidad: 1, obs: valor('ehObs_' + e.id) })), otros: leerOtros(),
+          firmaPersona: fp, encargado: persona().nombre, por: persona().nombre, porRol: miRol(), en: ahora(), devoluciones: [], revision: 'pendiente', revisadaPor: '', revisadaEn: '', notaRevision: '' }]];
+        es.forEach(e => ops.push(['mezclar', 'equipos', e.id, { estado: 'asignado', asignadoA: p, asignadoCedula: ced, proyecto: proy, pendientes: { mtto: false, backup: false }, historial: conPaso(e, { fecha, tipo: 'entrega', persona: p, nota: `Acta ${numActa({ numero })} (${proy})`, hojaId: hid }) }]));
+        return ops.concat([aviso('soporte', 'Acta de entrega para revisar', `${persona().nombre} le entregó a ${p}: ${es.map(e => e.serial).join(', ')} (acta ${numActa({ numero })}).`, true)]);
+      } });
+    activarFirma('ehFirmaP');
+  }
+  /* ---------- devolución: se firma en la misma acta ---------- */
+  function devolucion(clave) {
+    const conEquipos = personas().filter(p => p.hojas.some(h => porDevolver(h).some(x => { const e = eqPorId(x.id); return e && e.estado === 'asignado'; })));
+    if (!conEquipos.length) { A().toast('Nadie tiene equipos por devolver.'); return null; }
+    const elegido = conEquipos.find(p => p.clave === clave) || conEquipos[0];
+    abrir({ titulo: 'Devolución de equipos', sub: 'Se anota en la misma acta de la entrega, con la fecha de devolución y la firma. Lo que llega queda en Recibidos.',
+      campos: campoSel('ehQuien', 'Quién devuelve', conEquipos.map(p => [p.clave, `${p.nombre}${p.cedula ? ' · C.C. ' + p.cedula : ''}`]), elegido.clave) +
+        campoTxt('ehFecha', 'Fecha de devolución', hoy(), '', 10, 'date') + '<div class="field" id="ehLista"></div>' +
+        campoFirma('ehFirmaP', 'Firma de quien devuelve', elegido.cedula || '—'),
+      primario: 'Guardar la devolución', icono: 'devolucion', listo: 'Listo: devolución anotada en el acta. Los equipos quedaron en Recibidos.',
+      base: fotoBase(D().equipos.filter(e => e.estado === 'asignado')),
+      ops: () => {
+        const p = personas().find(x => x.clave === valor('ehQuien')), fecha = valor('ehFecha');
+        const marcados = Array.from($('eqCampos').querySelectorAll('input[data-eq]:checked')).map(x => ({ id: x.dataset.eq, hoja: x.dataset.hoja }));
+        if (!p) return fallar('Escoge quién devuelve.', 'ehQuien');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > hoy()) return fallar('Revisa la fecha de devolución.', 'ehFecha');
+        if (!marcados.length) return fallar('Escoge al menos un equipo.');
+        if (cambiaron(marcados.map(m => m.id))) return fallar('Un equipo cambió mientras tenías esto abierto. Ciérralo y ábrelo otra vez.');
+        if (!firmada('ehFirmaP')) return fallar('Falta la firma de quien devuelve.');
+        const fp = leerFirma('ehFirmaP'); if (fp.length > MAX_FIRMA) return fallar('La firma quedó muy pesada. Bórrala y fírmala más sencilla.');
+        const ops = [], porHoja = {};
+        marcados.forEach(m => { (porHoja[m.hoja] = porHoja[m.hoja] || []).push(m.id); });
+        for (const [hid, ids] of Object.entries(porHoja)) {
+          const h = hojaPorId(hid); if (!h) return fallar('Un acta ya no existe. Cierra y abre otra vez.');
+          const obs = ids.map(id => { const o = valor('ehObsD_' + id), e = eqPorId(id); return o ? `${e ? e.serial : id}: ${o}` : ''; }).filter(Boolean).join('; ');
+          ops.push(['mezclar', 'hojas', hid, { devoluciones: lista(h.devoluciones).concat([{ fecha, equipos: ids, firma: fp, obs, recibio: persona().nombre, en: ahora() }]), revision: 'pendiente', revisadaPor: '', revisadaEn: '', notaRevision: '' }]);
+          ids.forEach(id => { const e = eqPorId(id), o = valor('ehObsD_' + id); ops.push(['mezclar', 'equipos', id, { estado: 'recibido', obs: o || e.obs || '', pendientes: { mtto: true, backup: true }, historial: conPaso(e, { fecha, tipo: 'devolucion', persona: p.nombre, nota: o || `Devuelto (acta ${numActa(h)})`, hojaId: hid }) }]); });
+        }
+        return ops.concat([aviso('soporte', 'Devolución para revisar', `${p.nombre} devolvió ${marcados.map(m => (eqPorId(m.id) || {}).serial).join(', ')}. Quedaron en Recibidos.`, true)]);
+      } });
+    pintarListaDevolucion();
+    activarFirma('ehFirmaP');
+    return true;
+  }
+  function pintarListaDevolucion() {
+    const p = personas().find(x => x.clave === valor('ehQuien'));
+    const abiertas = p ? p.hojas.filter(h => porDevolver(h).length) : [];
+    $('ehLista').innerHTML = '<span class="lbl">Equipos que devuelve</span>' + abiertas.map(h => `<div class="eq-acta"><span class="meta">Acta ${esH(numActa(h))} · entregado el ${esH(A().fechaCorta(h.fecha))}</span>
+      ${porDevolver(h).filter(x => { const e = eqPorId(x.id); return e && e.estado === 'asignado'; }).map(x => `${marca('ehEqD_' + x.id, `<b>${esH(x.serial)}</b> ${esH(x.tipo)} ${esH(x.marca)} ${esH(x.modelo || '')}`, true, ` data-eq="${esH(x.id)}" data-hoja="${esH(h.id)}"`)}
+        <div class="eq-acta-det">${campoTxt('ehObsD_' + x.id, 'Cómo llega', '', 'Ej: bisagra floja; sin el mouse', 120)}</div>`).join('')}
+      ${lista(h.otros).length ? `<span class="meta">Otros de esa acta: ${esH(lista(h.otros).map(o => `${o.nombre} (${o.cantidad})`).join(', '))}</span>` : ''}</div>`).join('');
+    const cc = $('ehFirmaPCC'); if (cc) cc.textContent = p && p.cedula ? p.cedula : '—';
+  }
+  function trabajo(e, tipo) {
+    const mtto = tipo === 'mtto';
+    abrir({ titulo: `${mtto ? 'Mantenimiento' : 'Backup'} del ${e.serial}`, sub: `${e.tipo} ${e.marca} ${e.modelo}`,
+      campos: campoTxt('ehNota', mtto ? 'Qué se le hizo' : 'Qué se copió y dónde', '', mtto ? 'Ej: limpieza, cambio de pasta térmica, tecla arreglada' : 'Ej: carpetas de reuniones al disco de backup', 160),
+      primario: 'Guardar', icono: 'check', listo: mtto ? 'Listo: mantenimiento guardado.' : 'Listo: backup guardado.', base: fotoBase([e]),
+      ops: () => {
+        const nota = valor('ehNota'); if (nota.length < 4) return fallar('Cuenta en pocas palabras qué se hizo.', 'ehNota');
+        if (cambiaron([e.id])) return fallar('El equipo cambió mientras tenías esto abierto. Ciérralo y ábrelo otra vez.');
+        const p = Object.assign({ mtto: false, backup: false }, pend(e)); p[mtto ? 'mtto' : 'backup'] = false;
+        const ops = [['mezclar', 'equipos', e.id, Object.assign({ pendientes: p, historial: conPaso(e, { tipo: mtto ? 'mantenimiento' : 'backup', persona: persona().nombre, nota }) }, mtto ? { ultimoMtto: hoy() } : { ultimoBackup: hoy() })]];
+        // Si la agenda tenía esa misma tarea para el equipo, queda hecha también.
+        tareasPend().filter(t => t.equipoId === e.id && t.tipo === (mtto ? 'mantenimiento' : 'backup')).forEach(t => {
+          ops.push(['mezclar', 'tareasEq', t.id, { estado: 'hecha', hechaPor: persona().nombre, hechaEn: ahora(), resultado: nota }]);
+          ops.push(aviso(t.pidioRol, `${TIPO_TAREA[t.tipo]} hecho`, `${persona().nombre} hizo ${TIPO_TAREA[t.tipo].toLowerCase()} del ${t.serial}: ${nota}`));
+        });
+        return ops;
+      } });
+  }
+  function aBodega(e) {
+    abrir({ titulo: `Pasar el ${e.serial} a bodega`, sub: 'Ya tiene mantenimiento y backup. Queda listo para entregar.', primario: 'Pasar a bodega', icono: 'bolsa', listo: 'Listo: el equipo está en bodega.', base: fotoBase([e]),
+      ops: () => (cambiaron([e.id]) ? fallar('El equipo cambió. Ciérralo y ábrelo otra vez.')
+        : [['mezclar', 'equipos', e.id, { estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', pendientes: { mtto: false, backup: false }, historial: conPaso(e, { tipo: 'bodega', persona: persona().nombre, nota: 'Listo y guardado en bodega' }) }]]) });
+  }
+  function revisar(h) {
+    abrir({ titulo: `Revisar acta ${numActa(h)}`, sub: `${h.persona}${lista(h.devoluciones).length ? ' · con devolución' : ''}`,
+      campos: htmlActa(h) + '<p class="meta">Revisa la fecha, el nombre, la cédula, el proyecto, los seriales, los otros elementos y las firmas.</p>' +
+        '<div class="field"><span class="lbl">¿Cómo está el acta?</span><label class="marca-fila"><input type="radio" name="ehRev" value="ok" checked><span>Está bien</span></label><label class="marca-fila"><input type="radio" name="ehRev" value="problema"><span>Tiene un problema</span></label></div>' +
+        campoTxt('ehNotaRev', 'Qué está mal (si tiene un problema)', '', 'Ej: la cédula no coincide', 160),
+      primario: 'Guardar la revisión', icono: 'check', listo: 'Listo: acta revisada.', baseHoja: Object.assign({}, h),
+      ops: () => {
+        const r = ($('eqCampos').querySelector('input[name="ehRev"]:checked') || {}).value, nota = valor('ehNotaRev');
+        if (r === 'problema' && nota.length < 5) return fallar('Cuenta qué está mal para que el Encargado lo corrija.', 'ehNotaRev');
+        return [['mezclar', 'hojas', h.id, { revision: r === 'problema' ? 'problema' : 'ok', revisadaPor: persona().nombre, revisadaEn: ahora(), notaRevision: r === 'problema' ? nota : '' }],
+          r === 'problema' ? aviso('equipos', 'Un acta tiene un problema', `${persona().nombre}: acta ${numActa(h)} de ${h.persona}. ${nota}`) : null];
+      } });
+  }
+  function corregir(h) {
+    abrir({ titulo: `Corregir acta ${numActa(h)}`, sub: `Problema: ${h.notaRevision || 'sin nota'}`,
+      campos: `<div class="fields cols">${campoTxt('ehPersona', 'Nombre', h.persona, '', 80)}${campoTxt('ehCedula', 'Cédula', h.cedula, '', 12)}</div>` +
+        `<div class="fields cols">${campoSel('ehProy', 'Proyecto', PROYECTOS.map(p => [p[0], p[0]]), h.proyecto)}${campoTxt('ehCodigo', 'Código del proyecto', h.codigoProyecto, '', 20)}</div>` +
+        '<p class="meta">Si el problema es la firma de la entrega, que la persona firme otra vez (si no, déjalo en blanco):</p>' + campoFirma('ehFirmaP', 'Firma de quien recibe (otra vez)', ''),
+      primario: 'Mandar otra vez a Soporte', icono: 'enviar', listo: 'Listo: el acta volvió a Soporte para revisarla.', baseHoja: Object.assign({}, h),
+      ops: () => {
+        const ced = valor('ehCedula').replace(/\D/g, ''), p = valor('ehPersona');
+        if (p.length < 5 || ced.length < 5 || ced.length > 12) return fallar('Revisa el nombre y la cédula.');
+        const cambio = { persona: p, cedula: ced, proyecto: valor('ehProy'), codigoProyecto: valor('ehCodigo'), revision: 'pendiente', revisadaPor: '', revisadaEn: '' };
+        if (firmada('ehFirmaP')) { cambio.firmaPersona = leerFirma('ehFirmaP'); if (cambio.firmaPersona.length > MAX_FIRMA) return fallar('La firma quedó muy pesada. Bórrala y fírmala más sencilla.'); }
+        const ops = [['mezclar', 'hojas', h.id, cambio]];
+        // Si cambió el nombre o la cédula, los equipos que siguen con esa persona quedan con el dato corregido.
+        porDevolver(h).forEach(x => { const e = eqPorId(x.id); if (e && e.estado === 'asignado' && (e.asignadoA !== p || e.asignadoCedula !== ced)) ops.push(['mezclar', 'equipos', e.id, { asignadoA: p, asignadoCedula: ced, historial: conPaso(e, { tipo: 'correccion', persona: p, nota: `Se corrigió el acta ${numActa(h)}`, hojaId: h.id }) }]); });
+        return ops.concat([aviso('soporte', 'Acta corregida para revisar', `${persona().nombre} corrigió el acta ${numActa(h)} de ${p}.`, true)]);
+      } });
+    activarFirma('ehFirmaP');
+  }
+  function programar(e) {
+    const ops = equipos().map(x => [x.id, `${x.serial} · ${x.tipo} ${x.marca} (${x.estado === 'bodega' ? 'bodega' : x.asignadoA || x.estado})`]);
+    const manana = (() => { const d = new Date(hoy() + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+    abrir({ titulo: 'Programar mantenimiento o backup', sub: 'Le llega al Encargado de equipos con aviso.',
+      campos: campoSel('ehEq', 'Equipo', ops, e ? e.id : ops[0][0]) + `<div class="fields cols">${campoSel('ehTipo', 'Qué hay que hacer', Object.keys(TIPO_TAREA).map(k => [k, TIPO_TAREA[k]]), 'mantenimiento')}${campoTxt('ehFecha', 'Para cuándo', manana, '', 10, 'date')}</div>` +
+        campoTxt('ehNota', 'Detalle', '', 'Ej: la batería dura poco', 160),
+      primario: 'Programar', icono: 'programar', listo: 'Listo: tarea programada. El Encargado ya tiene el aviso.',
+      ops: () => {
+        const eq = eqPorId(valor('ehEq')), tipo = valor('ehTipo'), fecha = valor('ehFecha'), nota = valor('ehNota');
+        if (!eq) return fallar('Escoge el equipo.', 'ehEq');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha < hoy()) return fallar('Escoge una fecha de hoy en adelante.', 'ehFecha');
+        if (D().tareasEq.some(t => t.estado === 'pendiente' && t.equipoId === eq.id && t.tipo === tipo)) return fallar('Ese equipo ya tiene esa tarea pendiente.');
+        return [['set', 'tareasEq', window.nube.idNuevo('ta'), { equipoId: eq.id, serial: eq.serial, tipo, fecha, nota, pidio: persona().nombre, pidioRol: miRol(), estado: 'pendiente', hechaPor: '', hechaEn: '', resultado: '', en: ahora() }],
+          aviso('equipos', `${TIPO_TAREA[tipo]} programado`, `${persona().nombre}: ${TIPO_TAREA[tipo].toLowerCase()} del ${eq.serial} para el ${A().fechaCorta(fecha)}.${nota ? ' ' + nota : ''}`)];
+      } });
+  }
+  function hecha(t) {
+    const e = eqPorId(t.equipoId);
+    abrir({ titulo: `${TIPO_TAREA[t.tipo] || 'Tarea'} del ${t.serial}`, sub: t.nota || '',
+      campos: campoTxt('ehNota', 'Qué se hizo', '', 'Ej: batería revisada, se limpió el equipo', 160),
+      primario: 'Marcar hecha', icono: 'check', listo: 'Listo: tarea hecha. Ya le avisamos a quien la pidió.', base: e ? fotoBase([e]) : {},
+      ops: () => {
+        const nota = valor('ehNota'); if (nota.length < 4) return fallar('Cuenta en pocas palabras qué se hizo.', 'ehNota');
+        if (e && cambiaron([e.id])) return fallar('El equipo cambió mientras tenías esto abierto. Ciérralo y ábrelo otra vez.');
+        const ops = [['mezclar', 'tareasEq', t.id, { estado: 'hecha', hechaPor: persona().nombre, hechaEn: ahora(), resultado: nota }]];
+        if (e) {
+          const tipo = t.tipo === 'backup' ? 'backup' : t.tipo === 'mantenimiento' ? 'mantenimiento' : 'revision';
+          const cambio = { historial: conPaso(e, { tipo, persona: persona().nombre, nota }) };
+          if (tipo === 'mantenimiento') cambio.ultimoMtto = hoy();
+          if (tipo === 'backup') cambio.ultimoBackup = hoy();
+          // Si el equipo está en Recibidos, esa parte queda lista allá también.
+          if (e.estado === 'recibido' && tipo !== 'revision') cambio.pendientes = Object.assign({ mtto: false, backup: false }, pend(e), { [tipo === 'backup' ? 'backup' : 'mtto']: false });
+          ops.push(['mezclar', 'equipos', e.id, cambio]);
+        }
+        ops.push(aviso(t.pidioRol, `${TIPO_TAREA[t.tipo] || 'Tarea'} hecho`, `${persona().nombre} hizo ${(TIPO_TAREA[t.tipo] || 'la tarea').toLowerCase()} del ${t.serial}: ${nota}`));
+        return ops;
+      } });
+  }
+  function nuevo() {
+    abrir({ titulo: 'Registrar equipo nuevo', sub: 'Queda en bodega, listo para entregar.',
+      campos: `<div class="fields cols">${campoTxt('ehSerial', 'Serial', '', 'Ej: DEMO-0013', 30)}${campoSel('ehTipo', 'Tipo', TIPOS_EQ.map(t => [t, t]), 'Portátil')}</div>` +
+        `<div class="fields cols">${campoTxt('ehMarca', 'Marca', '', 'Ej: Lenovo', 40)}${campoTxt('ehModelo', 'Modelo', '', 'Ej: ThinkPad E14', 60)}</div>` + campoTxt('ehObs', 'Observaciones', '', '', 160),
+      primario: 'Registrar', icono: 'mas', listo: 'Listo: equipo registrado en bodega.',
+      ops: () => {
+        const serial = valor('ehSerial').toUpperCase(), marcaV = valor('ehMarca'), modelo = valor('ehModelo');
+        if (!/^[A-Z0-9-]{4,30}$/.test(serial)) return fallar('Escribe el serial (letras, números y guiones).', 'ehSerial');
+        if (D().equipos.some(e => String(e.serial).toUpperCase() === serial)) return fallar('Ya hay un equipo con ese serial.', 'ehSerial');
+        if (!marcaV) return fallar('Escribe la marca.', 'ehMarca');
+        return [['set', 'equipos', window.nube.idNuevo('eq'), { serial, tipo: valor('ehTipo'), marca: marcaV, modelo, estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', ultimoMtto: '', ultimoBackup: '', obs: valor('ehObs'),
+          pendientes: { mtto: false, backup: false }, historial: [{ fecha: hoy(), tipo: 'registro', persona: persona().nombre, nota: 'Equipo registrado en bodega', por: persona().nombre }] }]];
+      } });
+  }
+
+  /* ---------- hoja de vida, acta y persona ---------- */
+  const TIPO_PASO = { entrega: 'Entrega', devolucion: 'Devolución', mantenimiento: 'Mantenimiento', backup: 'Backup', bodega: 'A bodega', registro: 'Registro', revision: 'Revisión', correccion: 'Corrección del acta' };
+  function ver(e) {
+    const App = A(), st = EST[e.estado] || ['Sin estado', 'none'], hs = hojasDe(e.id), ts = D().tareasEq.filter(t => t.equipoId === e.id && t.estado === 'pendiente');
+    const pasos = historial(e).slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    const bts = [];
+    if (esEncargado()) {
+      if (e.estado === 'bodega') bts.push(boton('entregar', 'Entregar', 'entrega', e.id, 'primary small'));
+      if (e.estado === 'asignado') { const p = personas().find(x => x.equipos.some(y => y.id === e.id)); if (p) bts.push(boton('devolver', 'Recibir (devolución)', 'devolucion', '', 'small', ` data-clave="${esH(p.clave)}"`)); }
+      if (e.estado === 'recibido' && pend(e).mtto) bts.push(boton('mtto', 'Mantenimiento hecho', 'mantenimiento', e.id, 'primary small'));
+      if (e.estado === 'recibido' && pend(e).backup) bts.push(boton('backup', 'Backup hecho', 'backup', e.id, 'small'));
+    }
+    if (programa()) bts.push(boton('programar', 'Programar tarea', 'programar', e.id, 'ghost small'));
+    abrir({ titulo: `${e.serial} · ${e.tipo} ${e.marca}`, sub: e.modelo,
+      campos: `<div class="row">${App.pill(st[0], st[1])}</div>
+        <dl class="datos"><dt>Dónde está</dt><dd>${esH(quienTiene(e))}</dd>${e.proyecto ? `<dt>Proyecto</dt><dd>${esH(e.proyecto)}</dd>` : ''}
+        <dt>Último mantenimiento</dt><dd>${esH(e.ultimoMtto ? App.fechaCorta(e.ultimoMtto) : 'Nunca')}</dd><dt>Último backup</dt><dd>${esH(e.ultimoBackup ? App.fechaCorta(e.ultimoBackup) : 'Nunca')}</dd></dl>
+        ${e.obs ? `<p class="meta">${esH(e.obs)}</p>` : ''}${bts.length ? `<div class="tarea-pie">${bts.join('')}</div>` : ''}
+        ${ts.length ? `<div class="section-label">Agenda (${ts.length})</div><div class="list">${ts.map(tarjetaTarea).join('')}</div>` : ''}
+        <div class="section-label">Actas (${hs.length})</div>${hs.length ? `<div class="list">${hs.map(tarjetaActa).join('')}</div>` : '<p class="meta">Sin actas.</p>'}
+        <div class="section-label">Historial</div><ol class="linea">${pasos.map(x => `<li><b>${esH(TIPO_PASO[x.tipo] || x.tipo)}${x.persona ? ': ' + esH(x.persona) : ''}</b><span class="meta">${esH(App.fechaCorta(x.fecha))}${x.nota ? ' · ' + esH(x.nota) : ''}</span></li>`).join('') || '<li><span class="meta">Sin historial.</span></li>'}</ol>` });
+    accion.volverA = e.id;
+  }
+  /** El acta como la hoja de papel: encabezado, datos, tabla de equipos y de otros, firma y devolución. */
+  function htmlActa(h) {
+    const App = A(), fp = firma(h.firmaPersona), eqs = lista(h.equipos), otros = lista(h.otros);
+    const porFila = {}; eqs.forEach(x => { const f = FILA_DE[x.tipo] || String(x.tipo || 'OTRO').toUpperCase(); (porFila[f] = porFila[f] || []).push(x); });
+    const filas = FILAS_EQ.concat(Object.keys(porFila).filter(f => !FILAS_EQ.includes(f)));
+    const celdaEq = f => { const xs = porFila[f] || []; return `<tr${xs.length ? ' class="llena"' : ''}><td>${esH(f)}</td><td>${esH(xs.map(x => x.serial).join(', '))}</td><td>${xs.length ? xs.reduce((c, x) => c + (Number(x.cantidad) || 1), 0) : ''}</td><td>${esH(xs.map(x => [x.marca, x.modelo, x.obs].filter(Boolean).join(' ')).join('; '))}</td></tr>`; };
+    const otrosFijos = OTROS.filter(o => o !== 'Cargador'), extraOtros = otros.filter(o => !otrosFijos.includes(o.nombre));
+    const celdaOtro = (nombre, cant) => `<tr${cant ? ' class="llena"' : ''}><td>${esH(String(nombre).toUpperCase())}</td><td></td><td>${esH(cant || '')}</td><td></td></tr>`;
+    const devs = lista(h.devoluciones);
+    return `<article class="acta-doc" id="actaDoc">
+      <header class="acta-cab"><span class="acta-logo">Control<br><small>demo</small></span><b>ENTREGA DE EQUIPOS Y HERRAMIENTAS</b><span class="acta-cod">Código: FT-DEMO<br>Versión: 01<br>Acta ${esH(numActa(h))}</span></header>
+      <dl class="acta-datos"><dt>FECHA:</dt><dd>${esH(App.fechaCorta(h.fecha))}</dd><dt>NOMBRE:</dt><dd>${esH(h.persona)}</dd><dt>CÉDULA:</dt><dd>${esH(h.cedula || '')}</dd>
+        <dt>PROYECTO:</dt><dd>${esH(h.proyecto || '')}</dd><dt>CÓDIGO PROYECTO:</dt><dd>${esH(h.codigoProyecto || '')}</dd></dl>
+      <table class="acta-tabla"><thead><tr><th>EQUIPO</th><th>SERIAL</th><th>CANTIDAD</th><th>OBSERVACIONES</th></tr></thead>
+        <tbody>${filas.map(celdaEq).join('')}<tr class="sep"><td colspan="4">OTROS</td></tr>${otrosFijos.map(o => celdaOtro(o, (otros.find(x => x.nombre === o) || {}).cantidad)).join('')}${extraOtros.map(o => celdaOtro(o.nombre, o.cantidad)).join('')}</tbody></table>
+      <div class="acta-firma"><span>Firma recibido:</span>${fp ? `<img src="${esH(fp)}" alt="Firma de ${esH(h.persona)}">` : '<i></i>'}<span>CC ${esH(h.cedula || '')}</span></div>
+      <div class="acta-dev"><b>FECHA DE DEVOLUCIÓN</b><span>${esH(devs.map(d => App.fechaCorta(d.fecha)).join(' · '))}</span></div>
+      ${devs.length ? devs.map(d => `<div class="acta-firma"><span>Firma recibido:</span>${firma(d.firma) ? `<img src="${esH(firma(d.firma))}" alt="Firma de la devolución">` : '<i></i>'}<span>CC ${esH(h.cedula || '')} · ${esH(App.fechaCorta(d.fecha))}${Array.isArray(d.equipos) && d.equipos.length < eqs.length ? ' · ' + esH(eqs.filter(x => d.equipos.includes(x.id)).map(x => x.serial).join(', ')) : ''}</span></div>${d.obs ? `<p class="acta-nota">${esH(d.obs)}</p>` : ''}`).join('')
+        : '<div class="acta-firma"><span>Firma recibido:</span><i></i><span>CC</span></div>'}
+      <p class="acta-pie">Entregó: ${esH(h.encargado || h.por)} (Encargado de equipos)${devs.length ? ' · Recibió la devolución: ' + esH(devs.map(d => d.recibio).join(', ')) : ''} · Documento de prueba</p>
+    </article>`;
+  }
+  function verActa(h) {
+    const r = REV[h.revision] || REV.pendiente, ea = EST_ACTA[estadoActa(h)];
+    const bts = (puedeRevisar(h) ? boton('revisar', 'Revisar el acta', 'check', h.id, 'primary small') : '') + (h.revision === 'problema' && esEncargado() ? boton('corregir', 'Corregir', 'lapiz', h.id, 'primary small') : '') + boton('imprimir', 'Imprimir o guardar PDF', 'pdf', h.id, 'small');
+    abrir({ titulo: `Acta ${numActa(h)}`, sub: h.persona,
+      campos: `<div class="row">${A().pill(ea[0], ea[1])}${A().pill(r[0], r[1], r[2])}${h.revisadaPor ? `<span class="meta">Revisó ${esH(h.revisadaPor)}</span>` : ''}</div>${h.notaRevision ? `<p class="meta">Problema: ${esH(h.notaRevision)}</p>` : ''}
+        ${htmlActa(h)}<div class="tarea-pie">${bts}</div>` });
+  }
+  /** Imprime solo el acta (en el teléfono sale «Guardar como PDF»). */
+  function imprimir() {
+    const doc = $('actaDoc'); if (!doc) return;
+    const cont = document.createElement('div'); cont.id = 'impresion'; cont.innerHTML = doc.outerHTML;
+    document.body.appendChild(cont); document.body.classList.add('imprimiendo');
+    const fin = () => { document.body.classList.remove('imprimiendo'); cont.remove(); window.removeEventListener('afterprint', fin); };
+    window.addEventListener('afterprint', fin);
+    try { window.print(); } catch (e) {}
+    setTimeout(fin, 60000);
+  }
+  function verPersona(clave) {
+    const p = personas().find(x => x.clave === clave); if (!p) return null;
+    abrir({ titulo: p.nombre, sub: p.cedula ? 'C.C. ' + p.cedula : '',
+      campos: `${esEncargado() && p.equipos.length ? `<div class="tarea-pie">${boton('devolver', 'Recibir sus equipos', 'devolucion', '', 'primary small', ` data-clave="${esH(p.clave)}"`)}</div>` : ''}
+        <div class="section-label">Equipos que tiene (${p.equipos.length})</div>${p.equipos.length ? `<div class="list">${p.equipos.map(e => `<button type="button" class="card" data-accion="ver" data-id="${esH(e.id)}"><span class="card-title"><small>${esH(e.serial)}</small>${esH(e.tipo)} ${esH(e.marca)} ${esH(e.modelo)}</span></button>`).join('')}</div>` : '<p class="meta">No tiene equipos.</p>'}
+        <div class="section-label">Actas (${p.hojas.length})</div>${p.hojas.length ? `<div class="list">${p.hojas.slice().sort((a, b) => String(b.en).localeCompare(String(a.en))).map(tarjetaActa).join('')}</div>` : '<p class="meta">Sin actas.</p>'}` });
+    return true;
+  }
+
+  /* ---------- eventos ---------- */
+  $('eqSecciones').addEventListener('click', e => {
+    const b = e.target.closest('[data-sec]'); if (!b) return;
+    seccion = b.dataset.sec; A().S.filtro.equipos = '';
+    A().pintarTodo();
+  });
+  function alTocar(e) {
+    const b = e.target.closest('[data-accion]'); if (!b || b.disabled) return;
+    const id = b.dataset.id, eq = eqPorId(id), h = hojaPorId(id), t = D().tareasEq.find(x => x.id === id);
+    const desde = $('eqCampos').contains(b) && accion ? accion.volverA : '';
+    const mapa = {
+      ver: () => eq && ver(eq), veracta: () => h && verActa(h), persona: () => verPersona(b.dataset.clave),
+      borrarfirma: () => (accion ? borrarFirma(id) : null), imprimir: () => imprimir(),
+      entregar: () => (esEncargado() ? entrega(eq ? eq.id : '') : null), devolver: () => (esEncargado() ? devolucion(b.dataset.clave) : null),
+      mtto: () => (eq && esEncargado() && pend(eq).mtto ? trabajo(eq, 'mtto') : null), backup: () => (eq && esEncargado() && pend(eq).backup ? trabajo(eq, 'backup') : null),
+      abodega: () => (eq && esEncargado() && eq.estado === 'recibido' && !pend(eq).mtto && !pend(eq).backup ? aBodega(eq) : null),
+      revisar: () => (h && puedeRevisar(h) ? revisar(h) : null), corregir: () => (h && h.revision === 'problema' && esEncargado() ? corregir(h) : null),
+      programar: () => (programa() ? programar(eq) : null), hecha: () => (t && t.estado === 'pendiente' && esEncargado() ? hecha(t) : null)
+    };
+    const fn = mapa[b.dataset.accion]; if (!fn) return;
+    const r = fn();
+    if (r === null) { A().toast('Eso ya cambió o no te toca. Revisa otra vez.'); return; }
+    if (desde && accion && !['borrarfirma', 'imprimir'].includes(b.dataset.accion)) accion.volver = desde;
+  }
+  const ponerCC = () => { const cc = $('ehFirmaPCC'); if (cc && $('ehCedula')) cc.textContent = $('ehCedula').value.replace(/\D/g, '') || '—'; };
+  $('eqContenido').addEventListener('click', alTocar);
+  $('eqContenido').addEventListener('input', e => { if (e.target.id === 'qEq') { buscar = e.target.value; const pos = e.target.selectionStart; pintar(); const q = $('qEq'); if (q) { q.focus(); try { q.setSelectionRange(pos, pos); } catch (x) {} } } });
+  $('eqCampos').addEventListener('click', e => { if (e.target.closest('[data-accion]')) alTocar(e); });
+  $('eqCampos').addEventListener('input', e => { if (e.target.id === 'ehCedula' && $('ehQuien') === null) ponerCC(); });
+  $('eqCampos').addEventListener('change', e => {
+    if (e.target.id === 'ehQuien') pintarListaDevolucion();
+    if (e.target.id === 'ehProy') { const p = PROYECTOS.find(x => x[0] === e.target.value); if (p && $('ehCodigo')) $('ehCodigo').value = p[1]; }
+    // Al marcar un equipo se abren sus observaciones; si es un portátil, se suma un cargador en «Otros».
+    const c = e.target.closest('input[data-eq]');
+    if (c) {
+      const det = c.closest('.eq-acta').querySelector('.eq-acta-det'); if (det && !c.dataset.hoja) det.hidden = !c.checked;
+      const eqx = eqPorId(c.dataset.eq), car = $('eqCampos').querySelector('input[data-otro="Cargador"]');
+      if (c.checked && eqx && eqx.tipo === 'Portátil' && car && !(Number(car.value) > 0)) car.value = 1;
+    }
+  });
+  $('eqForm').addEventListener('submit', e => { e.preventDefault(); guardar(); });
+  $('btnEntregar').addEventListener('click', () => { if (esEncargado()) entrega(''); });
+  $('btnDevolver').addEventListener('click', () => { if (esEncargado()) devolucion(''); });
+  $('btnNuevoEq').addEventListener('click', () => { if (esEncargado()) nuevo(); });
+
+  window.Equipos = Object.freeze({ pintar, resumen });
+})();

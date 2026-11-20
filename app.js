@@ -15,7 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], reuniones: [], necesidades: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [] },
+    datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], reuniones: [], necesidades: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     oyentes: [],
     filtro: { equipos: '', inventario: '', vehiculos: '', reuniones: '' },
@@ -200,7 +200,9 @@
     // La bandeja de correos (Gmail de prueba) solo la leen la Jefe y la Administrativa encargada.
     if (p.rol === 'jefe' || (p.rol === 'administrativo' && tieneExtra('encargada'))) panel.push('buzon');
     S.errBuzon = '';
-    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'reuniones', 'necesidades', 'avisos', 'suscripciones'].concat(panel).forEach(col => {
+    // Las actas (con nombre y cédula) y la agenda de equipos solo las leen quienes ven Equipos.
+    const eq = permiso('equipos') !== 'no' ? ['hojas', 'tareasEq'] : [];
+    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'reuniones', 'necesidades', 'avisos', 'suscripciones'].concat(eq, panel).forEach(col => {
       S.oyentes.push(nube.escuchar(col, lista => {
         S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
         // «Faltan los datos de prueba» se quita cuando llegan artículos. Un error de permiso al cargar o al leer
@@ -301,11 +303,12 @@
     const d = S.datos, p = S.persona, rol = p ? p.rol : '';
     const inv = window.Inventario.resumen(rol);
     const veh = window.Vehiculos.resumen();
+    const eq = window.Equipos.resumen();
     const docsPorVencer = veh.docs, novedades = veh.novedades;
     const reu = window.Reuniones.resumen();
     const recibidos = d.equipos.filter(e => e.estado === 'recibido').length;
     const proximas = d.reuniones.filter(r => r.estado === 'programada' || r.estado === 'reprogramada').length;
-    return { inv, reu, veh, docsPorVencer, novedades, recibidos, proximas };
+    return { inv, reu, veh, eq, docsPorVencer, novedades, recibidos, proximas };
   }
 
   function pintarInicio() {
@@ -328,7 +331,9 @@
       { mod: 'reuniones', k: 'i-act', n: n.reu.actas, lbl: 'Actas por registrar', icono: 'hojas', tono: 'peligro', roles: ['jefe', 'administrativo'] },
       { mod: 'reuniones', k: 'i-rmi', n: n.reu.mias, lbl: 'Tareas de reuniones para ti', icono: 'reunion', tono: 'listo', roles: ['compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional'] },
       { mod: 'reuniones', k: 'i-prox', n: n.reu.proximas, lbl: 'Próximas reuniones', icono: 'calendario', tono: 'listo', roles: ['gerente', 'logistica', 'profesional', 'administrativo'] },
-      { mod: 'equipos', k: 'i-rec', n: n.recibidos, lbl: 'Equipos en Recibidos', icono: 'recibidos', tono: 'listo', roles: ['jefe', 'equipos', 'soporte'] }
+      { mod: 'equipos', k: 'i-rec', n: n.recibidos, lbl: 'Equipos en Recibidos', icono: 'recibidos', tono: 'listo', roles: ['jefe', 'equipos'] },
+      { mod: 'equipos', k: 'i-eac', n: n.eq.actas, lbl: 'Actas de equipos por revisar', icono: 'hojas', tono: 'org', roles: ['jefe', 'soporte', 'gerente'] },
+      { mod: 'equipos', k: 'i-eta', n: n.eq.tareas, lbl: 'Mantenimientos y backups programados', icono: 'mantenimiento', tono: n.eq.atrasadas ? 'peligro' : 'listo', roles: ['equipos', 'soporte'] }
     ].filter(c => (typeof c.roles === 'function' ? c.roles() : c.roles.includes(p.rol)) && puedeVer(c.mod));
     const sum = $('sumInicio');
     const algoCargando = ['equipos', 'compras', 'articulos', 'solicitudes', 'vehiculos', 'reuniones'].some(cargando);
@@ -355,42 +360,6 @@
     el.dataset.mod = mod;
     UI.contar(el);
   }
-  function contar(id, n, total, palabra) {
-    $(id).textContent = n === total ? `${total} ${palabra}` : `${n} de ${total} ${palabra}`;
-  }
-  function lista(id, col, html, vacioTxt) {
-    const el = $(id);
-    if (cargando(col)) { el.innerHTML = UI.esqueleto(3); return; }
-    el.innerHTML = html || UI.vacio('vacio', vacioTxt, S.filtro[col] ? 'Toca otra vez la cifra de arriba para ver todo.' : '');
-  }
-
-  const EST_EQ = { asignado: ['Asignado', 's-disco', 'disco'], bodega: ['En bodega', 's-pend', 'pend'], recibido: ['En Recibidos', 's-org', 'org'] };
-  function pintarEquipos() {
-    const todos = S.datos.equipos.slice().sort((a, b) => String(a.serial).localeCompare(String(b.serial)));
-    const c = k => todos.filter(e => e.estado === k).length;
-    tablero('equipos', [
-      { k: 'e-asig', n: c('asignado'), lbl: 'Asignados', icono: 'persona', tono: 'disco', filtro: 'asignado' },
-      { k: 'e-bod', n: c('bodega'), lbl: 'En bodega', icono: 'bolsa', filtro: 'bodega' },
-      { k: 'e-rec', n: c('recibido'), lbl: 'En Recibidos', icono: 'recibidos', tono: 'org', filtro: 'recibido' }
-    ]);
-    const q = $('qEquipos').value.trim().toLowerCase();
-    const vis = todos.filter(e => (!S.filtro.equipos || e.estado === S.filtro.equipos) &&
-      (!q || [e.serial, e.asignadoA, e.marca, e.modelo, e.tipo, e.proyecto].join(' ').toLowerCase().includes(q)));
-    contar('cntEquipos', vis.length, todos.length, 'equipos');
-    lista('listaEquipos', 'equipos', vis.map(e => {
-      const st = EST_EQ[e.estado] || ['Sin estado', 'none', 'pend'];
-      const dm = diasHasta(e.ultimoMtto), viejo = dm != null && dm < -180;
-      return `<div class="card st-${st[2]}">
-        <div class="card-head"><div class="card-title"><small>${esH(e.serial)}</small>${esH(e.tipo)} ${esH(e.marca)}</div>${pill(st[0], st[1])}</div>
-        <p class="card-sub">${esH(e.modelo)}</p>
-        <div class="facts"><span>${ico('persona')} <b>${esH(e.asignadoA || 'Sin asignar')}</b></span>${e.proyecto ? `<span>${esH(e.proyecto)}</span>` : ''}</div>
-        <div class="docs">${e.ultimoMtto ? pill('Mantenimiento ' + fechaCorta(e.ultimoMtto), viejo ? 's-warn' : 's-pend', 'mantenimiento') : pill('Sin mantenimiento', 's-warn', 'mantenimiento')}
-          ${e.ultimoBackup ? pill('Backup ' + fechaCorta(e.ultimoBackup), 's-pend', 'backup') : ''}</div>
-        ${e.obs ? `<div class="meta">${esH(e.obs)}</div>` : ''}
-      </div>`;
-    }).join(''), 'No hay equipos con ese filtro');
-  }
-
   /* ---------- avisos (campana) ---------- */
   const misAvisos = () => {
     const rol = S.persona ? S.persona.rol : '';
@@ -430,7 +399,7 @@
   function pintarInsignias() {
     const n = pendientes(), rol = S.persona ? S.persona.rol : '';
     const b = {
-      equipos: ['jefe', 'equipos', 'soporte'].includes(rol) ? n.recibidos : 0,
+      equipos: n.eq.mias,
       inventario: n.inv.mias,
       vehiculos: n.veh.mias,
       reuniones: rol === 'jefe' ? n.reu.conPend : n.reu.mias
@@ -442,7 +411,7 @@
     if (!S.persona) return;
     pintarInsignias();
     pintarAvisos();
-    ({ inicio: pintarInicio, equipos: pintarEquipos, inventario: () => window.Inventario.pintar(), vehiculos: () => window.Vehiculos.pintar(), reuniones: () => window.Reuniones.pintar() })[S.vista]();
+    ({ inicio: pintarInicio, equipos: () => window.Equipos.pintar(), inventario: () => window.Inventario.pintar(), vehiculos: () => window.Vehiculos.pintar(), reuniones: () => window.Reuniones.pintar() })[S.vista]();
     if (window.Gente) window.Gente.pintar();
   }
 
@@ -526,7 +495,6 @@
       S.filtro[mod] = S.filtro[mod] === c.dataset.filtro ? '' : c.dataset.filtro;
       pintarTodo();
     });
-    $('qEquipos').addEventListener('input', () => pintarEquipos());
     document.addEventListener('click', e => {
       const p = e.target.closest('[data-pagada]'); if (p) { abrirPagada(p.dataset.pagada); return; }
       if (e.target.closest('[data-cerrar]')) { const bd = e.target.closest('.backdrop'); if (bd) bd.hidden = true; return; }

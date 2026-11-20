@@ -272,3 +272,45 @@ button.card .card-title { text-align: left; }
 .extras .marca-fila > span { display: flex; flex-direction: column; gap: 2px; }
 .extras .marca-fila .meta { display: block; font-weight: 400; }
 
+
+/* ---------- Equipos: acta virtual (igual a la hoja «Entrega de equipos y herramientas») ---------- */
+.serial-chip { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .85em; background: var(--surface-2, #eef2f5); border-radius: 6px; padding: 1px 6px; }
+.firma-pad { width: 100%; max-width: 600px; aspect-ratio: 3 / 1; height: auto; background: #fff; border: 1.5px dashed var(--line-2, #c3ced7); border-radius: 12px; touch-action: none; cursor: crosshair; display: block; }
+.firma-campo .row { justify-content: space-between; align-items: center; margin-top: 4px; }
+.firma-campo { margin-bottom: 64px; }
+.firma-mini { width: 84px; height: 28px; object-fit: contain; background: #fff; border-radius: 6px; border: 1px solid var(--line, #dce3e9); flex: 0 0 auto; }
+.eq-acta { border: 1px solid var(--line, #dce3e9); border-radius: 12px; padding: 6px 10px; margin: 6px 0; }
+.eq-acta-det { padding: 2px 0 6px 28px; }
+.otros { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; }
+.otro-fila { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line, #dce3e9); padding: 3px 0; font-size: .9rem; }
+.otro-fila input[type=number] { width: 64px; text-align: center; }
+.otro-fila.libre { grid-column: 1 / -1; }
+.otro-fila.libre input[type=text] { flex: 1; }
+.acta-doc { background: #fff; color: #13212b; border: 1px solid #9aa9b4; padding: 12px; margin: 8px 0; font-size: .78rem; font-family: Arial, Helvetica, sans-serif; }
+.acta-cab { display: grid; grid-template-columns: 64px 1fr 96px; border: 1px solid #13212b; align-items: stretch; }
+.acta-cab > * { padding: 6px; display: flex; align-items: center; }
+.acta-cab b { justify-content: center; text-align: center; font-size: .86rem; border-left: 1px solid #13212b; border-right: 1px solid #13212b; }
+.acta-logo { font-weight: 800; font-size: .7rem; line-height: 1.1; flex-direction: column; justify-content: center; color: #0b4058; }
+.acta-cod { font-size: .62rem; line-height: 1.3; }
+.acta-datos { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 10px 0; }
+.acta-datos dt { font-weight: 700; } .acta-datos dd { margin: 0; border-bottom: 1px solid #13212b; min-height: 1.2em; }
+.acta-tabla { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: .7rem; }
+.acta-tabla th, .acta-tabla td { border: 1px solid #13212b; padding: 2px 4px; text-align: left; vertical-align: top; height: 1.35em; }
+.acta-tabla th, .acta-tabla .sep td { background: #d9dee2; font-weight: 700; text-align: center; }
+.acta-tabla .sep td { text-align: left; }
+.acta-tabla tr.llena td { font-weight: 700; color: #0b2f5b; }
+.acta-tabla td:nth-child(3) { text-align: center; width: 64px; }
+.acta-firma { display: flex; align-items: flex-end; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.acta-firma img { width: 180px; height: 56px; object-fit: contain; border-bottom: 1px solid #13212b; }
+.acta-firma i { display: inline-block; width: 180px; height: 40px; border-bottom: 1px solid #13212b; }
+.acta-dev { display: inline-flex; flex-direction: column; border: 1px solid #13212b; margin-top: 12px; }
+.acta-dev b { padding: 4px 8px; border-bottom: 1px solid #13212b; font-size: .72rem; }
+.acta-dev span { padding: 4px 8px; min-height: 1.4em; }
+.acta-nota { font-size: .72rem; margin: 2px 0 0; }
+.acta-pie { font-size: .64rem; color: #4a5a66; margin-top: 10px; border-top: 1px solid #c3ced7; padding-top: 4px; }
+#impresion { display: none; }
+@media print {
+  body.imprimiendo > *:not(#impresion) { display: none !important; }
+  body.imprimiendo #impresion { display: block; }
+  #impresion .acta-doc { border: 0; font-size: 10pt; }
+}
