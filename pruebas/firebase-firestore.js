@@ -122,8 +122,16 @@ export function getDocs(colRef) {
 }
 
 // ---------- Escrituras (funciones puras sobre un objeto 'datos') ----------
+// Copia de la regla de firestore.rules para crear un perfil: el código debe existir, estar activo y ser del mismo rol.
+function revisarPerfilNuevo(datos, ref, data) {
+  if (ref.parent.id !== 'usuarios' || (datos.usuarios && datos.usuarios[ref.id])) return;
+  const c = (datos.codigos || {})[data && data.codigo];
+  if (!c || c.activo !== true || c.rol !== data.rol || data.activo !== true) throw crearError('permission-denied', 'Missing or insufficient permissions.');
+}
+
 function aplicarSet(datos, ref, data, opciones) {
   exigirDoc(ref);
+  revisarPerfilNuevo(datos, ref, data);
   const col = (datos[ref.parent.id] = datos[ref.parent.id] || {});
   const nuevo = copia(data);
   if (opciones && opciones.merge && esPlano(col[ref.id])) col[ref.id] = mezclar(col[ref.id], nuevo);

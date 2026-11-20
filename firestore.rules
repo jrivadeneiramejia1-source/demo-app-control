@@ -1,6 +1,8 @@
 rules_version = '2';
 // Reglas de la DEMO (proyecto fir-app-control-d8494). Se pegan en Firebase > Firestore Database > Reglas (Rules) > Publicar (Publish).
-// Solo entran las seis cuentas de prueba de personas.js. Cualquier otra cuenta, o alguien sin cuenta, no puede leer ni escribir nada.
+// Entran las personas de prueba de personas.js y las cuentas propias que se registraron con un código válido
+// (su perfil en usuarios/<uid> dice el rol y si el acceso está activo). Sin eso, nadie puede leer ni escribir nada.
+// El rol de una cuenta propia lo pone el código: la persona no lo puede escoger ni cambiar.
 // Cada persona solo puede hacer lo que le toca (lo cumple Firebase, no solo la pantalla):
 //   Gerente (Ricardo): ve todo; solo autoriza o rechaza las compras que pide la Jefe.
 //   Jefe (Ana): carga y reinicia los datos de prueba, autoriza las compras y puede hacer cualquier paso (menos autorizarse a sí misma).
@@ -10,23 +12,35 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Correo de cada cuenta de prueba -> su rol. Debe coincidir con personas.js.
+    // Correo de cada persona de prueba -> su rol. Debe coincidir con personas.js.
     function cuentas() {
       return {
         'ricardo.fuentes@example.com': 'gerente',
         'ana.perez@example.com': 'jefe',
+        'daniel.ortiz@example.com': 'equipos',
+        'valentina.ruiz@example.com': 'soporte',
         'luis.rodriguez@example.com': 'compras',
+        'sofia.herrera@example.com': 'asistente',
         'marta.gomez@example.com': 'carros',
         'carlos.pinto@example.com': 'conductor',
-        'sofia.herrera@example.com': 'asistente'
+        'pedro.castillo@example.com': 'logistica',
+        'laura.medina@example.com': 'profesional',
+        'natalia.vargas@example.com': 'administrativo'
       };
     }
-    function esDemo() {
+    function ROLES() { return ['gerente', 'jefe', 'equipos', 'soporte', 'compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional', 'administrativo']; }
+    function esPrueba() {
       return request.auth != null
         && request.auth.token.email is string
         && request.auth.token.email in cuentas();
     }
-    function rol() { return cuentas()[request.auth.token.email]; }
+    function rutaPerfil() { return /databases/$(database)/documents/usuarios/$(request.auth.uid); }
+    function perfil() { return get(rutaPerfil()).data; }
+    // Cuenta propia con perfil y acceso activo.
+    function esCuenta() { return request.auth != null && !esPrueba() && exists(rutaPerfil()) && perfil().activo == true; }
+    function esDemo() { return esPrueba() || esCuenta(); }
+    function rol() { return esPrueba() ? cuentas()[request.auth.token.email] : perfil().rol; }
+    function esJefeOGerente() { return esDemo() && rol() in ['gerente', 'jefe']; }
     function esJefe() { return esDemo() && rol() == 'jefe'; }
     function esGerente() { return esDemo() && rol() == 'gerente'; }
     function esCompras() { return esDemo() && (rol() == 'compras' || rol() == 'jefe'); }
@@ -91,14 +105,49 @@ service cloud.firestore {
       allow delete: if esJefe();
     }
 
-    // Avisos de la campana: cualquiera los crea; cada quien solo cambia SU marca de leído.
+    // Perfiles de las cuentas propias.
+    match /usuarios/{uid} {
+      // Cada quien lee el suyo; el Gerente y el Jefe ven todos (panel «Personas y códigos»).
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow read: if esJefeOGerente();
+      // Crear el perfil: solo el dueño, con un código que exista, esté activo y sea del mismo rol.
+      allow create: if request.auth != null && request.auth.uid == uid && !esPrueba()
+        && nuevo().keys().hasOnly(['nombre', 'correo', 'rol', 'codigo', 'activo', 'en'])
+        && nuevo().rol in ROLES() && nuevo().activo == true
+        && nuevo().nombre is string && nuevo().nombre.size() >= 3 && nuevo().nombre.size() <= 60
+        && nuevo().correo == request.auth.token.email
+        && nuevo().codigo is string
+        && exists(/databases/$(database)/documents/codigos/$(nuevo().codigo))
+        && get(/databases/$(database)/documents/codigos/$(nuevo().codigo)).data.activo == true
+        && get(/databases/$(database)/documents/codigos/$(nuevo().codigo)).data.rol == nuevo().rol;
+      // Cambiar rol o pausar: el Gerente a cualquiera; el Jefe a todos menos Gerentes y Jefes. Nadie a sí mismo.
+      allow update: if esJefeOGerente() && request.auth.uid != uid
+        && soloCambia(['rol', 'activo'])
+        && nuevo().rol in ROLES() && nuevo().activo is bool
+        && (rol() == 'gerente' || (!(antes().rol in ['gerente', 'jefe']) && !(nuevo().rol in ['gerente', 'jefe'])));
+      allow delete: if esDemo() && rol() == 'gerente';
+    }
+
+    // Códigos de cada rol. Nadie más los puede leer (ni adivinar uno preguntando).
+    match /codigos/{codigo} {
+      allow read: if esJefeOGerente();
+      allow create: if esJefeOGerente()
+        && nuevo().keys().hasOnly(['rol', 'activo', 'por', 'en'])
+        && nuevo().rol in ROLES() && nuevo().activo == true
+        && codigo.size() >= 12
+        && (rol() == 'gerente' || !(nuevo().rol in ['gerente', 'jefe']));
+      allow update: if false;
+      allow delete: if esJefeOGerente() && (rol() == 'gerente' || !(antes().rol in ['gerente', 'jefe']));
+    }
+
+    // Avisos de la campana: cualquiera los crea; cada quien solo cambia SU marca de leído (con su id de cuenta).
     // La Jefe puede reescribirlos (al cargar o reiniciar los datos de prueba se reemplazan los avisos de ejemplo).
     match /avisos/{id} {
       allow read: if esDemo();
       allow create: if esDemo();
       allow update: if esJefe()
         || (esDemo() && soloCambia(['leido'])
-            && nuevo().leido.diff(antes().get('leido', {})).affectedKeys().hasOnly([rol()]));
+            && nuevo().leido.diff(antes().get('leido', {})).affectedKeys().hasOnly([request.auth.uid]));
       allow delete: if esJefe();
     }
 

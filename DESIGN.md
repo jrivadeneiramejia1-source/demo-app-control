@@ -77,7 +77,7 @@ y cada tipo de equipo tiene su placa de color con icono.
 ## Demo de la app de control (agregado)
 - Mismo sistema que Equipos y Entregas: se copió `comun.css` sin cambios; lo propio está en `demo.css`.
 - **Marca:** candado blanco en el cuadro de vidrio del encabezado (no hay ícono de app instalable: la demo no se instala).
-- **Persona:** botón redondo con las iniciales en el encabezado; cada rol tiene su color (Gerente pizarra, Jefe petróleo, Compras naranja, Autoriza carros azul, Conductor violeta, Bodega vino). En pantallas de 400 px o menos solo se ven las iniciales.
+- **Persona:** botón redondo con las iniciales en el encabezado; cada rol tiene su color (Gerente pizarra, Jefe petróleo, Encargado de equipos verde, Soporte oliva, Compras naranja, Bodega vino, Transporte azul, Conductor violeta, Logística óxido, Profesional azul petróleo, Administrativo ciruela). En pantallas de 400 px o menos solo se ven las iniciales.
 - **Versión pagada:** franja azul con borde punteado y el ícono `pagada` (chispa). Siempre al final de la vista, nunca tapa una acción.
 - **Peligro en el tablero:** `t-peligro` (rojo) solo para lo que es un problema: compra sin autorizar, documento vencido o por vencer.
 - **Placa del carro:** amarilla con borde oscuro y letra monoespaciada, como la placa real.

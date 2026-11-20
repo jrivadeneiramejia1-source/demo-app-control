@@ -31,73 +31,73 @@
     const equipos = {
       'eq-001': equipo('DEMO-0001', 'Portátil', 'Lenovo', 'ThinkPad E14', 'asignado', 'Jorge Ibarra', 'Proyecto Costa Norte',
         dias(-40), dias(-12), '', [
-          H(-120, 'mantenimiento', 'Sofía Herrera', 'Limpieza general y cambio de pasta térmica'),
+          H(-120, 'mantenimiento', 'Valentina Ruiz', 'Limpieza general y cambio de pasta térmica'),
           H(-60, 'entrega', 'Jorge Ibarra', 'Entregado para el trabajo de campo'),
-          H(-40, 'mantenimiento', 'Sofía Herrera', 'Revisión de rutina y actualización del sistema'),
-          H(-12, 'backup', 'Sofía Herrera', 'Copia de las carpetas de reuniones')
+          H(-40, 'mantenimiento', 'Valentina Ruiz', 'Revisión de rutina y actualización del sistema'),
+          H(-12, 'backup', 'Valentina Ruiz', 'Copia de las carpetas de reuniones')
         ]),
       'eq-002': equipo('DEMO-0002', 'Portátil', 'HP', 'ProBook 440', 'asignado', 'Paola Ríos', 'Proyecto Costa Norte',
         dias(-210), dias(-30), 'Batería dura poco, revisar en el próximo mantenimiento', [
-          H(-210, 'mantenimiento', 'Sofía Herrera', 'Limpieza de ventilador y revisión de disco'),
+          H(-210, 'mantenimiento', 'Valentina Ruiz', 'Limpieza de ventilador y revisión de disco'),
           H(-150, 'entrega', 'Paola Ríos', 'Entregado a Paola para el registro de asistentes'),
-          H(-30, 'backup', 'Sofía Herrera', 'Copia de fotos y listas de asistencia')
+          H(-30, 'backup', 'Valentina Ruiz', 'Copia de fotos y listas de asistencia')
         ]),
       'eq-003': equipo('DEMO-0003', 'Portátil', 'Dell', 'Latitude 5420', 'asignado', 'Andrés Mendoza', 'Proyecto Ruta Alta',
         dias(-95), dias(-20), '', [
-          H(-95, 'mantenimiento', 'Sofía Herrera', 'Mantenimiento preventivo'),
+          H(-95, 'mantenimiento', 'Valentina Ruiz', 'Mantenimiento preventivo'),
           H(-90, 'entrega', 'Andrés Mendoza', 'Entregado para el Proyecto Ruta Alta'),
-          H(-20, 'backup', 'Sofía Herrera', 'Copia de documentos del proyecto')
+          H(-20, 'backup', 'Valentina Ruiz', 'Copia de documentos del proyecto')
         ]),
       'eq-004': equipo('DEMO-0004', 'Tableta', 'Samsung', 'Galaxy Tab A8', 'asignado', 'Liliana Torres', 'Proyecto Ruta Alta',
         dias(-70), '', 'Se usa para tomar fotos y firmas en las reuniones', [
-          H(-70, 'mantenimiento', 'Sofía Herrera', 'Actualización y limpieza de archivos'),
+          H(-70, 'mantenimiento', 'Valentina Ruiz', 'Actualización y limpieza de archivos'),
           H(-35, 'entrega', 'Liliana Torres', 'Entregada para las reuniones de la ruta alta')
         ]),
       'eq-005': equipo('DEMO-0005', 'GPS', 'Garmin', 'GPSMAP 65', 'asignado', 'Camilo Suárez', 'Proyecto Costa Norte',
         dias(-100), '', '', [
-          H(-100, 'mantenimiento', 'Sofía Herrera', 'Carga de mapas y revisión de batería'),
+          H(-100, 'mantenimiento', 'Valentina Ruiz', 'Carga de mapas y revisión de batería'),
           H(-25, 'entrega', 'Camilo Suárez', 'Entregado para la salida a la costa')
         ]),
       'eq-006': equipo('DEMO-0006', 'Celular', 'Motorola', 'Moto G54', 'asignado', 'Carlos Pinto', 'Proyecto Costa Norte',
         dias(-55), '', '', [
-          H(-55, 'mantenimiento', 'Sofía Herrera', 'Limpieza de memoria y actualización'),
+          H(-55, 'mantenimiento', 'Valentina Ruiz', 'Limpieza de memoria y actualización'),
           H(-50, 'entrega', 'Carlos Pinto', 'Entregado al conductor para el contacto en ruta')
         ]),
       'eq-007': equipo('DEMO-0007', 'Portátil', 'Lenovo', 'ThinkPad E14', 'bodega', 'Bodega', '',
         dias(-230), dias(-45), 'Listo para entregar', [
-          H(-230, 'mantenimiento', 'Sofía Herrera', 'Mantenimiento completo'),
+          H(-230, 'mantenimiento', 'Valentina Ruiz', 'Mantenimiento completo'),
           H(-150, 'entrega', 'Jorge Ibarra', 'Entregado para el trabajo de campo'),
           H(-45, 'devolucion', 'Jorge Ibarra', 'Devuelto al terminar el proyecto'),
-          H(-45, 'backup', 'Sofía Herrera', 'Copia de la información antes de guardarlo')
+          H(-45, 'backup', 'Valentina Ruiz', 'Copia de la información antes de guardarlo')
         ]),
       'eq-008': equipo('DEMO-0008', 'Impresora', 'Epson', 'EcoTank L3250', 'bodega', 'Bodega', '',
         dias(-60), '', 'Tiene tinta completa', [
-          H(-60, 'mantenimiento', 'Sofía Herrera', 'Limpieza de cabezal y revisión de tanques')
+          H(-60, 'mantenimiento', 'Valentina Ruiz', 'Limpieza de cabezal y revisión de tanques')
         ]),
       'eq-009': equipo('DEMO-0009', 'Disco duro externo', 'Seagate', 'Expansion 2 TB', 'bodega', 'Bodega', '',
         dias(-20), dias(-20), 'Disco con copias de reuniones anteriores', [
           H(-80, 'entrega', 'Paola Ríos', 'Entregado para guardar videos de reuniones'),
           H(-22, 'devolucion', 'Paola Ríos', 'Devuelto con las copias terminadas'),
-          H(-20, 'mantenimiento', 'Sofía Herrera', 'Revisión del disco sin errores')
+          H(-20, 'mantenimiento', 'Valentina Ruiz', 'Revisión del disco sin errores')
         ]),
       'eq-010': equipo('DEMO-0010', 'Portátil', 'HP', 'ProBook 440', 'recibido', 'Liliana Torres', 'Proyecto Ruta Alta',
         dias(-190), dias(-75), 'Teclado con una tecla floja', [
-          H(-190, 'mantenimiento', 'Sofía Herrera', 'Mantenimiento preventivo'),
+          H(-190, 'mantenimiento', 'Valentina Ruiz', 'Mantenimiento preventivo'),
           H(-130, 'entrega', 'Liliana Torres', 'Entregado para el Proyecto Ruta Alta'),
-          H(-75, 'backup', 'Sofía Herrera', 'Copia de documentos'),
+          H(-75, 'backup', 'Valentina Ruiz', 'Copia de documentos'),
           H(-2, 'devolucion', 'Liliana Torres', 'Traído para mantenimiento por la tecla floja')
         ]),
       'eq-011': equipo('DEMO-0011', 'Tableta', 'Lenovo', 'Tab M10', 'recibido', 'Jorge Ibarra', 'Proyecto Costa Norte',
         dias(-80), '', 'No carga bien, probar el cable y el puerto', [
-          H(-80, 'mantenimiento', 'Sofía Herrera', 'Actualización del sistema'),
+          H(-80, 'mantenimiento', 'Valentina Ruiz', 'Actualización del sistema'),
           H(-45, 'entrega', 'Jorge Ibarra', 'Entregada para el trabajo de campo'),
           H(-1, 'devolucion', 'Jorge Ibarra', 'Traída porque no carga bien')
         ]),
       'eq-012': equipo('DEMO-0012', 'Portátil', 'Dell', 'Latitude 5420', 'recibido', 'Andrés Mendoza', 'Proyecto Ruta Alta',
         dias(-215), dias(-100), 'Pantalla con una raya y el equipo se calienta', [
-          H(-215, 'mantenimiento', 'Sofía Herrera', 'Limpieza interna'),
+          H(-215, 'mantenimiento', 'Valentina Ruiz', 'Limpieza interna'),
           H(-170, 'entrega', 'Andrés Mendoza', 'Entregado para el Proyecto Ruta Alta'),
-          H(-100, 'backup', 'Sofía Herrera', 'Copia de archivos del proyecto'),
+          H(-100, 'backup', 'Valentina Ruiz', 'Copia de archivos del proyecto'),
           H(0, 'devolucion', 'Andrés Mendoza', 'Traído para revisar el calentamiento')
         ])
     };
@@ -259,7 +259,7 @@
     const reuniones = {
       're-001': {
         comunidad: 'Comunidad Ejemplo Norte', fecha: dias(6), hora: '08:00', lugar: 'Salón comunal de Ejemplo Norte',
-        jefe: 'Ana Pérez', asistentes: ['Jorge Ibarra', 'Paola Ríos', 'Andrés Mendoza', 'Liliana Torres'],
+        jefe: 'Ana Pérez', asistentes: ['Laura Medina', 'Pedro Castillo', 'Natalia Vargas', 'Carlos Pinto', 'Jorge Ibarra', 'Paola Ríos'],
         estado: 'programada',
         necesidades: [
           { id: 'ne-001', tipo: 'carros', cantidad: 2, detalle: 'Dos camionetas para el equipo de campo',
@@ -274,7 +274,7 @@
       },
       're-002': {
         comunidad: 'Comunidad Ejemplo Sur', fecha: dias(13), hora: '09:30', lugar: 'Kiosco principal de Ejemplo Sur',
-        jefe: 'Ana Pérez', asistentes: ['Paola Ríos', 'Camilo Suárez', 'Liliana Torres'],
+        jefe: 'Ana Pérez', asistentes: ['Laura Medina', 'Pedro Castillo', 'Natalia Vargas', 'Carlos Pinto', 'Camilo Suárez'],
         estado: 'reprogramada',
         necesidades: [
           { id: 'ne-004', tipo: 'carros', cantidad: 1, detalle: 'Una camioneta para el equipo',
@@ -313,6 +313,9 @@
     const avisos = {
       'av-001': aviso('jefe', 'Compra por autorizar', 'Sofía Herrera pide comprar botas de seguridad talla 40, que están agotadas.', iso(0, 8, 15), 'inventario'),
       'av-007': aviso('gerente', 'Compra por autorizar', 'Ana Pérez pide comprar 6 unidades de mouse inalámbrico (aprox. $ 180.000). La autorizas tú porque la pidió la Jefe.', iso(0, 8, 20), 'inventario'),
+      'av-009': aviso('equipos', 'Equipos en Recibidos', 'Hay 3 equipos en Recibidos esperando revisión: DEMO-0010, DEMO-0011 y DEMO-0012.', iso(0, 7, 45), 'equipos'),
+      'av-010': aviso('logistica', 'Reunión próxima', 'La reunión en la Comunidad Ejemplo Norte es en 6 días: hay que alistar refrigerios, almuerzo y sonido.', iso(-1, 16, 0), 'reuniones'),
+      'av-011': aviso('administrativo', 'Formatos de la reunión', 'Prepara la lista de asistencia y el acta para la reunión en la Comunidad Ejemplo Norte.', iso(-1, 16, 5), 'reuniones'),
       'av-008': aviso('compras', 'Compra autorizada: hay que comprar', 'Ana Pérez autorizó comprar 8 resmas de papel carta.', iso(-4, 15, 5), 'inventario'),
       'av-002': aviso('jefe', 'Compra sin autorización', 'Se compró algo sin autorización: garrafones de agua.', iso(-5, 17, 40), 'inventario'),
       'av-003': aviso('carros', 'SOAT por vencer', 'El SOAT del ABC 123 vence en 12 días.', iso(-1, 7, 30), 'vehiculos'),
@@ -324,5 +327,5 @@
     return { equipos, compras, vehiculos, reuniones, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 4, generar });
+  window.DatosDemo = Object.freeze({ VERSION: 5, generar });
 })();

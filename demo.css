@@ -209,3 +209,20 @@ button.card .card-title { text-align: left; }
 .conteo-f input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
 #avisosTel .row:empty { display: none; }
 @media (max-width: 440px) { .permisos { grid-template-columns: 1fr; } }
+
+/* Entrada: personas de prueba o cuenta propia con el código del rol */
+.chips.modo { margin: 4px 0 12px; }
+.cuenta-form { display: flex; flex-direction: column; gap: 12px; }
+.cuenta-form .btn.big { width: 100%; }
+#vCuenta .cuenta-form { margin: 12px 0; }
+#entradaPrueba .section-label:first-of-type { margin-top: 8px; }
+
+/* Panel Personas y códigos */
+.gente-area { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.codigo-fila { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.codigo-fila .cf-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.codigo-fila code { font-family: var(--f-mono); font-size: .95rem; letter-spacing: .04em; color: var(--accent-txt); overflow-wrap: anywhere; }
+.persona-reg { gap: 6px; }
+.persona-reg.pausada { opacity: .78; }
+.persona-reg select { min-height: 40px; max-width: 100%; }
+.av-equipos { --av: #2F6B2F; } .av-soporte { --av: #4E6E1C; } .av-logistica { --av: #9A4A12; } .av-profesional { --av: #245E78; } .av-administrativo { --av: #7A3E6B; }

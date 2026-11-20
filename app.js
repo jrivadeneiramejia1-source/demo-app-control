@@ -15,7 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], reuniones: [], avisos: [], suscripciones: [] },
+    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], reuniones: [], avisos: [], suscripciones: [], usuarios: [], codigos: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     oyentes: [],
     filtro: { equipos: '', inventario: '', vehiculos: '', reuniones: '' },
@@ -51,7 +51,7 @@
 
   /* ---------- pantallas ---------- */
   function mostrar(cual) {
-    ['vCarga', 'vConfig', 'vEntrada'].forEach(id => { $(id).hidden = id !== cual; });
+    ['vCarga', 'vConfig', 'vEntrada', 'vCuenta'].forEach(id => { $(id).hidden = id !== cual; });
     const dentro = cual === 'app';
     Object.values(VISTAS).forEach(id => { $(id).hidden = !dentro || id !== VISTAS[S.vista]; });
     $('tabs').hidden = !dentro;
@@ -65,12 +65,76 @@
   function tarjetaPersona(p, actual) {
     return `<button type="button" class="card persona-card" data-rol="${esH(p.rol)}" ${actual ? 'aria-current="true"' : ''}>
       <span class="avatar grande av-${esH(p.rol)}" aria-hidden="true">${esH(iniciales(p.nombre))}</span>
-      <span class="pc-t"><b>${esH(p.nombre)}</b><span>${esH(p.rolTxt)} · ${esH(p.cargo)}</span></span>
+      <span class="pc-t"><b>${esH(p.nombre)}</b><span>${esH(p.rolTxt)}${p.cargo && p.cargo !== p.rolTxt ? ' · ' + esH(p.cargo) : ''}</span></span>
       <span class="pc-ir" aria-hidden="true">${actual ? ico('check') : ico('flecha')}</span>
     </button>`;
   }
+  // Personas de prueba agrupadas por área (Dirección, Equipos, Inventario, Vehículos, Reuniones).
+  const porArea = actual => window.DEMO.AREAS.map(a => {
+    const ps = window.DEMO.PERSONAS.filter(p => p.area === a);
+    return ps.length ? `<div class="section-label">${esH(a)}</div>${ps.map(p => tarjetaPersona(p, p.rol === actual)).join('')}` : '';
+  }).join('');
   function pintarEntrada() {
-    $('entradaLista').innerHTML = window.DEMO.PERSONAS.map(p => tarjetaPersona(p, false)).join('');
+    $('entradaLista').innerHTML = porArea('');
+    pintarModoEntrada();
+  }
+  /* --- Entrar con cuenta propia (correo, clave y el código del rol) --- */
+  let modoEntrada = 'prueba', modoCuenta = 'entrar';
+  function pintarModoEntrada() {
+    document.querySelectorAll('#entradaModo [data-modo]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.modo === modoEntrada)));
+    $('entradaPrueba').hidden = modoEntrada !== 'prueba';
+    $('entradaCuenta').hidden = modoEntrada !== 'cuenta';
+    const crear = modoCuenta === 'crear';
+    $('ctNombreF').hidden = !crear; $('ctCodigoF').hidden = !crear;
+    $('ctClave').autocomplete = crear ? 'new-password' : 'current-password';
+    $('ctBoton').innerHTML = ico(crear ? 'mas' : 'flecha') + (crear ? 'Crear mi cuenta' : 'Entrar');
+    $('ctCambiar').textContent = crear ? 'Ya tengo cuenta: entrar' : 'No tengo cuenta: crearla con mi código';
+    $('ctTitulo').textContent = crear ? 'Crear tu cuenta' : 'Entrar con tu cuenta';
+  }
+  async function enviarCuenta() {
+    if (S.entrando) return;
+    const err = $('ctErr'), crear = modoCuenta === 'crear';
+    const nombre = $('ctNombre').value.trim(), correo = $('ctCorreo').value.trim(), clave = $('ctClave').value, codigo = nube.limpiarCodigo($('ctCodigo').value);
+    const falla = (msg, id) => { err.textContent = msg; err.hidden = false; if (id) $(id).focus(); };
+    err.hidden = true;
+    if (crear && nombre.length < 3) return falla('Escribe tu nombre completo.', 'ctNombre');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return falla('Escribe tu correo.', 'ctCorreo');
+    if (!clave) return falla('Escribe la clave.', 'ctClave');
+    if (crear && clave.length < 6) return falla('La clave debe tener al menos 6 caracteres.', 'ctClave');
+    if (crear && !window.DEMO.rolDeCodigo(codigo)) return falla('Escribe el código de tu rol tal cual te lo dieron (ejemplo: LOG-7KQ4-M2XP).', 'ctCodigo');
+    S.entrando = true; $('ctBoton').disabled = true;
+    try {
+      if (!crear) { await nube.entrarCuenta(correo, clave); return; }
+      S.registrando = { nombre, codigo };
+      await nube.crearCuenta(correo, clave);
+      try { await nube.usarCodigo(nombre, codigo); }
+      catch (e) { S.registrando = null; mostrarCuenta({ sinPerfil: true, correo }, nube.explicar(e)); }
+    } catch (e) { S.registrando = null; falla(nube.explicar(e)); }
+    finally { S.entrando = false; $('ctBoton').disabled = false; $('ctClave').value = ''; }
+  }
+  // Cuenta sin rol todavía (código malo o sin escribir) o con el acceso quitado por el Jefe.
+  function mostrarCuenta(p, msg) {
+    const sin = !!p.sinAcceso;
+    $('tCuenta').textContent = sin ? 'Tu acceso está pausado' : 'Falta el código de tu rol';
+    $('cuentaTxt').textContent = sin ? `La cuenta ${p.correo} está pausada. Habla con tu jefe para que te devuelva el acceso.`
+      : `Entraste como ${p.correo}, pero todavía no tienes rol. Escribe el código que te dio tu jefe: ese código decide qué puedes ver y hacer.`;
+    $('cuentaForm').hidden = sin;
+    if (!sin && S.registrando === null && !$('cuNombre').value && $('ctNombre').value) { $('cuNombre').value = $('ctNombre').value; $('cuCodigo').value = $('ctCodigo').value; }
+    // El error se queda aunque llegue otra vez el aviso de «sin perfil» (pasa justo después de crear la cuenta).
+    if (msg) S.errCuenta = msg;
+    const m = sin ? '' : S.errCuenta || '';
+    $('cuErr').textContent = m; $('cuErr').hidden = !m;
+    mostrar('vCuenta');
+  }
+  async function guardarCodigo() {
+    const nombre = $('cuNombre').value.trim(), codigo = nube.limpiarCodigo($('cuCodigo').value), err = $('cuErr');
+    err.hidden = true;
+    if (nombre.length < 3) { err.textContent = 'Escribe tu nombre completo.'; err.hidden = false; $('cuNombre').focus(); return; }
+    if (!window.DEMO.rolDeCodigo(codigo)) { err.textContent = nube.explicar({ code: 'codigo-malo' }); err.hidden = false; $('cuCodigo').focus(); return; }
+    const b = $('cuBoton'); b.disabled = true;
+    try { await nube.usarCodigo(nombre, codigo); }
+    catch (e) { S.errCuenta = err.textContent = nube.explicar(e); err.hidden = false; }
+    finally { b.disabled = false; }
   }
   async function entrarComo(rol, boton) {
     if (S.entrando) return;
@@ -95,8 +159,14 @@
     const mia = ++S.sesion;
     dejarDeEscuchar();
     cerrarHoja('shPersona');
-    if (!p) { S.persona = null; error(S.motivoSalida || ''); S.motivoSalida = ''; pintarEntrada(); mostrar('vEntrada'); return; }
-    if (p.desconocido) { S.motivoSalida = 'Esa cuenta no es de la demo. Entra con una de las personas de prueba.'; S.persona = null; await nube.salir(); return; }
+    if (!p || !(p.sinPerfil || p.sinAcceso)) S.errCuenta = '';
+    if (!p) { S.persona = null; S.registrando = null; error(S.motivoSalida || ''); S.motivoSalida = ''; pintarEntrada(); mostrar('vEntrada'); return; }
+    if (p.sinPerfil || p.sinAcceso) {
+      S.persona = null;
+      if (p.sinPerfil && S.registrando) return;   // se está guardando el código recién escrito: espera el perfil
+      mostrarCuenta(p); return;
+    }
+    S.registrando = null;
     const cambio = S.persona && S.persona.rol !== p.rol;
     S.persona = p;
     // Enlace directo desde una notificación (./#inventario): abre ese módulo si la persona lo puede ver.
@@ -122,14 +192,16 @@
     reuniones: r => Object.assign({}, r, { necesidades: objetos(r.necesidades), asistentes: Array.isArray(r.asistentes) ? r.asistentes : [] })
   };
   function escucharTodo() {
-    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos', 'suscripciones'].forEach(col => {
+    // Las personas y los códigos solo los leen el Gerente y el Jefe (para el panel «Personas y códigos»).
+    const panel = ['gerente', 'jefe'].includes(S.persona.rol) ? ['usuarios', 'codigos'] : [];
+    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos', 'suscripciones'].concat(panel).forEach(col => {
       S.oyentes.push(nube.escuchar(col, lista => {
         S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
         // El aviso de que faltan los datos de prueba (o de que no se pudieron cargar) se queda hasta que lleguen artículos.
         if (S.errorFijo && col === 'articulos' && lista.length) S.errorFijo = '';
         if (col !== 'avisos' || !$('avisoError').hidden) error(S.errorFijo || '');
         pintarTodo();
-      }, e => { if (col === 'suscripciones') { S.llegaron.add(col); return; } error(nube.explicar(e)); }));
+      }, e => { if (['suscripciones', 'usuarios', 'codigos'].includes(col)) { S.llegaron.add(col); return; } error(nube.explicar(e)); }));
     });
   }
 
@@ -145,10 +217,14 @@
   }
   function abrirPersona() {
     const p = S.persona; if (!p) return;
-    $('personaLista').innerHTML = window.DEMO.PERSONAS.map(x => tarjetaPersona(x, x.rol === p.rol)).join('');
+    $('personaLista').innerHTML = porArea(p.prueba ? p.rol : '');
+    $('cuentaPropia').hidden = !p.real;
+    if (p.real) $('cuentaPropiaTxt').textContent = `${p.nombre} · ${p.correo} · ${p.rolTxt}. Si tocas una persona de prueba, sales de tu cuenta.`;
+    $('ajustesGente').hidden = !['gerente', 'jefe'].includes(p.rol);
     $('permNombre').textContent = p.nombre;
     $('permTabla').innerHTML = MODULOS.map(m => `<div><span>${esH(m.n)}</span>${pill(window.DEMO.PERMISO_TXT[permiso(m.k)], permiso(m.k) === 'no' ? 'none' : 's-disco')}</div>`).join('');
-    $('ajustesJefe').hidden = p.rol !== 'jefe';
+    // Reiniciar los datos es para presentar: solo con la Jefe de prueba (no con cuentas propias).
+    $('ajustesJefe').hidden = !(p.rol === 'jefe' && p.prueba);
     pintarAvisosTel();
     abrirHoja('shPersona');
   }
@@ -211,13 +287,14 @@
     const necesidadesDe = r => (r.necesidades || []).filter(x => x.estado === 'pendiente' && (rol === 'jefe' || x.responsableRol === rol));
     const reunionesPend = d.reuniones.filter(r => r.estado !== 'cancelada' && r.estado !== 'realizada' && necesidadesDe(r).length).length;
     const recibidos = d.equipos.filter(e => e.estado === 'recibido').length;
-    return { inv, docsPorVencer, novedades, reunionesPend, recibidos };
+    const proximas = d.reuniones.filter(r => r.estado === 'programada' || r.estado === 'reprogramada').length;
+    return { inv, docsPorVencer, novedades, reunionesPend, recibidos, proximas };
   }
 
   function pintarInicio() {
     const p = S.persona; if (!p) return;
     $('tInicio').textContent = `Hola, ${p.nombre.split(' ')[0]}`;
-    $('inicioSub').textContent = `${p.cargo} · ${p.rolTxt}`;
+    $('inicioSub').textContent = p.cargo && p.cargo !== p.rolTxt ? `${p.cargo} · ${p.rolTxt}` : p.rolTxt;
     const n = pendientes();
     const todas = [
       { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: ['gerente', 'jefe', 'asistente'] },
@@ -226,12 +303,13 @@
       { mod: 'inventario', k: 'i-com', n: n.inv.porComprar, lbl: 'Compras autorizadas por hacer', icono: 'carrito', tono: 'listo', roles: ['compras'] },
       { mod: 'inventario', k: 'i-cur', n: n.inv.enCurso, lbl: 'Compras en curso', icono: 'carrito', tono: 'listo', roles: ['gerente'] },
       { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['gerente', 'jefe', 'compras'] },
-      { mod: 'inventario', k: 'i-mis', n: n.inv.misPedidos, lbl: 'Tus pedidos de material en espera', icono: 'caja', tono: 'listo', roles: ['carros', 'conductor'] },
+      { mod: 'inventario', k: 'i-mis', n: n.inv.misPedidos, lbl: 'Tus pedidos de material en espera', icono: 'caja', tono: 'listo', roles: () => permiso('inventario') === 'pide' },
       { mod: 'vehiculos', k: 'i-nov', n: n.novedades, lbl: 'Novedades sin revisar', icono: 'carro', tono: 'org', roles: ['jefe', 'carros', 'conductor'] },
       { mod: 'vehiculos', k: 'i-doc', n: n.docsPorVencer, lbl: 'SOAT o revisión por vencer', icono: 'calendario', tono: 'peligro', roles: ['jefe', 'carros', 'conductor'] },
       { mod: 'reuniones', k: 'i-reu', n: n.reunionesPend, lbl: p.rol === 'jefe' ? 'Reuniones con algo pendiente' : 'Reuniones que esperan tu respuesta', icono: 'reunion', tono: 'listo', roles: ['jefe', 'compras', 'carros'] },
-      { mod: 'equipos', k: 'i-rec', n: n.recibidos, lbl: 'Equipos en Recibidos', icono: 'recibidos', tono: 'listo', roles: ['asistente'] }
-    ].filter(c => c.roles.includes(p.rol) && puedeVer(c.mod));
+      { mod: 'reuniones', k: 'i-prox', n: n.proximas, lbl: 'Próximas reuniones', icono: 'calendario', tono: 'listo', roles: ['conductor', 'logistica', 'profesional', 'administrativo'] },
+      { mod: 'equipos', k: 'i-rec', n: n.recibidos, lbl: 'Equipos en Recibidos', icono: 'recibidos', tono: 'listo', roles: ['jefe', 'equipos', 'soporte'] }
+    ].filter(c => (typeof c.roles === 'function' ? c.roles() : c.roles.includes(p.rol)) && puedeVer(c.mod));
     const sum = $('sumInicio');
     const algoCargando = ['equipos', 'compras', 'articulos', 'solicitudes', 'vehiculos', 'reuniones'].some(cargando);
     sum.className = 'summary' + (todas.length === 2 || todas.length === 4 ? ' dos' : '');
@@ -363,17 +441,19 @@
     const rol = S.persona ? S.persona.rol : '';
     return S.datos.avisos.filter(a => a.para === rol || a.para === 'todos').sort((a, b) => String(b.en).localeCompare(String(a.en)));
   };
-  const noLeidos = () => { const rol = S.persona ? S.persona.rol : ''; return misAvisos().filter(a => !(a.leido && a.leido[rol])); };
+  // Cada persona marca SUS avisos como leídos (la marca es su id de cuenta), aunque haya varias personas con el mismo rol.
+  const yo = () => nube.uid();
+  const noLeidos = () => { const u = yo(); return misAvisos().filter(a => !(a.leido && a.leido[u])); };
   const ICO_MOD = { equipos: 'equipos', inventario: 'caja', compras: 'carrito', vehiculos: 'carro', reuniones: 'reunion', inicio: 'campana' };
   function pintarAvisos() {
     const n = noLeidos().length;
     UI.insignia($('badgeAvisos'), n);
     $('btnAvisos').setAttribute('aria-label', n ? `Avisos, ${n} sin leer` : 'Avisos');
     if ($('shAvisos').hidden) return;
-    const lst = misAvisos(), rol = S.persona.rol;
+    const lst = misAvisos(), u = yo();
     $('shAvisosSub').textContent = lst.length ? `Avisos para ${S.persona.nombre} (${S.persona.rolTxt}).` : '';
     $('avisosLista').innerHTML = lst.length ? lst.map(a => {
-      const nuevo = S.vistos.has(a.id) || !(a.leido && a.leido[rol]);
+      const nuevo = S.vistos.has(a.id) || !(a.leido && a.leido[u]);
       return `<div class="card aviso-it ${nuevo ? 'nuevo' : ''}"><span class="ico">${ico(ICO_MOD[a.modulo] || 'campana')}</span>
         <span class="ai-t"><b>${esH(a.titulo)}</b><span>${esH(a.texto)}</span><span class="meta">${esH(hace(a.en))}</span></span>
         ${nuevo ? '<span class="punto" aria-hidden="true"></span><span class="sr">Nuevo</span>' : ''}</div>`;
@@ -381,11 +461,12 @@
   }
   async function abrirAvisos() {
     // Al abrir la campana se marcan como leídos (los puntos se ven en esta apertura y se van en la siguiente).
-    const rol = S.persona.rol, pend = noLeidos();
+    const u = yo(), pend = noLeidos();
     S.vistos = new Set(pend.map(a => a.id));
     abrirHoja('shAvisos');
     pintarAvisos();
-    try { await Promise.all(pend.map(a => nube.mezclar('avisos', a.id, { leido: { [rol]: true } }))); }
+    if (!u) return;
+    try { await Promise.all(pend.map(a => nube.mezclar('avisos', a.id, { leido: { [u]: true } }))); }
     catch (e) { toast(nube.explicar(e)); }
   }
 
@@ -393,7 +474,7 @@
   function pintarInsignias() {
     const n = pendientes(), rol = S.persona ? S.persona.rol : '';
     const b = {
-      equipos: ['jefe', 'asistente'].includes(rol) ? n.recibidos : 0,
+      equipos: ['jefe', 'equipos', 'soporte'].includes(rol) ? n.recibidos : 0,
       inventario: n.inv.mias,
       vehiculos: ['jefe', 'carros', 'conductor'].includes(rol) ? n.novedades : 0,
       reuniones: ['jefe', 'compras', 'carros'].includes(rol) ? n.reunionesPend : 0
@@ -406,11 +487,12 @@
     pintarInsignias();
     pintarAvisos();
     ({ inicio: pintarInicio, equipos: pintarEquipos, inventario: () => window.Inventario.pintar(), vehiculos: pintarVehiculos, reuniones: pintarReuniones })[S.vista]();
+    if (window.Gente) window.Gente.pintar();
   }
 
   /* ---------- versión pagada ---------- */
   const PAGADA = {
-    entrada: ['Entrada y permisos', 'Cuentas de prueba y un botón para cambiar de persona en vivo.', 'Cuentas reales con el correo de cada persona. Cada una entra con su clave y solo ve lo suyo.'],
+    entrada: ['Entrada y permisos', 'Personas de prueba para mostrar cada rol en vivo, y cuentas propias que se crean con el código del rol.', 'Solo cuentas propias: cada persona entra con su correo y su clave, y el código de su rol decide qué ve. Sin personas de prueba públicas.'],
     inicio: ['La app completa', 'Gratis, con datos de prueba. Los avisos llegan a la campana y al teléfono.', 'Unos USD 20 a 28 al mes: el agente lee el correo real, cuentas con el correo de cada persona y fotos en un almacenamiento aparte.'],
     equipos: ['Equipos', 'Las fotos de las hojas se guardan comprimidas dentro de la base de datos.', 'Las fotos van a un almacenamiento aparte (Cloud Storage): más calidad y la base no se llena.'],
     inventario: ['Inventario y compras', 'Todo funciona: pedir, autorizar, comprar con foto de la factura, recibir, entregar y contar. Avisos a la campana y al teléfono.', 'Las fotos de facturas van a un almacenamiento aparte (más calidad y la base no se llena), avisos también por correo o Teams, y cuentas con el correo real de cada persona.'],
@@ -450,14 +532,20 @@
     $('entradaLista').addEventListener('click', e => { const b = e.target.closest('[data-rol]'); if (b) entrarComo(b.dataset.rol, b); });
     $('personaLista').addEventListener('click', e => {
       const b = e.target.closest('[data-rol]'); if (!b) return;
-      if (S.persona && b.dataset.rol === S.persona.rol) { cerrarHoja('shPersona'); return; }
+      if (S.persona && S.persona.prueba && b.dataset.rol === S.persona.rol) { cerrarHoja('shPersona'); return; }
       entrarComo(b.dataset.rol, b);
     });
     $('btnPersona').onclick = abrirPersona;
     $('btnAvisos').onclick = abrirAvisos;
     $('btnSalir').onclick = async () => { cerrarHoja('shPersona'); await nube.salir(); };
+    $('btnGente').onclick = () => { cerrarHoja('shPersona'); window.Gente.abrir(); };
+    $('entradaModo').addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return; modoEntrada = b.dataset.modo; $('entradaErr').hidden = true; pintarModoEntrada(); });
+    $('ctCambiar').onclick = () => { modoCuenta = modoCuenta === 'crear' ? 'entrar' : 'crear'; $('ctErr').hidden = true; pintarModoEntrada(); };
+    $('ctForm').addEventListener('submit', e => { e.preventDefault(); enviarCuenta(); });
+    $('cuentaForm').addEventListener('submit', e => { e.preventDefault(); guardarCodigo(); });
+    $('cuSalir').onclick = () => nube.salir();
     $('btnReiniciar').onclick = async () => {
-      if (S.persona.rol !== 'jefe') return;
+      if (S.persona.rol !== 'jefe' || !S.persona.prueba) return;
       const ok = await confirmar('¿Reiniciar los datos de prueba?', 'Se borra todo lo que se haya cambiado en la demo (para todas las personas) y vuelven los datos de ejemplo con las fechas de hoy. No se puede deshacer.', 'Reiniciar');
       if (!ok) return;
       const b = $('btnReiniciar'); b.disabled = true;

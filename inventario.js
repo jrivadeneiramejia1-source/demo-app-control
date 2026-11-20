@@ -44,7 +44,8 @@
   const artPorId = id => articulos().find(a => a.id === id) || null;
   const compraAbierta = id => D().compras.find(c => c.articuloId === id && ABIERTA.includes(c.estado)) || null;
   const persona = () => A().S.persona;
-  const nombreRol = rol => { const p = window.DEMO.porRol(rol); return p ? p.corto : rol; };
+  // En la demo con personas de prueba se nombra a la persona (Sofía H.); con cuentas propias, el rol (Bodega), porque puede haber varias.
+  const nombreRol = rol => { const p = window.DEMO.porRol(rol), r = window.DEMO.rolDe(rol); return persona() && persona().prueba && p ? p.corto : (r ? r.rolTxt : rol); };
   const perm = () => A().permiso('inventario');
   const esJefe = () => perm() === 'jefe';
   const esGerente = () => perm() === 'gerente';

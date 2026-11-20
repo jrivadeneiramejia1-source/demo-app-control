@@ -25,6 +25,12 @@
       'auth/invalid-api-key': 'La configuración de config.js no es válida. Vuelve a copiarla desde Firebase.',
       'auth/api-key-not-valid.-please-pass-a-valid-api-key.': 'La configuración de config.js no es válida. Vuelve a copiarla desde Firebase.',
       'auth/clave-distinta': 'Esta cuenta de prueba ya existe en Firebase con otra clave. Bórrala en Authentication y vuelve a entrar.',
+      'auth/invalid-credential': 'El correo o la clave no coinciden. Revísalos y vuelve a intentar.',
+      'auth/invalid-email': 'Ese correo no está bien escrito.',
+      'auth/missing-password': 'Escribe la clave.',
+      'auth/weak-password': 'La clave debe tener al menos 6 caracteres.',
+      'auth/email-already-in-use': 'Ese correo ya tiene cuenta. Toca «Entrar» y escribe tu clave.',
+      'codigo-malo': 'Ese código no sirve. Pídele a tu jefe el código de tu rol y escríbelo tal cual (ejemplo: LOG-7KQ4-M2XP).',
       'permission-denied': 'Firebase no dejó hacer este cambio. Puede que otra persona ya lo cambió (revisa la lista otra vez) o que falte pegar las reglas de firestore.rules en Firestore Database, pestaña Reglas.',
       'unavailable': 'Sin conexión con la base de datos. Lo que hagas se guarda cuando vuelva la señal.',
       'not-found': 'Ese registro ya no existe. Puede que otra persona lo haya borrado.',
@@ -43,7 +49,54 @@
     const app = App.initializeApp(window.FIREBASE_CONFIG);
     auth = A.getAuth(app);
     db = F.getFirestore(app);
-    A.onAuthStateChanged(auth, u => alCambiarSesion(u ? (window.DEMO.porCorreo(u.email) || { desconocido: true, correo: u.email }) : null));
+    A.onAuthStateChanged(auth, u => {
+      if (oyentePerfil) { oyentePerfil(); oyentePerfil = null; }
+      if (!u) { alCambiarSesion(null); return; }
+      const prueba = window.DEMO.porCorreo(u.email);
+      if (prueba) { alCambiarSesion(prueba); return; }
+      // Cuenta real: el rol sale de su perfil (usuarios/<uid>), que solo se crea con un código válido.
+      // Se escucha en vivo: si el Jefe le cambia el rol o le quita el acceso, la app cambia al instante.
+      let ultimo = '';
+      oyentePerfil = F.onSnapshot(F.doc(db, 'usuarios', u.uid), s => {
+        const d = s.exists() ? s.data() : null;
+        const p = !d ? { sinPerfil: true, correo: u.email }
+          : d.activo !== true ? { sinAcceso: true, correo: u.email, nombre: d.nombre }
+          : (window.DEMO.armar(d.rol, d.nombre, u.email, '', { real: true, uid: u.uid }) || { sinPerfil: true, correo: u.email });
+        const firma = JSON.stringify([p.rol, p.nombre, !!p.sinPerfil, !!p.sinAcceso]);
+        if (firma !== ultimo) { ultimo = firma; alCambiarSesion(p); }
+      }, () => alCambiarSesion({ sinPerfil: true, correo: u.email }));
+    });
+  }
+  let oyentePerfil = null;
+
+  /* ---------- cuentas reales (con el código del rol) ---------- */
+  const uid = () => (auth && auth.currentUser ? auth.currentUser.uid : '');
+  const limpiarCodigo = c => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z]{3})([A-Z0-9]{4})([A-Z0-9]{4})$/, '$1-$2-$3');
+  async function entrarCuenta(correo, clave) {
+    if (!auth) { const e = new Error('Firebase no cargó'); e.code = 'sin-sdk'; throw e; }
+    await A.signInWithEmailAndPassword(auth, String(correo || '').trim(), clave);
+  }
+  async function crearCuenta(correo, clave) {
+    if (!auth) { const e = new Error('Firebase no cargó'); e.code = 'sin-sdk'; throw e; }
+    if (window.DEMO.porCorreo(correo)) { const e = new Error('prueba'); e.code = 'auth/email-already-in-use'; throw e; }
+    await A.createUserWithEmailAndPassword(auth, String(correo || '').trim(), clave);
+  }
+  /** Guarda el perfil con el rol del código. Firebase revisa que el código exista, esté activo y sea de ese rol. */
+  async function usarCodigo(nombre, codigo) {
+    const u = auth && auth.currentUser;
+    const c = limpiarCodigo(codigo), rol = window.DEMO.rolDeCodigo(c);
+    if (!u || !rol) { const e = new Error('Código'); e.code = 'codigo-malo'; throw e; }
+    try {
+      await FS.setDoc(FS.doc(db, 'usuarios', u.uid), { nombre: String(nombre || '').trim().slice(0, 60), correo: String(u.email || ''), rol, codigo: c, activo: true, en: new Date().toISOString() });
+    } catch (e) { if (e && e.code === 'permission-denied') { const x = new Error('Código'); x.code = 'codigo-malo'; throw x; } throw e; }
+  }
+  /** Código nuevo para un rol: 3 letras del rol + 8 caracteres al azar (sin 0, O, 1, I ni L para que no se confundan). */
+  function codigoNuevo(rol) {
+    const r = window.DEMO.rolDe(rol); if (!r) return '';
+    const L = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789', a = new Uint32Array(8);
+    crypto.getRandomValues(a);
+    const x = [...a].map(n => L[n % L.length]).join('');
+    return `${r.pref}-${x.slice(0, 4)}-${x.slice(4)}`;
   }
 
   /** Entra con la cuenta de prueba de ese rol. Si la cuenta todavía no existe en Firebase, la crea (solo la primera vez). */
@@ -119,15 +172,16 @@
   const idNuevo = pref => `${pref}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   /** Suma o resta a un número guardado sin pisar lo que otra persona haya cambiado al mismo tiempo. */
   const incremento = n => FS.increment(n);
-  /** Varias escrituras que se guardan todas juntas o ninguna. ops: [['set'|'mezclar'|'update', col, id, datos]]. */
+  /** Varias escrituras que se guardan todas juntas o ninguna. ops: [['set'|'mezclar'|'update'|'borrar', col, id, datos]]. */
   async function lote(ops) {
     const b = FS.writeBatch(db);
     ops.forEach(([t, col, id, datos]) => {
       const ref = FS.doc(db, col, id);
-      if (t === 'set') b.set(ref, datos); else if (t === 'mezclar') b.set(ref, datos, { merge: true }); else b.update(ref, datos);
+      if (t === 'set') b.set(ref, datos); else if (t === 'mezclar') b.set(ref, datos, { merge: true }); else if (t === 'borrar') b.delete(ref); else b.update(ref, datos);
     });
     await b.commit();
   }
 
-  window.nube = Object.freeze({ configLista, explicar, iniciar, entrar, salir, escuchar, guardar, mezclar, borrar, sembrar, idNuevo, incremento, lote, COLECCIONES });
+  window.nube = Object.freeze({ configLista, explicar, iniciar, entrar, salir, escuchar, guardar, mezclar, borrar, sembrar, idNuevo, incremento, lote, COLECCIONES,
+    uid, entrarCuenta, crearCuenta, usarCodigo, codigoNuevo, limpiarCodigo });
 })();
