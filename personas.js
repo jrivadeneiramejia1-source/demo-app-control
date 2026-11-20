@@ -5,21 +5,26 @@
 (function () {
   'use strict';
   const CLAVE_DEMO = 'demo-control-2026';
-  // Permisos por módulo: 'no' (no lo ve), 'ver', 'pide', 'edita', 'reporta', 'autoriza', 'bodega', 'jefe'.
-  // Inventario (consumibles y bodega, con las compras adentro): bodega = encargada; autoriza = aprueba compras; pide = solo pide material.
+  // Permisos por módulo: 'no' (no lo ve), 'ver', 'pide', 'edita', 'reporta', 'autoriza', 'compra', 'bodega', 'gerente', 'jefe'.
+  // Inventario (consumibles y bodega, con las compras adentro):
+  //   jefe = autoriza las compras y puede hacer todo · gerente = ve todo a detalle y solo autoriza lo que pide el jefe
+  //   compra = hace las compras (proveedor, valor, factura) · bodega = existencias, entregas y recibe lo comprado · pide = solo pide.
   const PERSONAS = [
-    { rol: 'jefe', nombre: 'Ana Pérez', corto: 'Ana P.', correo: 'ana.perez@example.com', cargo: 'Jefe de reuniones', rolTxt: 'Jefe',
-      permisos: { equipos: 'ver', inventario: 'ver', vehiculos: 'ver', reuniones: 'jefe' } },
-    { rol: 'compras', nombre: 'Luis Rodríguez', corto: 'Luis R.', correo: 'luis.rodriguez@example.com', cargo: 'Coordinador administrativo', rolTxt: 'Autoriza compras',
-      permisos: { equipos: 'no', inventario: 'autoriza', vehiculos: 'no', reuniones: 'autoriza' } },
+    { rol: 'gerente', nombre: 'Ricardo Fuentes', corto: 'Ricardo F.', correo: 'ricardo.fuentes@example.com', cargo: 'Gerente general', rolTxt: 'Gerente',
+      permisos: { equipos: 'ver', inventario: 'gerente', vehiculos: 'ver', reuniones: 'ver' } },
+    { rol: 'jefe', nombre: 'Ana Pérez', corto: 'Ana P.', correo: 'ana.perez@example.com', cargo: 'Jefe de operaciones', rolTxt: 'Jefe',
+      permisos: { equipos: 'jefe', inventario: 'jefe', vehiculos: 'jefe', reuniones: 'jefe' } },
+    { rol: 'compras', nombre: 'Luis Rodríguez', corto: 'Luis R.', correo: 'luis.rodriguez@example.com', cargo: 'Encargado de compras', rolTxt: 'Compras',
+      permisos: { equipos: 'no', inventario: 'compra', vehiculos: 'no', reuniones: 'autoriza' } },
     { rol: 'carros', nombre: 'Marta Gómez', corto: 'Marta G.', correo: 'marta.gomez@example.com', cargo: 'Coordinadora de transporte', rolTxt: 'Autoriza carros',
       permisos: { equipos: 'no', inventario: 'pide', vehiculos: 'autoriza', reuniones: 'autoriza' } },
     { rol: 'conductor', nombre: 'Carlos Pinto', corto: 'Carlos P.', correo: 'carlos.pinto@example.com', cargo: 'Conductor', rolTxt: 'Conductor',
       permisos: { equipos: 'no', inventario: 'pide', vehiculos: 'reporta', reuniones: 'ver' } },
-    { rol: 'asistente', nombre: 'Sofía Herrera', corto: 'Sofía H.', correo: 'sofia.herrera@example.com', cargo: 'Asistente de soporte y bodega', rolTxt: 'Asistente',
+    { rol: 'asistente', nombre: 'Sofía Herrera', corto: 'Sofía H.', correo: 'sofia.herrera@example.com', cargo: 'Asistente de soporte y bodega', rolTxt: 'Bodega',
       permisos: { equipos: 'edita', inventario: 'bodega', vehiculos: 'no', reuniones: 'ver' } }
   ];
-  const PERMISO_TXT = { no: 'Sin acceso', ver: 'Solo ver', pide: 'Pide material', edita: 'Edita', reporta: 'Reporta novedades', autoriza: 'Autoriza', bodega: 'Encargada de bodega', jefe: 'Jefe' };
+  const PERMISO_TXT = { no: 'Sin acceso', ver: 'Solo ver', pide: 'Pide material', edita: 'Edita', reporta: 'Reporta novedades', autoriza: 'Autoriza',
+    compra: 'Hace las compras', bodega: 'Encargada de bodega', gerente: 'Ve todo a detalle', jefe: 'Ve y cambia todo' };
   window.DEMO = Object.freeze({
     CLAVE: CLAVE_DEMO,
     PERSONAS: Object.freeze(PERSONAS.map(p => Object.freeze(p))),

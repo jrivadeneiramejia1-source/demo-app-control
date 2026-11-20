@@ -104,7 +104,8 @@
 
     // ---------- COMPRAS ----------
     // Rol de quien pide (sirve para que nadie autorice su propio pedido). Mismos nombres de personas.js.
-    const ROL_DE = { 'Ana Pérez': 'jefe', 'Luis Rodríguez': 'compras', 'Marta Gómez': 'carros', 'Carlos Pinto': 'conductor', 'Sofía Herrera': 'asistente' };
+    // Autoriza la Jefe (Ana); lo que pide Ana lo autoriza el Gerente (Ricardo). Compra Luis y recibe Sofía.
+    const ROL_DE = { 'Ricardo Fuentes': 'gerente', 'Ana Pérez': 'jefe', 'Luis Rodríguez': 'compras', 'Marta Gómez': 'carros', 'Carlos Pinto': 'conductor', 'Sofía Herrera': 'asistente' };
     function compra(que, cantidad, unidad, categoria, valorAprox, paraQue, pide, autoriza, estado, extra) {
       return Object.assign({
         que, cantidad, unidad, categoria, valorAprox, paraQue, pide, pideRol: ROL_DE[pide] || '', autoriza, estado,
@@ -117,18 +118,18 @@
       'co-002': compra('Mouse inalámbrico', 6, 'unidades', 'Accesorios', 180000, 'Para los portátiles de campo',
         'Ana Pérez', '', 'pedido', { fechaPedido: dias(0), articuloId: 'ar-011' }),
       'co-003': compra('Resmas de papel carta', 8, 'resmas', 'Papelería', 224000, 'Para imprimir listas de asistencia',
-        'Sofía Herrera', 'Luis Rodríguez', 'autorizado', { fechaPedido: dias(-4), articuloId: 'ar-013' }),
+        'Sofía Herrera', 'Ana Pérez', 'autorizado', { fechaPedido: dias(-4), articuloId: 'ar-013' }),
       'co-004': compra('Cámara web con micrófono', 2, 'unidades', 'Cómputo', 390000, 'Para reuniones con equipos remotos',
-        'Ana Pérez', 'Luis Rodríguez', 'rechazado',
+        'Ana Pérez', 'Ricardo Fuentes', 'rechazado',
         { fechaPedido: dias(-9), motivoRechazo: 'Ya hay cámaras en bodega, usa esas primero' }),
       'co-005': compra('Cables HDMI y adaptadores', 5, 'unidades', 'Accesorios', 140000, 'Para el proyector de las reuniones',
-        'Sofía Herrera', 'Luis Rodríguez', 'comprado',
+        'Sofía Herrera', 'Ana Pérez', 'comprado',
         { fechaPedido: dias(-12), proveedor: 'Ferretería El Faro', valorReal: 152000, fechaCompra: dias(-8), articuloId: 'ar-010' }),
       'co-006': compra('Memorias USB de 64 GB', 10, 'unidades', 'Cómputo', 320000, 'Para entregar copias a los líderes',
-        'Ana Pérez', 'Luis Rodríguez', 'comprado',
+        'Ana Pérez', 'Ricardo Fuentes', 'comprado',
         { fechaPedido: dias(-7), proveedor: 'Papelería Central', valorReal: 305000, fechaCompra: dias(-3) }),
       'co-007': compra('Chalecos reflectivos', 12, 'unidades', 'EPP', 420000, 'Para la cuadrilla de campo',
-        'Sofía Herrera', 'Luis Rodríguez', 'recibido',
+        'Sofía Herrera', 'Ana Pérez', 'recibido',
         { fechaPedido: dias(-25), proveedor: 'Ferretería El Faro', valorReal: 438000, fechaCompra: dias(-20), entregadoA: 'Jorge Ibarra', articuloId: 'ar-003' }),
       'co-008': compra('Garrafones de agua', 6, 'unidades', 'Refrigerios', 90000, 'Para la reunión de la semana pasada',
         'Sofía Herrera', '', 'sin-autorizar',
@@ -143,7 +144,7 @@
       else paso(c.fechaPedido, 9, 'Pidió la compra', c.pide);
       if (['autorizado', 'comprado', 'recibido'].includes(c.estado)) paso(c.fechaPedido, 15, 'Autorizó la compra', c.autoriza);
       if (c.estado === 'rechazado') paso(c.fechaPedido, 16, `Rechazó la compra: ${c.motivoRechazo}`, c.autoriza);
-      if (['comprado', 'recibido'].includes(c.estado)) paso(c.fechaCompra, 11, `Compró en ${c.proveedor}`, 'Sofía Herrera');
+      if (['comprado', 'recibido'].includes(c.estado)) paso(c.fechaCompra, 11, `Compró en ${c.proveedor}`, 'Luis Rodríguez');
       if (c.estado === 'recibido') paso(c.fechaCompra, 16, c.articuloId ? 'Recibido en bodega' : `Entregado a ${c.entregadoA}`, 'Sofía Herrera');
       c.historial = h;
     });
@@ -310,7 +311,9 @@
       return { para, titulo, texto, en, modulo, leido: {} };
     }
     const avisos = {
-      'av-001': aviso('compras', 'Compras por autorizar', 'Tienes 2 compras por autorizar: botas de seguridad talla 40, que están agotadas, y mouse inalámbrico.', iso(0, 8, 15), 'inventario'),
+      'av-001': aviso('jefe', 'Compra por autorizar', 'Sofía Herrera pide comprar botas de seguridad talla 40, que están agotadas.', iso(0, 8, 15), 'inventario'),
+      'av-007': aviso('gerente', 'Compra por autorizar', 'Ana Pérez pide comprar 6 unidades de mouse inalámbrico (aprox. $ 180.000). La autorizas tú porque la pidió la Jefe.', iso(0, 8, 20), 'inventario'),
+      'av-008': aviso('compras', 'Compra autorizada: hay que comprar', 'Ana Pérez autorizó comprar 8 resmas de papel carta.', iso(-4, 15, 5), 'inventario'),
       'av-002': aviso('jefe', 'Compra sin autorización', 'Se compró algo sin autorización: garrafones de agua.', iso(-5, 17, 40), 'inventario'),
       'av-003': aviso('carros', 'SOAT por vencer', 'El SOAT del ABC 123 vence en 12 días.', iso(-1, 7, 30), 'vehiculos'),
       'av-004': aviso('jefe', 'Novedad en un carro', 'Carlos Pinto reportó un rayón en el ABC 123.', iso(-2, 18, 10), 'vehiculos'),
@@ -321,5 +324,5 @@
     return { equipos, compras, vehiculos, reuniones, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 3, generar });
+  window.DatosDemo = Object.freeze({ VERSION: 4, generar });
 })();

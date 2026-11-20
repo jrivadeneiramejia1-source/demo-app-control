@@ -20,11 +20,12 @@ Todas con la clave `demo-control-2026` (inventada y pública: la demo solo tiene
 
 | Persona | Rol | Equipos | Inventario | Vehículos | Reuniones |
 |---|---|---|---|---|---|
-| Ana Pérez | Jefe | Solo ver | Solo ver | Solo ver | Jefe |
-| Luis Rodríguez | Autoriza compras | No | Autoriza | No | Autoriza |
+| Ricardo Fuentes | Gerente | Solo ver | Ve todo a detalle (sin lo operativo) y autoriza lo que pide la Jefe | Solo ver | Solo ver |
+| Ana Pérez | Jefe | Ve y cambia todo | Autoriza las compras y puede hacer cualquier paso | Ve y cambia todo | Ve y cambia todo |
+| Luis Rodríguez | Compras | No | Hace las compras (proveedor, valor, foto de factura) | No | Autoriza |
 | Marta Gómez | Autoriza carros | No | Pide material | Autoriza | Autoriza |
 | Carlos Pinto | Conductor | No | Pide material | Reporta novedades | Solo ver |
-| Sofía Herrera | Asistente | Edita | Encargada de bodega | No | Solo ver |
+| Sofía Herrera | Bodega | Edita | Encargada de bodega | No | Solo ver |
 
 ## Archivos
 - `index.html`, `app.js`, `demo.css`: la app. `inventario.js`: el módulo Inventario (bodega y compras).
@@ -34,8 +35,8 @@ Todas con la clave `demo-control-2026` (inventada y pública: la demo solo tiene
 - `lib/xlsx/`: SheetJS (Apache-2.0) para descargar el Excel del Resumen.
 - `nube.js`: conexión con Firebase (Authentication con correo y clave, y Firestore). Nuevo: no usa la clave compartida de las apps reales ni manda errores a Slack.
 - `config.js`: datos del proyecto de Firebase de la demo, ID `fir-app-control-d8494` (no son secretos).
-- `personas.js`: las cinco cuentas de prueba y sus permisos. `datos-demo.js`: los datos de ejemplo, con fechas relativas al día en que se cargan.
-- `firestore.rules`: reglas de la base de datos (solo entran las cinco cuentas de prueba). Se pegan en Firebase.
+- `personas.js`: las seis cuentas de prueba y sus permisos. `datos-demo.js`: los datos de ejemplo, con fechas relativas al día en que se cargan.
+- `firestore.rules`: reglas de la base de datos (solo entran las seis cuentas de prueba). Se pegan en Firebase.
 - `comun.css`, `comun.js`, `iconos.js`, `fuentes/`, `codigos.js`, `lib/codigos/`: copiados de `apps-consulta-previa` (ver `DESIGN.md`). En `iconos.js` se agregaron iconos Phosphor (licencia MIT): inicio, carro, carrito, reunión, cambiar, pagada, correo y llave.
 - `pruebas/`: Firebase falso (`firebase-*.js`) y pruebas con Playwright.
 
@@ -43,8 +44,9 @@ Todas con la clave `demo-control-2026` (inventada y pública: la demo solo tiene
 Colecciones de primer nivel: `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `avisos`, `suscripciones` (teléfonos con avisos activados; Reiniciar no las borra) y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). Solo la Jefe carga, actualiza y reinicia los datos de prueba (así lo piden las reglas): si otra persona entra primero, la app le dice que entre una vez como Ana. La Jefe tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
 
 ## Permisos (los hace cumplir Firebase, no solo la pantalla)
-- Cualquiera pide material y pide compras a su nombre. Nadie autoriza su propio pedido: las de Luis las autoriza la Jefe.
-- Luis autoriza o rechaza sin poder cambiar cantidad ni valor. La bodega (Sofía) compra, recibe, entrega, registra entradas, salidas y conteos; la cantidad nunca queda negativa.
+- Compras: alguien pide → la Jefe autoriza (si la pidió la Jefe, el Gerente) → Compras (Luis) la compra → Bodega (Sofía) la recibe. Nadie autoriza su propio pedido.
+- Cualquiera pide material y pide compras a su nombre. El Gerente autoriza o rechaza sin poder cambiar cantidad ni valor; Compras registra la compra sin tocar lo autorizado.
+- La bodega (Sofía) recibe, entrega, registra entradas, salidas y conteos; la cantidad nunca queda negativa. La Jefe puede hacer cualquier paso.
 - Cada quien marca como leídos solo sus avisos.
 
 ## Pruebas

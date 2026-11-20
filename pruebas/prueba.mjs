@@ -76,21 +76,21 @@ try {
   console.log('2. Entrada y datos de prueba (Jefe)');
   const t = await telefono();
   await t.page.goto(URL);
-  log('muestra las cinco personas de prueba', await hasta(t.page, () => document.querySelectorAll('#entradaLista .persona-card').length === 5));
+  log('muestra las seis personas de prueba', await hasta(t.page, () => document.querySelectorAll('#entradaLista .persona-card').length === 6));
   log('la entrada tiene la etiqueta Versión pagada', await visible(t.page, '#vEntrada .pagada'));
   log('entra como Ana Pérez (Jefe)', await entrar(t.page, 'jefe'));
   log('siembra los datos y llena el tablero', await datosListos(t.page));
   await esp(900); // las cifras cuentan hasta su valor
   const sem = await t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos') || '{}'));
   const COLS = ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos'];
-  log('sembró 12 equipos, 8 compras, 18 artículos, 13 movimientos, 5 pedidos, 3 carros, 3 reuniones y 6 avisos',
-    COLS.map(c => Object.keys(sem[c] || {}).length).join(',') === '12,8,18,13,5,3,3,6', COLS.map(c => c + ':' + Object.keys(sem[c] || {}).length).join(' '));
+  log('sembró 12 equipos, 8 compras, 18 artículos, 13 movimientos, 5 pedidos, 3 carros, 3 reuniones y 8 avisos',
+    COLS.map(c => Object.keys(sem[c] || {}).length).join(',') === '12,8,18,13,5,3,3,8', COLS.map(c => c + ':' + Object.keys(sem[c] || {}).length).join(' '));
   log('el saludo dice Hola, Ana', (await texto(t.page, '#tInicio')) === 'Hola, Ana');
   log('Jefe ve 7 cifras de pendientes', (await t.page.locator('#sumInicio .sum').count()) === 7);
   log('bodega: 5 agotados o bajos y 3 pedidos por entregar', (await cifra(t.page, 'sumInicio', 0)) === 5 && (await cifra(t.page, 'sumInicio', 1)) === 3);
-  log('compras por autorizar = 2 y sin autorizar = 1', (await cifra(t.page, 'sumInicio', 2)) === 2 && (await cifra(t.page, 'sumInicio', 3)) === 1);
+  log('compras que le toca autorizar = 1 (la de Ana la autoriza el Gerente) y sin autorizar = 1', (await cifra(t.page, 'sumInicio', 2)) === 1 && (await cifra(t.page, 'sumInicio', 3)) === 1 && /te toca autorizar/.test(await texto(t.page, '#sumInicio')));
   log('Jefe ve las 5 pestañas y los 4 módulos abiertos', (await t.page.locator('.tab:not([hidden])').count()) === 5 && (await t.page.locator('#modulosLista .modulo.bloqueado').count()) === 0);
-  log('la campana tiene avisos sin leer (2 del jefe y 1 para todos)', (await texto(t.page, '#badgeAvisos')) === '3');
+  log('la campana tiene avisos sin leer (3 de la Jefe y 1 para todos)', (await texto(t.page, '#badgeAvisos')) === '4');
   await t.page.screenshot({ path: path.join(CAPTURAS, '01-inicio-jefe.png'), fullPage: true });
 
   console.log('3. Módulos');
@@ -104,8 +104,8 @@ try {
   log('Equipos: la búsqueda encuentra ThinkPad', (await t.page.locator('#listaEquipos .card').count()) >= 1 && (await t.page.locator('#listaEquipos .card').count()) < 12);
   await t.page.fill('#qEquipos', '');
   await t.page.click('.tab[data-vista="inventario"]');
-  log('Inventario: la Jefe ve 11 tareas agrupadas por a quién le tocan', await hasta(t.page, () => document.querySelectorAll('#invContenido .tarea').length === 11 && /Le toca a Sofía H\./.test(document.getElementById('invContenido').textContent) && /Le toca a Luis R\./.test(document.getElementById('invContenido').textContent)), await texto(t.page, '#invContenido'));
-  log('Inventario: la Jefe solo tiene su tarea (revisar la compra sin autorización) y botones de ver detalle', await t.page.evaluate(() => [...document.querySelectorAll('#invContenido [data-accion]')].every(b => ['revisada', 'vercompra'].includes(b.dataset.accion)) && !!document.querySelector('#invContenido [data-accion="revisada"]')));
+  log('Inventario: la Jefe ve 11 tareas agrupadas por a quién le tocan (también Luis, Sofía y el Gerente)', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return document.querySelectorAll('#invContenido .tarea').length === 11 && /Te toca a ti \(2\)/.test(x) && /Le toca a Sofía H\./.test(x) && /Le toca a Luis R\./.test(x) && /Le toca a Ricardo F\./.test(x); }), await texto(t.page, '#invContenido'));
+  log('la Jefe puede hacer cualquier paso (autorizar, comprar, recibir, entregar) pero no autorizar su propia compra', await t.page.evaluate(() => ['autorizar', 'comprar', 'recibir', 'entregar', 'revisada'].every(a => document.querySelector(`#invContenido [data-accion="${a}"]`)) && !!document.querySelector('#invContenido [data-accion="autorizar"][data-id="co-001"]') && !document.querySelector('#invContenido [data-accion="autorizar"][data-id="co-002"]') && /la autoriza el Gerente/.test(document.getElementById('invContenido').textContent)));
   await t.page.click('#invContenido [data-accion="revisada"]');
   await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.fill('#acNota', 'Fue una urgencia'); await t.page.click('#acPrimario');
   log('la Jefe marca revisada la compra sin autorización y queda en su historial', await hasta(t.page, () => { const c = JSON.parse(localStorage.getItem('__fb_datos')).compras['co-008']; return c.revisada === true && c.historial.some(h => /Fue una urgencia/.test(h.texto)); }));
@@ -120,7 +120,7 @@ try {
   await t.page.fill('#qInventario', 'botas');
   log('Existencias: la búsqueda encuentra las 2 botas', (await t.page.locator('#invContenido .card.art').count()) === 2);
   await t.page.fill('#qInventario', '');
-  for (const [sec, re] of [['movimientos', /Registró/], ['solicitudes', /En espera/], ['compras', /En curso/], ['conteo', /conteo/i], ['resumen', /Valor de lo que hay en bodega/]]) {
+  for (const [sec, re] of [['movimientos', /Registró/], ['solicitudes', /En espera/], ['compras', /En curso/], ['conteo', /conteo/i], ['resumen', /Cómo van las compras[\s\S]*Valor de lo que hay en bodega/]]) {
     await t.page.click(`#invSecciones [data-sec="${sec}"]`);
     log(`Inventario: la parte «${sec}» funciona`, await hasta(t.page, r => new RegExp(r).test(document.getElementById('invContenido').textContent), re.source), (await texto(t.page, '#invContenido')).slice(0, 200));
   }
@@ -161,7 +161,7 @@ try {
   log('pedir compra sin decir qué no deja guardar', await hasta(t.page, () => !document.getElementById('acErr').hidden && /qué se va a comprar/.test(document.getElementById('acErr').textContent)));
   await t.page.fill('#acQue', 'Llanta de repuesto para el ABC 123'); await t.page.fill('#acCant', '1'); await t.page.fill('#acValor', '450000'); await t.page.fill('#acPara', 'La de repuesto está lisa');
   await t.page.click('#acPrimario');
-  log('Carlos pide una compra: queda por autorizar, con su rol, y aviso para Luis', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const c = Object.values(d.compras).find(x => x.que === 'Llanta de repuesto para el ABC 123'); return c && c.estado === 'pedido' && c.pideRol === 'conductor' && c.historial.length === 1 && Object.values(d.avisos).some(a => a.para === 'compras' && /Llanta de repuesto/.test(a.texto)); }));
+  log('Carlos pide una compra: queda por autorizar, con su rol, y aviso para la Jefe', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const c = Object.values(d.compras).find(x => x.que === 'Llanta de repuesto para el ABC 123'); return c && c.estado === 'pedido' && c.pideRol === 'conductor' && c.historial.length === 1 && Object.values(d.avisos).some(a => a.para === 'jefe' && /Llanta de repuesto/.test(a.texto)); }));
   log('la compra aparece en «Tus compras pedidas»', await hasta(t.page, () => /Tus compras pedidas \(1\)/.test(document.getElementById('invContenido').textContent)));
   await t.page.click('#btnPedirMaterial');
   await t.page.waitForSelector('#shAccion:not([hidden])');
@@ -172,36 +172,79 @@ try {
   log('Conductor pide una linterna: queda en sus pedidos', await hasta(t.page, () => document.getElementById('shAccion').hidden && /Tus pedidos de material \(2\)/.test(document.getElementById('invContenido').textContent)));
   const solNueva = await t.page.evaluate(() => Object.values(JSON.parse(localStorage.getItem('__fb_datos')).solicitudes).find(s => s.paraQue === 'Revisar llantas de noche'));
   log('el pedido se guardó con quién lo pide y en espera', solNueva && solNueva.pide === 'Carlos Pinto' && solNueva.pideRol === 'conductor' && solNueva.estado === 'pendiente' && solNueva.articuloId === 'ar-018', JSON.stringify(solNueva));
-  log('cambia a Luis Rodríguez (Autoriza compras)', await cambiar(t.page, 'compras'));
+  console.log('4a. Gerente (Ricardo): ve todo a detalle y solo autoriza lo que pide la Jefe');
+  log('cambia a Ricardo Fuentes (Gerente)', await cambiar(t.page, 'gerente'));
+  await t.page.click('.tab[data-vista="inicio"]');
+  await esp(900);
+  log('el Gerente ve 4 cifras: agotados o bajos, por autorizar (1), en curso y sin autorizar', (await t.page.locator('#sumInicio .sum').count()) === 4 && (await cifra(t.page, 'sumInicio', 1)) === 1 && /Compras en curso/.test(await texto(t.page, '#sumInicio')), await texto(t.page, '#sumInicio'));
+  log('el Gerente ve todos los módulos (ninguno con candado)', (await t.page.locator('#modulosLista .modulo.bloqueado').count()) === 0);
+  await t.page.click('.tab[data-vista="inventario"]');
+  log('Inventario del Gerente: Resumen, Compras, Existencias y Pedidos (sin tareas, movimientos ni conteo)', await hasta(t.page, () => [...document.querySelectorAll('#invSecciones [data-sec]')].map(b => b.dataset.sec).join(',') === 'resumen,compras,existencias,solicitudes'));
+  log('el Gerente no tiene los botones de pedir', await t.page.locator('#btnPedirCompra').isHidden());
+  log('en el Resumen le toca autorizar solo la compra de Ana (no la de Carlos ni la de Sofía)', await hasta(t.page, () => /Te toca a ti \(1\)/.test(document.getElementById('invContenido').textContent) && document.querySelectorAll('#invContenido [data-accion="autorizar"]').length === 1 && !!document.querySelector('#invContenido [data-accion="autorizar"][data-id="co-002"]')));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '04-inventario-gerente.png'), fullPage: true });
+  await t.page.click('#invContenido [data-accion="autorizar"][data-id="co-002"]');
+  await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
+  log('el Gerente autoriza el mouse de Ana: pasa a Compras con aviso a Luis y a Ana', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const c = d.compras['co-002']; return c.estado === 'autorizado' && c.autoriza === 'Ricardo Fuentes' && c.historial.some(h => h.texto === 'Autorizó la compra' && h.por === 'Ricardo Fuentes') && Object.values(d.avisos).some(a => a.para === 'compras' && /autorizó comprar/.test(a.texto)) && Object.values(d.avisos).some(a => a.para === 'jefe' && /autorizó tu compra/.test(a.texto)); }));
+  await t.page.click('#invSecciones [data-sec="existencias"]');
+  log('el Gerente ve las existencias sin botones de bodega', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.art').length === 18 && !document.querySelector('#invContenido [data-accion="nuevoart"], #invContenido [data-accion="entrada"]')));
+  await t.page.click('#invContenido [data-accion="verart"][data-id="ar-004"]');
+  log('el detalle del artículo no muestra movimientos sueltos ni botones', await hasta(t.page, () => !document.getElementById('shAccion').hidden && /Hay/.test(document.getElementById('acCampos').textContent) && !/Últimos movimientos/.test(document.getElementById('acCampos').textContent) && !document.querySelector('#acCampos [data-accion]')));
+  await t.page.keyboard.press('Escape');
+  await t.page.click('#invSecciones [data-sec="compras"]');
+  log('el Gerente ve las compras a detalle pero no registra compras', await hasta(t.page, () => document.querySelectorAll('#invContenido [data-accion="vercompra"]').length > 0 && !document.querySelector('#invContenido [data-accion="sinaut"]')));
+  await t.page.click('#invSecciones [data-sec="solicitudes"]');
+  log('el Gerente ve los pedidos de material de todos', await hasta(t.page, () => /Jorge Ibarra/.test(document.getElementById('invContenido').textContent) && !document.querySelector('#invContenido [data-accion="entregar"]')));
+
+  console.log('4b. Compras (Luis): hace las compras');
+  log('cambia a Luis Rodríguez (Compras)', await cambiar(t.page, 'compras'));
   log('Luis se queda en Inventario porque también lo puede ver', !(await t.page.locator('#vInventario').isHidden()));
   await t.page.click('.tab[data-vista="inicio"]');
   await esp(900);
-  log('Luis ve 3 cifras: por autorizar, sin autorizar y reuniones que esperan su respuesta', (await t.page.locator('#sumInicio .sum').count()) === 3 && /esperan tu respuesta/.test(await texto(t.page, '#sumInicio')), (await t.page.locator('#sumInicio .sum').count()) + ' | ' + (await texto(t.page, '#sumInicio')) + ' | vista: ' + (await t.page.evaluate(() => [...document.querySelectorAll('.view')].filter(v => !v.hidden).map(v => v.id).join(','))));
-  log('la insignia de Inventario dice 3 (2 compras por autorizar y la llanta de Carlos)', (await texto(t.page, '[data-badge="inventario"]')) === '3');
+  log('Luis ve 3 cifras: compras por hacer (2), sin autorizar y reuniones', (await t.page.locator('#sumInicio .sum').count()) === 3 && (await cifra(t.page, 'sumInicio', 0)) === 2 && /esperan tu respuesta/.test(await texto(t.page, '#sumInicio')), await texto(t.page, '#sumInicio'));
+  log('la insignia de Inventario dice 2 (las 2 compras autorizadas por hacer)', (await texto(t.page, '[data-badge="inventario"]')) === '2');
   await t.page.click('#btnAvisos');
-  log('la campana muestra 3 avisos (el suyo, la compra que pidió Carlos y el de todos)', await hasta(t.page, () => document.querySelectorAll('#avisosLista .aviso-it').length === 3 && /Llanta de repuesto/.test(document.getElementById('avisosLista').textContent)));
+  log('la campana muestra 3 avisos (resmas autorizadas, el mouse que autorizó el Gerente y el de todos)', await hasta(t.page, () => document.querySelectorAll('#avisosLista .aviso-it').length === 3 && /mouse/i.test(document.getElementById('avisosLista').textContent)));
   log('al abrirla la insignia queda en 0', await hasta(t.page, () => document.getElementById('badgeAvisos').hidden));
   await t.page.keyboard.press('Escape');
   await t.page.click('.tab[data-vista="inventario"]');
-  log('Luis tiene 3 compras por autorizar con sus botones (incluida la llanta de Carlos)', await hasta(t.page, () => document.querySelectorAll('#invContenido [data-accion="autorizar"]').length === 3));
-  await t.page.click('#invContenido [data-accion="autorizar"][data-id="co-002"]');
-  await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
-  log('Luis autoriza el mouse: la compra queda autorizada, pasa a Sofía y le llega el aviso a quien la pidió', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.compras['co-002'].estado === 'autorizado' && d.compras['co-002'].historial.some(h => h.texto === 'Autorizó la compra' && h.por === 'Luis Rodríguez') && Object.values(d.avisos).some(a => a.para === 'asistente' && /autorizó comprar/.test(a.texto)) && Object.values(d.avisos).some(a => a.para === 'jefe' && /autorizó tu compra/.test(a.texto)) && document.querySelectorAll('#invContenido [data-accion="autorizar"]').length === 2; }));
-  // Luis pide una compra: no le sale a él para autorizar, le toca a la Jefe.
+  log('Luis tiene botones para comprar y ninguno para autorizar', await hasta(t.page, () => document.querySelectorAll('#invContenido [data-accion="comprar"]').length === 2 && !document.querySelector('#invContenido [data-accion="autorizar"]')));
   await t.page.click('#btnPedirCompra'); await t.page.waitForSelector('#shAccion:not([hidden])');
-  log('a quien autoriza le dice que su pedido lo autoriza la Jefe', /Ana P\./.test(await texto(t.page, '#acSub')));
+  log('cuando Luis pide una compra le dice que la autoriza la Jefe', /Ana P\./.test(await texto(t.page, '#acSub')));
   await t.page.fill('#acQue', 'Silla de oficina'); await t.page.fill('#acCant', '1'); await t.page.fill('#acValor', '380000'); await t.page.fill('#acPara', 'La mía está rota');
   await t.page.click('#acPrimario');
-  log('Luis no puede autorizar su propia compra: no tiene botón y le toca a la Jefe', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const c = Object.values(d.compras).find(x => x.que === 'Silla de oficina'); return c && !document.querySelector(`#invContenido [data-accion="autorizar"][data-id="${c.id}"]`) && Object.values(d.avisos).some(a => a.para === 'jefe' && /Silla de oficina/.test(a.texto)); }));
+  log('la compra de Luis queda por autorizar con aviso a la Jefe', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const c = Object.values(d.compras).find(x => x.que === 'Silla de oficina'); return c && c.estado === 'pedido' && c.pideRol === 'compras' && Object.values(d.avisos).some(a => a.para === 'jefe' && /Silla de oficina/.test(a.texto)); }));
+  await t.page.click('#invContenido [data-accion="comprar"][data-id="co-002"]');
+  await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
+  log('Luis registra la compra del mouse: queda comprada y le avisa a Sofía para recibirla', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const c = d.compras['co-002']; return c.estado === 'comprado' && c.valorReal > 0 && c.proveedor && c.historial.some(h => /Compró en/.test(h.texto) && h.por === 'Luis Rodríguez') && Object.values(d.avisos).some(a => a.para === 'asistente' && /hay que recibirla/.test(a.titulo)); }));
+  await t.page.click('#invContenido [data-accion="comprar"][data-id="co-003"]');
+  await t.page.waitForSelector('#shAccion:not([hidden])');
+  await t.page.setInputFiles('#acFoto', path.join(RAIZ, 'iconos', 'control-512.png'));
+  log('la foto de la factura se achica y se ve antes de guardar', await hasta(t.page, () => !document.getElementById('acFotoVer').hidden && /^data:image\/jpeg/.test(document.getElementById('acFotoVer').src)));
+  await t.page.click('#acPrimario');
+  log('la compra guarda la foto de la factura', await hasta(t.page, () => /^data:image\/jpeg;base64,/.test(JSON.parse(localStorage.getItem('__fb_datos')).compras['co-003'].factura || '')));
+  await t.page.click('#invSecciones [data-sec="compras"]');
+  log('Luis puede registrar una compra hecha sin autorización', await hasta(t.page, () => !!document.querySelector('#invContenido [data-accion="sinaut"]')));
+  await t.page.click('#invSecciones [data-sec="hacer"]');
+
+  console.log('4c. La Jefe autoriza');
+  log('cambia a Ana Pérez (Jefe)', await cambiar(t.page, 'jefe'));
+  await t.page.click('.tab[data-vista="inventario"]');
+  const coSilla = await t.page.evaluate(() => Object.entries(JSON.parse(localStorage.getItem('__fb_datos')).compras).find(([, c]) => c.que === 'Silla de oficina')[0]);
+  const coLlanta = await t.page.evaluate(() => Object.entries(JSON.parse(localStorage.getItem('__fb_datos')).compras).find(([, c]) => /Llanta/.test(c.que))[0]);
+  log('la Jefe tiene por autorizar las botas, la llanta de Carlos y la silla de Luis', await hasta(t.page, ids => ids.every(i => document.querySelector(`#invContenido [data-accion="autorizar"][data-id="${i}"]`)), ['co-001', coLlanta, coSilla]));
+  await t.page.click(`#invContenido [data-accion="autorizar"][data-id="${coLlanta}"]`);
+  await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
+  log('la Jefe autoriza la llanta: aviso a Luis para comprarla y a Carlos', await hasta(t.page, i => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.compras[i].estado === 'autorizado' && d.compras[i].autoriza === 'Ana Pérez' && Object.values(d.avisos).some(a => a.para === 'compras' && /Llanta/.test(a.texto)) && Object.values(d.avisos).some(a => a.para === 'conductor' && /autorizó tu compra/.test(a.texto)); }, coLlanta));
   await t.page.click('#invContenido [data-accion="rechazar"][data-id="co-001"]');
   await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
   log('rechazar sin motivo no deja guardar', await hasta(t.page, () => !document.getElementById('acErr').hidden));
   await t.page.keyboard.press('Escape');
 
-  console.log('4b. Encargada de bodega (Sofía)');
-  log('cambia a Sofía Herrera (Asistente, encargada de bodega)', await cambiar(t.page, 'asistente'));
+  console.log('4d. Bodega (Sofía)');
+  log('cambia a Sofía Herrera (Bodega)', await cambiar(t.page, 'asistente'));
   await t.page.click('.tab[data-vista="inventario"]');
-  log('Sofía ve sus tareas con botones (pedir, entregar, comprar, recibir)', await hasta(t.page, () => ['pedir', 'entregar', 'comprar', 'recibir'].every(a => document.querySelector(`#invContenido [data-accion="${a}"]`))));
+  log('Sofía ve sus tareas con botones (pedir, entregar, recibir) y ya no compra', await hasta(t.page, () => ['pedir', 'entregar', 'recibir'].every(a => document.querySelector(`#invContenido [data-accion="${a}"]`)) && !document.querySelector('#invContenido [data-accion="comprar"]')));
   const art = id => t.page.evaluate(i => JSON.parse(localStorage.getItem('__fb_datos')).articulos[i].cantidad, id);
   const chal0 = await art('ar-003');
   const solChal = await t.page.evaluate(() => Object.entries(JSON.parse(localStorage.getItem('__fb_datos')).solicitudes).find(([, s]) => s.estado === 'pendiente' && s.articuloId === 'ar-003')[0]);
@@ -225,16 +268,9 @@ try {
   await t.page.click('#invContenido [data-accion="pedir"][data-id="ar-016"]');
   await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
   log('pedir compra del café crea la compra por autorizar y quita la tarea', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return Object.values(d.compras).some(c => c.articuloId === 'ar-016' && c.estado === 'pedido') && !document.querySelector('#invContenido [data-accion="pedir"][data-id="ar-016"]'); }));
-  await t.page.click('#invContenido [data-accion="comprar"][data-id="co-002"]');
+  await t.page.click('#invContenido [data-accion="recibir"][data-id="co-002"]');
   await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
-  log('registrar la compra del mouse la deja comprada (falta recibir)', await hasta(t.page, () => { const c = JSON.parse(localStorage.getItem('__fb_datos')).compras['co-002']; return c.estado === 'comprado' && c.valorReal > 0 && c.proveedor; }) && !!(await t.page.$('#invContenido [data-accion="recibir"][data-id="co-002"]')));
-  // Foto de la factura al registrar una compra
-  await t.page.click('#invContenido [data-accion="comprar"][data-id="co-003"]');
-  await t.page.waitForSelector('#shAccion:not([hidden])');
-  await t.page.setInputFiles('#acFoto', path.join(RAIZ, 'iconos', 'control-512.png'));
-  log('la foto de la factura se achica y se ve antes de guardar', await hasta(t.page, () => !document.getElementById('acFotoVer').hidden && /^data:image\/jpeg/.test(document.getElementById('acFotoVer').src)));
-  await t.page.click('#acPrimario');
-  log('la compra guarda la foto de la factura', await hasta(t.page, () => /^data:image\/jpeg;base64,/.test(JSON.parse(localStorage.getItem('__fb_datos')).compras['co-003'].factura || '')));
+  log('Sofía recibe el mouse que compró Luis y le avisa a Ana', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.compras['co-002'].estado === 'recibido' && Object.values(d.avisos).some(a => a.para === 'jefe' && /Llegó tu compra/.test(a.titulo)); }));
   // Entrada y salida
   await t.page.click('#invSecciones [data-sec="movimientos"]');
   const guantes0 = await art('ar-004');
@@ -268,7 +304,7 @@ try {
   await t.page.screenshot({ path: path.join(CAPTURAS, '05-inventario-sofia.png'), fullPage: true });
   log('cambia de nuevo a Luis Rodríguez', await cambiar(t.page, 'compras'));
   await t.page.reload();
-  log('al recargar sigue con Luis, y la campana trae el aviso nuevo del café que pidió Sofía', await hasta(t.page, () => document.getElementById('avatarTop').classList.contains('av-compras') && document.getElementById('badgeAvisos').textContent === '1', null, 8000), await texto(t.page, '#badgeAvisos'));
+  log('al recargar sigue con Luis, y la campana trae el aviso nuevo de la llanta que autorizó la Jefe', await hasta(t.page, () => document.getElementById('avatarTop').classList.contains('av-compras') && document.getElementById('badgeAvisos').textContent === '1', null, 8000), await texto(t.page, '#badgeAvisos'));
 
   console.log('5. Reiniciar los datos (solo Jefe)');
   await t.page.click('#btnPersona'); await t.page.waitForSelector('#shPersona:not([hidden])');

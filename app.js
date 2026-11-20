@@ -220,10 +220,12 @@
     $('inicioSub').textContent = `${p.cargo} · ${p.rolTxt}`;
     const n = pendientes();
     const todas = [
-      { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: ['jefe', 'asistente'] },
+      { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: ['gerente', 'jefe', 'asistente'] },
       { mod: 'inventario', k: 'i-ent', n: n.inv.porEntregar, lbl: 'Pedidos de material por entregar', icono: 'entrega', tono: 'listo', roles: ['jefe', 'asistente'] },
-      { mod: 'inventario', k: 'i-aut', n: n.inv.porAutorizar, lbl: 'Compras por autorizar', icono: 'carrito', tono: 'org', roles: ['jefe', 'compras'] },
-      { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['jefe', 'compras'] },
+      { mod: 'inventario', k: 'i-aut', n: n.inv.porAutorizarMias, lbl: 'Compras que te toca autorizar', icono: 'carrito', tono: 'org', roles: ['gerente', 'jefe'] },
+      { mod: 'inventario', k: 'i-com', n: n.inv.porComprar, lbl: 'Compras autorizadas por hacer', icono: 'carrito', tono: 'listo', roles: ['compras'] },
+      { mod: 'inventario', k: 'i-cur', n: n.inv.enCurso, lbl: 'Compras en curso', icono: 'carrito', tono: 'listo', roles: ['gerente'] },
+      { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['gerente', 'jefe', 'compras'] },
       { mod: 'inventario', k: 'i-mis', n: n.inv.misPedidos, lbl: 'Tus pedidos de material en espera', icono: 'caja', tono: 'listo', roles: ['carros', 'conductor'] },
       { mod: 'vehiculos', k: 'i-nov', n: n.novedades, lbl: 'Novedades sin revisar', icono: 'carro', tono: 'org', roles: ['jefe', 'carros', 'conductor'] },
       { mod: 'vehiculos', k: 'i-doc', n: n.docsPorVencer, lbl: 'SOAT o revisión por vencer', icono: 'calendario', tono: 'peligro', roles: ['jefe', 'carros', 'conductor'] },

@@ -26,7 +26,7 @@
   font-family: var(--f-display); font-weight: 760; font-size: .82rem; letter-spacing: .02em; color: #fff; background: var(--av, var(--accent));
 }
 .avatar.grande { width: 46px; height: 46px; font-size: 1rem; }
-.av-jefe { --av: #0B7563; } .av-compras { --av: #8F5200; } .av-carros { --av: #1D5BA6; } .av-conductor { --av: #6B4FA0; } .av-asistente { --av: #A3364F; }
+.av-gerente { --av: #3A4A5C; } .av-jefe { --av: #0B7563; } .av-compras { --av: #8F5200; } .av-carros { --av: #1D5BA6; } .av-conductor { --av: #6B4FA0; } .av-asistente { --av: #A3364F; }
 
 /* Tarjetas de persona (entrada y cambio de persona) */
 .persona-card { flex-direction: row; align-items: center; gap: 12px; min-height: 72px; cursor: pointer; }
@@ -160,6 +160,7 @@
 
 /* ---------- Inventario completo ---------- */
 .dos-botones { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dos-botones[hidden] { display: none; }
 .dos-botones .btn { padding: 0 10px; }
 @media (max-width: 360px) { .dos-botones { grid-template-columns: 1fr; } }
 .acciones-inv { gap: 8px; }
@@ -180,6 +181,11 @@ button.card .card-title { text-align: left; }
 @media (min-width: 560px) { .resumen-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .resumen-grid .card { gap: 4px; }
 .rm-n { font-family: var(--f-display); font-weight: 760; font-size: 1.45rem; letter-spacing: -.02em; }
+.etapas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.etapa { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px; border-radius: 10px; background: var(--surface-2); overflow-wrap: anywhere; }
+.etapa .rm-n { color: var(--muted); }
+.etapa.con .rm-n { color: var(--accent-txt); }
+@media (max-width: 340px) { .etapas { grid-template-columns: 1fr; } }
 .barras { display: flex; flex-direction: column; gap: 10px; }
 .bf { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; font-size: .88rem; }
 .bf-n { font-weight: 650; min-width: 0; overflow-wrap: anywhere; }

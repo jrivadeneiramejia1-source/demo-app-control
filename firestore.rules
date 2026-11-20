@@ -1,10 +1,11 @@
 rules_version = '2';
 // Reglas de la DEMO (proyecto fir-app-control-d8494). Se pegan en Firebase > Firestore Database > Reglas (Rules) > Publicar (Publish).
-// Solo entran las cinco cuentas de prueba de personas.js. Cualquier otra cuenta, o alguien sin cuenta, no puede leer ni escribir nada.
+// Solo entran las seis cuentas de prueba de personas.js. Cualquier otra cuenta, o alguien sin cuenta, no puede leer ni escribir nada.
 // Cada persona solo puede hacer lo que le toca (lo cumple Firebase, no solo la pantalla):
-//   Jefe (Ana): carga y reinicia los datos de prueba, ve todo y autoriza las compras que pide Luis.
-//   Autoriza compras (Luis): autoriza o rechaza compras; nunca las que pidió él.
-//   Asistente (Sofía, encargada de bodega): entradas, salidas, conteos, entregas, registra y recibe compras.
+//   Gerente (Ricardo): ve todo; solo autoriza o rechaza las compras que pide la Jefe.
+//   Jefe (Ana): carga y reinicia los datos de prueba, autoriza las compras y puede hacer cualquier paso (menos autorizarse a sí misma).
+//   Compras (Luis): registra la compra autorizada (proveedor, valor, factura) y las compras hechas sin autorización.
+//   Bodega (Sofía): entradas, salidas, conteos, entregas y recibe lo comprado.
 //   Todos: piden material y piden compras a su nombre, y marcan sus avisos como leídos.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -12,6 +13,7 @@ service cloud.firestore {
     // Correo de cada cuenta de prueba -> su rol. Debe coincidir con personas.js.
     function cuentas() {
       return {
+        'ricardo.fuentes@example.com': 'gerente',
         'ana.perez@example.com': 'jefe',
         'luis.rodriguez@example.com': 'compras',
         'marta.gomez@example.com': 'carros',
@@ -26,6 +28,8 @@ service cloud.firestore {
     }
     function rol() { return cuentas()[request.auth.token.email]; }
     function esJefe() { return esDemo() && rol() == 'jefe'; }
+    function esGerente() { return esDemo() && rol() == 'gerente'; }
+    function esCompras() { return esDemo() && (rol() == 'compras' || rol() == 'jefe'); }
     function esBodega() { return esDemo() && (rol() == 'asistente' || rol() == 'jefe'); }
     function nuevo() { return request.resource.data; }
     function antes() { return resource.data; }
@@ -64,22 +68,24 @@ service cloud.firestore {
       allow delete: if esJefe();
     }
 
-    // Compras.
+    // Compras. Pasos: pedido -> autorizado (o rechazado) -> comprado -> recibido.
     match /compras/{id} {
       allow read: if esDemo();
-      // Pedir: a su propio nombre y en estado "pedido". La bodega también registra compras hechas sin autorización.
+      // Pedir: a su propio nombre y en estado "pedido". Compras también registra compras hechas sin autorización.
       allow create: if esJefe()
         || (esDemo() && nuevo().pideRol == rol() && nuevo().estado == 'pedido')
-        || (esBodega() && nuevo().estado == 'sin-autorizar');
-      allow update: if esJefe()
-        // Autorizar o rechazar: quien autoriza compras, y nunca un pedido suyo. No puede cambiar cantidad ni valor.
-        || (esDemo() && rol() == 'compras' && antes().estado == 'pedido'
-            && antes().get('pideRol', '') != 'compras'
+        || (esCompras() && nuevo().estado == 'sin-autorizar');
+      allow update: if
+        // La Jefe puede cambiar todo, menos sacar de "pedido" una compra que pidió ella (esa la decide el Gerente).
+        (esJefe() && !(antes().estado == 'pedido' && antes().get('pideRol', '') == 'jefe' && nuevo().estado != 'pedido'))
+        // El Gerente autoriza o rechaza solo lo que pidió la Jefe, sin cambiar cantidad ni valor.
+        || (esGerente() && antes().estado == 'pedido' && antes().get('pideRol', '') == 'jefe'
             && nuevo().estado in ['autorizado', 'rechazado']
             && soloCambia(['estado', 'autoriza', 'motivoRechazo', 'historial']))
-        // Comprar (autorizada -> comprada) y recibir (comprada -> recibida): la bodega, sin tocar lo autorizado.
-        || (esBodega() && antes().estado == 'autorizado' && nuevo().estado == 'comprado'
+        // Comprar (autorizada -> comprada): Compras, sin tocar lo autorizado.
+        || (esCompras() && antes().estado == 'autorizado' && nuevo().estado == 'comprado'
             && soloCambia(['estado', 'proveedor', 'valorReal', 'fechaCompra', 'factura', 'historial']))
+        // Recibir (comprada -> recibida): la bodega.
         || (esBodega() && antes().estado == 'comprado' && nuevo().estado == 'recibido'
             && soloCambia(['estado', 'entregadoA', 'historial']));
       allow delete: if esJefe();

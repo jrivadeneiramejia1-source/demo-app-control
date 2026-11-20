@@ -1,12 +1,14 @@
 /* inventario.js — Módulo Inventario de la demo: bodega de consumibles con las compras adentro.
    Partes: Qué hay que hacer · Existencias · Movimientos · Pedidos de material · Compras · Conteo · Resumen.
    Las tareas salen solas de los datos:
-     artículo agotado o bajo sin compra abierta  -> Pedir compra        (encargada de bodega)
-     pedido de material pendiente               -> Entregar            (encargada de bodega)
-     compra pedida                              -> Autorizar/Rechazar  (autoriza compras; si la pidió él, la Jefe)
-     compra autorizada                          -> Registrar compra    (encargada de bodega)
-     compra hecha                               -> Recibir             (encargada de bodega; si es de bodega, suma a la cantidad)
+     artículo agotado o bajo sin compra abierta  -> Pedir compra        (bodega)
+     pedido de material pendiente               -> Entregar            (bodega)
+     compra pedida                              -> Autorizar/Rechazar  (la Jefe; si la pidió la Jefe, el Gerente)
+     compra autorizada                          -> Registrar compra    (Compras: proveedor, valor y foto de la factura)
+     compra hecha                               -> Recibir             (bodega; si es de bodega, suma a la cantidad)
      compra sin autorización sin revisar        -> Revisar             (Jefe)
+   La Jefe puede hacer cualquier paso (menos autorizar lo que ella misma pidió).
+   El Gerente ve todo a detalle (resumen, compras, existencias, pedidos) sin lo operativo, y solo autoriza lo que pide la Jefe.
    Cada acción deja un aviso en la campana de quien sigue y, si tiene los avisos activados, una notificación en su teléfono.
    Usa las ayudas que app.js publica en window.App (se leen al usarlas, porque este archivo carga antes). */
 (function () {
@@ -15,6 +17,8 @@
   const $ = id => document.getElementById(id);
   const ABIERTA = ['pedido', 'autorizado', 'comprado'];
   const SECCIONES = [['hacer', 'Qué hay que hacer'], ['existencias', 'Existencias'], ['movimientos', 'Movimientos'], ['solicitudes', 'Pedidos de material'], ['compras', 'Compras'], ['conteo', 'Conteo'], ['resumen', 'Resumen']];
+  // El gerente ve todo a detalle pero sin lo del día a día (lista de tareas, movimientos sueltos, conteo).
+  const SECCIONES_GERENTE = [['resumen', 'Resumen'], ['compras', 'Compras'], ['existencias', 'Existencias'], ['solicitudes', 'Pedidos de material']];
   const PROYECTOS = ['Proyecto Costa Norte', 'Proyecto Ruta Alta', 'Oficina'];
   const CATEGORIAS = ['EPP', 'Eléctricos', 'Cómputo', 'Accesorios', 'Papelería', 'Aseo', 'Cafetería', 'Refrigerios', 'Herramientas', 'Otro'];
   const UNIDADES = ['unidades', 'pares', 'cajas', 'resmas', 'rollos', 'galones', 'paquetes'];
@@ -28,7 +32,7 @@
   const MOTIVO_MOV = { inicial: 'Cantidad inicial', compra: 'Compra recibida', entrega: 'Entrega', devolucion: 'Devolución', conteo: 'Ajuste por conteo', dano: 'Daño o pérdida' };
   let seccion = 'hacer';
   const sub = { movimientos: 'todos', solicitudes: 'pendiente', compras: 'curso' };
-  let guardando = false, accion = null, pushPendientes = [];
+  let guardando = false, accion = null, pushPendientes = [], rolPintado = '';
 
   /* ---------- datos derivados ---------- */
   const num = v => Number(v) || 0;
@@ -42,10 +46,15 @@
   const persona = () => A().S.persona;
   const nombreRol = rol => { const p = window.DEMO.porRol(rol); return p ? p.corto : rol; };
   const perm = () => A().permiso('inventario');
-  const esBodega = () => perm() === 'bodega';
-  const autorizadorDe = c => (c.pideRol === 'compras' ? 'jefe' : 'compras');   // nadie autoriza su propio pedido
-  const puedoHacer = rol => (rol === 'asistente' && esBodega()) || (rol === 'compras' && perm() === 'autoriza') || (rol === 'jefe' && persona() && persona().rol === 'jefe');
-  const esMia = t => puedoHacer(t.rol);
+  const esJefe = () => perm() === 'jefe';
+  const esGerente = () => perm() === 'gerente';
+  const esBodega = () => perm() === 'bodega' || esJefe();       // la Jefe también puede mover la bodega
+  const secciones = () => (esGerente() ? SECCIONES_GERENTE : SECCIONES);
+  const autorizadorDe = c => (c.pideRol === 'jefe' ? 'gerente' : 'jefe');   // nadie autoriza su propio pedido
+  const miRol = () => (persona() ? persona().rol : '');
+  // Quién puede hacer una tarea: la persona de ese rol, o la Jefe (que puede hacer todo menos lo del Gerente).
+  const puedoHacer = rol => miRol() === rol || (esJefe() && rol !== 'gerente');
+  const esMia = t => miRol() === t.rol;
   const ahora = () => new Date().toISOString();
   const delMes = f => String(f || '').slice(0, 7) === A().hoyISO().slice(0, 7);
   const texto = (...partes) => partes.filter(Boolean).join(' ').toLowerCase();
@@ -64,7 +73,7 @@
     d.compras.forEach(c => {
       const a = c.articuloId ? artPorId(c.articuloId) : null;
       if (c.estado === 'pedido') out.push({ tipo: 'autorizar', rol: autorizadorDe(c), urg: a && estadoArt(a) === 'agotado' ? 0 : 2, compra: c, art: a });
-      else if (c.estado === 'autorizado') out.push({ tipo: 'comprar', rol: 'asistente', urg: 3, compra: c, art: a });
+      else if (c.estado === 'autorizado') out.push({ tipo: 'comprar', rol: 'compras', urg: 3, compra: c, art: a });
       else if (c.estado === 'comprado') out.push({ tipo: 'recibir', rol: 'asistente', urg: 3, compra: c, art: a });
       else if (c.estado === 'sin-autorizar' && !c.revisada) out.push({ tipo: 'revisar', rol: 'jefe', urg: 4, compra: c, art: a });
     });
@@ -78,6 +87,9 @@
       faltan: articulos().filter(a => estadoArt(a) !== 'bien').length,
       porEntregar: d.solicitudes.filter(s => s.estado === 'pendiente').length,
       porAutorizar: d.compras.filter(c => c.estado === 'pedido').length,
+      porAutorizarMias: p ? d.compras.filter(c => c.estado === 'pedido' && autorizadorDe(c) === p.rol).length : 0,
+      porComprar: d.compras.filter(c => c.estado === 'autorizado').length,
+      enCurso: d.compras.filter(c => ABIERTA.includes(c.estado)).length,
       sinAutorizar: d.compras.filter(c => c.estado === 'sin-autorizar' && !c.revisada).length,
       misPedidos: p ? d.solicitudes.filter(s => s.estado === 'pendiente' && s.pide === p.nombre).length + d.compras.filter(c => c.pide === p.nombre && ABIERTA.includes(c.estado)).length : 0,
       mias: tareas().filter(esMia).length
@@ -88,9 +100,15 @@
   function pintar() {
     const App = A(), S = App.S;
     if (!S.persona) return;
+    // Al cambiar de persona se vuelve a la primera parte (cada rol ve partes distintas).
+    if (rolPintado !== S.persona.rol) { rolPintado = S.persona.rol; seccion = secciones()[0][0]; }
     const f = S.filtro.inventario;
     if (f === 'agotado' || f === 'bajo') seccion = 'existencias';
+    else if (esGerente() && f === 'entregar') { seccion = 'solicitudes'; sub.solicitudes = 'pendiente'; }
+    else if (esGerente() && f === 'compras') { seccion = 'compras'; sub.compras = 'curso'; }
     else if (f === 'entregar' || f === 'compras') seccion = 'hacer';
+    if (!secciones().some(x => x[0] === seccion)) seccion = secciones()[0][0];
+    $('btnPedirMaterial').parentElement.hidden = esGerente();
     const arts = articulos();
     App.tablero('inventario', [
       { k: 'v-ago', n: arts.filter(a => estadoArt(a) === 'agotado').length, lbl: 'Agotados', icono: 'aviso', tono: 'peligro', filtro: 'agotado' },
@@ -99,7 +117,7 @@
       { k: 'v-com', n: S.datos.compras.filter(c => ABIERTA.includes(c.estado)).length, lbl: 'Compras en curso', icono: 'carrito', tono: 'org', filtro: 'compras' }
     ]);
     const mias = resumen().mias;
-    $('invSecciones').innerHTML = SECCIONES.map(([k, n]) => `<button type="button" class="chip" data-sec="${k}" aria-pressed="${seccion === k}">${esH(n)}${k === 'hacer' && mias ? ` <span class="n">${mias}</span>` : ''}</button>`).join('');
+    $('invSecciones').innerHTML = secciones().map(([k, n]) => `<button type="button" class="chip" data-sec="${k}" aria-pressed="${seccion === k}">${esH(n)}${k === 'hacer' && mias ? ` <span class="n">${mias}</span>` : ''}</button>`).join('');
     const q = $('qInventario');
     q.hidden = !['existencias', 'movimientos', 'compras'].includes(seccion);
     q.placeholder = seccion === 'movimientos' ? 'Buscar artículo, persona o proyecto' : seccion === 'compras' ? 'Buscar compra, proveedor o persona' : 'Buscar artículo, categoría o ubicación';
@@ -122,23 +140,25 @@
     const mias = lista.filter(esMia), otras = lista.filter(t => !esMia(t));
     const filtroTxt = f === 'entregar' ? ' (solo pedidos por entregar)' : f === 'compras' ? ' (solo compras en curso)' : '';
     let h = '';
-    if (persona().rol === 'jefe') {
+    if (esJefe()) {
+      // La Jefe ve todo agrupado por quién tiene que hacerlo, y puede hacer cualquier paso ella misma.
       const grupos = {};
       lista.forEach(t => { (grupos[t.rol] = grupos[t.rol] || []).push(t); });
-      const orden = ['jefe', 'asistente', 'compras'];
+      const orden = ['jefe', 'compras', 'asistente', 'gerente'];
+      if (Object.keys(grupos).some(r => r !== 'jefe' && r !== 'gerente')) h += '<p class="meta">Como Jefe puedes hacer cualquier paso aunque le toque a otra persona.</p>';
       h += Object.keys(grupos).sort((a, b) => orden.indexOf(a) - orden.indexOf(b)).map(rol =>
         `<div class="section-label">${rol === 'jefe' ? 'Te toca a ti' : 'Le toca a ' + esH(nombreRol(rol))} (${grupos[rol].length})${esH(filtroTxt)}</div>
-         <div class="list">${grupos[rol].map(t => tarjeta(t, rol === 'jefe')).join('')}</div>`).join('');
+         <div class="list">${grupos[rol].map(tarjeta).join('')}</div>`).join('');
       return h || UI.vacio('checkCirculo', 'Nada pendiente', 'La bodega y las compras están al día.');
     }
     h += `<div class="section-label">Te toca a ti (${mias.length})${esH(filtroTxt)}</div>`;
-    h += mias.length ? `<div class="list">${mias.map(t => tarjeta(t, true)).join('')}</div>` : UI.vacio('checkCirculo', 'Nada pendiente para ti', 'Cuando algo te toque, aparece aquí con su botón y te llega un aviso.');
-    if (otras.length) h += `<div class="section-label">Le toca a otras personas (${otras.length})</div><div class="list">${otras.map(t => tarjeta(t, false)).join('')}</div>`;
+    h += mias.length ? `<div class="list">${mias.map(tarjeta).join('')}</div>` : UI.vacio('checkCirculo', 'Nada pendiente para ti', 'Cuando algo te toque, aparece aquí con su botón y te llega un aviso.');
+    if (otras.length) h += `<div class="section-label">Le toca a otras personas (${otras.length})</div><div class="list">${otras.map(tarjeta).join('')}</div>`;
     return h;
   }
 
-  // Una tarea: qué pasa, con qué datos, y el botón para hacerla (solo si le toca a la persona).
-  function tarjeta(t, mia) {
+  // Una tarea: qué pasa, con qué datos, y el botón para hacerla (solo si la persona puede hacerla).
+  function tarjeta(t) {
     const App = A(), pill = App.pill, cop = App.cop;
     const a = t.art, c = t.compra, s = t.sol;
     let icono, tono, titulo, detalle = [], extra = '', botones = '';
@@ -168,7 +188,7 @@
       titulo = `Autorizar compra: ${a ? a.nombre : c.que}`;
       detalle.push(cantTxt(c.cantidad, c.unidad), 'aprox. ' + cop(c.valorAprox), 'pidió ' + c.pide, c.paraQue);
       if (a && estadoArt(a) !== 'bien') extra = pill(estadoArt(a) === 'agotado' ? 'En bodega: agotado' : `En bodega: quedan ${cantTxt(a.cantidad, a.unidad)}`, EST_ART[estadoArt(a)][1]);
-      if (c.pideRol === 'compras') extra += pill('La pidió quien autoriza: la autoriza la Jefe', 's-pend', 'info');
+      if (c.pideRol === 'jefe') extra += pill('La pidió la Jefe: la autoriza el Gerente', 's-pend', 'info');
       botones = boton('autorizar', 'Autorizar', 'check', ` data-id="${esH(c.id)}"`, 'primary small') + boton('rechazar', 'Rechazar', '', ` data-id="${esH(c.id)}"`, 'ghost small');
     } else if (t.tipo === 'comprar') {
       icono = 'carrito'; tono = 'listo';
@@ -189,7 +209,9 @@
       botones = boton('revisada', 'Marcar como revisada', 'check', ` data-id="${esH(c.id)}"`, 'small');
     }
     const detalleBtn = c ? boton('vercompra', 'Ver detalle', '', ` data-id="${esH(c.id)}"`, 'ghost small') : '';
-    const pie = mia ? botones + detalleBtn : App.pill('Le toca a ' + nombreRol(t.rol), 'none', 'persona') + detalleBtn;
+    // Nadie autoriza ni rechaza lo que pidió.
+    const puede = puedoHacer(t.rol) && !(t.tipo === 'autorizar' && c && c.pide === persona().nombre);
+    const pie = puede ? botones + detalleBtn : App.pill('Le toca a ' + nombreRol(t.rol), 'none', 'persona') + detalleBtn;
     return `<div class="card tarea st-${tono}">
       <div class="tarea-cab"><span class="ico t-${tono}" aria-hidden="true">${window.ico(icono)}</span>
         <div class="tarea-t"><b>${esH(titulo)}</b><span class="meta">${esH(detalle.filter(Boolean).join(' · '))}</span></div></div>
@@ -273,11 +295,11 @@
     </div>`;
   }
   function htmlSolicitudes() {
-    const p = persona(), todas = D().solicitudes.filter(s => esBodega() || p.rol === 'jefe' || s.pide === p.nombre).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    const p = persona(), todas = D().solicitudes.filter(s => esBodega() || esGerente() || s.pide === p.nombre).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
     const cuenta = e => todas.filter(s => s.estado === e).length;
     const vis = todas.filter(s => sub.solicitudes === 'todos' || s.estado === sub.solicitudes);
     let h = subChips('solicitudes', [['pendiente', 'En espera', cuenta('pendiente')], ['entregada', 'Entregados', cuenta('entregada')], ['rechazada', 'No entregados', cuenta('rechazada')], ['todos', 'Todos', todas.length]]);
-    if (!esBodega() && p.rol !== 'jefe') h = '<p class="meta">Aquí ves solo tus pedidos.</p>' + h;
+    if (!esBodega() && !esGerente()) h = '<p class="meta">Aquí ves solo tus pedidos.</p>' + h;
     return h + (vis.length ? `<div class="list">${vis.map(tarjetaSolicitud).join('')}</div>` : UI.vacio('caja', 'No hay pedidos aquí', 'Cambia el filtro de arriba o pide material.'));
   }
 
@@ -298,7 +320,7 @@
     const grupo = c => (ABIERTA.includes(c.estado) ? 'curso' : c.estado === 'recibido' ? 'recibidas' : c.estado === 'rechazado' ? 'rechazadas' : 'sin');
     const cuenta = g => todas.filter(c => grupo(c) === g).length;
     const vis = todas.filter(c => (sub.compras === 'todas' || grupo(c) === sub.compras) && (!q || texto(c.que, c.proveedor, c.pide, c.categoria, c.paraQue).includes(q)));
-    let h = barraBotones(esBodega() ? [boton('sinaut', 'Registrar compra hecha sin autorización', 'aviso')] : []);
+    let h = barraBotones(puedoHacer('compras') ? [boton('sinaut', 'Registrar compra hecha sin autorización', 'aviso')] : []);
     h += subChips('compras', [['curso', 'En curso', cuenta('curso')], ['recibidas', 'Recibidas', cuenta('recibidas')], ['rechazadas', 'Rechazadas', cuenta('rechazadas')], ['sin', 'Sin autorizar', cuenta('sin')], ['todas', 'Todas', todas.length]]);
     return h + (vis.length ? `<div class="list">${vis.map(tarjetaCompra).join('')}</div>` : UI.vacio('carrito', 'No hay compras aquí', 'Cambia el filtro o toca «Pedir una compra».'));
   }
@@ -334,7 +356,19 @@
     const salidas = d.movimientos.filter(m => m.tipo === 'salida' && delMes(m.fecha));
     const costoDe = m => num(m.cantidad) * num((artPorId(m.articuloId) || {}).costo);
     const catDe = m => (artPorId(m.articuloId) || {}).categoria;
-    let h = barraBotones(perm() !== 'pide' ? [boton('excel', 'Descargar Excel', 'excel', '', 'primary')] : []);
+    let h = '';
+    if (esGerente()) {
+      // Lo único que el Gerente tiene que hacer: autorizar las compras que pide la Jefe.
+      const mias = tareas().filter(esMia);
+      h += `<div class="section-label">Te toca a ti (${mias.length})</div>`;
+      h += mias.length ? `<div class="list">${mias.map(tarjeta).join('')}</div>` : '<p class="meta">Nada por autorizar. Las compras que pida la Jefe te llegan aquí y al teléfono.</p>';
+    }
+    h += barraBotones(perm() !== 'pide' ? [boton('excel', 'Descargar Excel', 'excel', '', 'primary')] : []);
+    // Cómo van las compras: cada paso con quién lo tiene.
+    const etapa = (estado, lbl, quien) => { const n = d.compras.filter(c => c.estado === estado).length; return `<div class="etapa${n ? ' con' : ''}"><span class="rm-n">${n}</span><b>${esH(lbl)}</b><span class="meta">${esH(quien)}</span></div>`; };
+    h += `<div class="section-label">Cómo van las compras</div><div class="card etapas">
+      ${etapa('pedido', 'Por autorizar', 'Jefe o Gerente')}${etapa('autorizado', 'Falta comprar', nombreRol('compras'))}${etapa('comprado', 'Falta recibir', nombreRol('asistente'))}
+    </div>`;
     h += `<div class="resumen-grid">
       <div class="card"><span class="meta">Valor de lo que hay en bodega</span><span class="rm-n valor">${esH(cop(valorBodega))}</span><span class="meta">${articulos().length} artículos</span></div>
       <div class="card"><span class="meta">Comprado este mes (${comprasMes.length})</span><span class="rm-n valor">${esH(cop(totalMes))}</span>${sinAutMes ? App.pill('Sin autorizar: ' + cop(sinAutMes), 's-peligro', 'aviso') : App.pill('Todo autorizado', 's-disco', 'check')}</div>
@@ -450,13 +484,14 @@
     const a = c.articuloId ? artPorId(c.articuloId) : null;
     abrirAccion({
       titulo: 'Autorizar compra', sub: `${c.que}: ${cantTxt(c.cantidad, c.unidad)}, aprox. ${A().cop(c.valorAprox)}. Pidió ${c.pide}: ${c.paraQue}.${a ? ` En bodega hay ${cantTxt(a.cantidad, a.unidad)}.` : ''}`,
-      primario: 'Autorizar', icono: 'check', secundario: 'Rechazar', listo: `Listo: compra autorizada. Le llegó el aviso a ${nombreRol('asistente')} para comprarla.`,
+      primario: 'Autorizar', icono: 'check', secundario: 'Rechazar', listo: `Listo: compra autorizada. Le llegó el aviso a ${nombreRol('compras')} para comprarla.`,
       ops: () => {
         if (c.pide === persona().nombre) return fallar('No puedes autorizar una compra que pediste tú.');
+        if (!puedoHacer(autorizadorDe(c))) return fallar(`Esta compra la autoriza ${nombreRol(autorizadorDe(c))}.`);
         return [
           ['mezclar', 'compras', c.id, { estado: 'autorizado', autoriza: persona().nombre, historial: paso(c, 'Autorizó la compra') }],
-          aviso('asistente', 'Compra autorizada: hay que comprar', `${persona().nombre} autorizó comprar ${cantTxt(c.cantidad, c.unidad)} de ${c.que}.`),
-          c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Te autorizaron la compra', `${persona().nombre} autorizó tu compra de ${c.que}.`) : null
+          aviso('compras', 'Compra autorizada: hay que comprar', `${persona().nombre} autorizó comprar ${cantTxt(c.cantidad, c.unidad)} de ${c.que}.`),
+          c.pideRol !== 'compras' ? aviso(c.pideRol, 'Te autorizaron la compra', `${persona().nombre} autorizó tu compra de ${c.que}.`) : null
         ];
       },
       alSecundario: () => rechazar(c)
@@ -470,6 +505,7 @@
       ops: () => {
         if (!valor('acMotivo')) return fallar('Escribe el motivo.', 'acMotivo');
         if (c.pide === persona().nombre) return fallar('No puedes decidir sobre una compra que pediste tú.');
+        if (!puedoHacer(autorizadorDe(c))) return fallar(`Esta compra la decide ${nombreRol(autorizadorDe(c))}.`);
         return [['mezclar', 'compras', c.id, { estado: 'rechazado', motivoRechazo: valor('acMotivo'), autoriza: persona().nombre, historial: paso(c, `Rechazó la compra: ${valor('acMotivo')}`) }],
           aviso(c.pideRol, 'Rechazaron tu compra', `${c.que}: ${valor('acMotivo')}.`)];
       }
@@ -500,13 +536,13 @@
     fotoFactura = '';
     abrirAccion({
       titulo: sinAutorizacion ? 'Registrar compra hecha sin autorización' : 'Registrar compra',
-      sub: sinAutorizacion ? 'Para que quede el registro: la Jefe y quien autoriza reciben el aviso y la ven en rojo.' : `${c.que}: ${cantTxt(c.cantidad, c.unidad)}, autorizada por ${c.autoriza || 'quien autoriza'}.`,
+      sub: sinAutorizacion ? 'Para que quede el registro: la Jefe recibe el aviso y la compra se ve en rojo en el resumen.' : `${c.que}: ${cantTxt(c.cantidad, c.unidad)}, autorizada por ${c.autoriza || 'la Jefe'}.`,
       campos: (sinAutorizacion ? campoTxt('acQue', 'Qué se compró', '', 'Ej: garrafones de agua', 100) + `<div class="fields cols">${campoNum('acCant', 'Cantidad', 1, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), 'unidades')}</div>` + campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), 'Otro') + campoTxt('acPara', 'Para qué', '', 'Ej: para la reunión de hoy', 140) + campoTxt('acQuien', 'Quién compró', '', 'Nombre', 60) : '') +
         campoTxt('acProv', 'Proveedor', (a && a.proveedor) || (c && c.proveedor) || '', 'Dónde se compró') +
         campoNum('acValor', 'Valor pagado (pesos)', c ? c.valorAprox : '', 0, null, c ? `Autorizado: aprox. ${A().cop(c.valorAprox)}.` : '') +
         `<div class="field"><span class="lbl">Foto de la factura</span><label class="btn"><span data-ico="camara"></span><span id="acFotoTxt">Tomar o escoger foto</span><input id="acFoto" type="file" accept="image/*" capture="environment" hidden></label><img id="acFotoVer" class="factura-mini" alt="Foto de la factura" hidden></div>`,
       primario: 'Guardar compra', icono: 'check',
-      listo: sinAutorizacion ? 'Listo: compra registrada. Quedó marcada sin autorización.' : (a ? 'Listo: compra registrada. Cuando llegue, recíbela en bodega.' : 'Listo: compra registrada. Cuando llegue, márcala como recibida.'),
+      listo: sinAutorizacion ? 'Listo: compra registrada. Quedó marcada sin autorización.' : `Listo: compra registrada. Le llegó el aviso a ${nombreRol('asistente')} para recibirla.`,
       ops: () => {
         const v = entero('acValor');
         if (sinAutorizacion && !valor('acQue')) return fallar('Escribe qué se compró.', 'acQue');
@@ -522,6 +558,7 @@
             aviso('compras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} (${A().cop(v)}) sin autorización.`)];
         }
         return [['mezclar', 'compras', c.id, { estado: 'comprado', proveedor: valor('acProv'), valorReal: v, fechaCompra: A().hoyISO(), factura: fotoFactura || c.factura || '', historial: paso(c, `Compró en ${valor('acProv')} por ${A().cop(v)}`) }],
+          aviso('asistente', 'Compra en camino: hay que recibirla', `${persona().nombre} compró ${cantTxt(c.cantidad, c.unidad)} de ${c.que} en ${valor('acProv')}. ${a ? 'Recíbela en bodega cuando llegue.' : `Cuando llegue, entrégala a ${c.pide}.`}`),
           c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Ya se compró', `Se compró ${c.que} en ${valor('acProv')}.`) : null];
       }
     });
@@ -575,9 +612,9 @@
     const App = A(), a = c.articuloId ? artPorId(c.articuloId) : null, e = EST_CO[c.estado] || ['Sin estado', 'none'];
     const botones = [];
     if (c.estado === 'pedido' && puedoHacer(autorizadorDe(c)) && c.pide !== persona().nombre) botones.push(boton('autorizar', 'Autorizar', 'check', ` data-id="${esH(c.id)}"`, 'primary small'), boton('rechazar', 'Rechazar', '', ` data-id="${esH(c.id)}"`, 'ghost small'));
-    if (c.estado === 'autorizado' && esBodega()) botones.push(boton('comprar', 'Registrar compra', 'carrito', ` data-id="${esH(c.id)}"`, 'primary small'));
-    if (c.estado === 'comprado' && esBodega()) botones.push(boton('recibir', a ? 'Recibir en bodega' : 'Marcar como recibida', 'caja', ` data-id="${esH(c.id)}"`, 'primary small'));
-    if (c.estado === 'sin-autorizar' && !c.revisada && persona().rol === 'jefe') botones.push(boton('revisada', 'Marcar como revisada', 'check', ` data-id="${esH(c.id)}"`, 'small'));
+    if (c.estado === 'autorizado' && puedoHacer('compras')) botones.push(boton('comprar', 'Registrar compra', 'carrito', ` data-id="${esH(c.id)}"`, 'primary small'));
+    if (c.estado === 'comprado' && puedoHacer('asistente')) botones.push(boton('recibir', a ? 'Recibir en bodega' : 'Marcar como recibida', 'caja', ` data-id="${esH(c.id)}"`, 'primary small'));
+    if (c.estado === 'sin-autorizar' && !c.revisada && esJefe()) botones.push(boton('revisada', 'Marcar como revisada', 'check', ` data-id="${esH(c.id)}"`, 'small'));
     const hist = historial(c).sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)));
     abrirAccion({
       titulo: c.que, sub: `${cantTxt(c.cantidad, c.unidad)} · ${c.categoria}`,
@@ -712,7 +749,7 @@
   function verArticulo(a) {
     const App = A(), e = estadoArt(a), movs = D().movimientos.filter(m => m.articuloId === a.id).sort((x, y) => String(y.fecha).localeCompare(String(x.fecha))).slice(0, 8);
     const abierta = compraAbierta(a.id);
-    const botones = esBodega()
+    const botones = esGerente() ? [] : esBodega()
       ? [boton('entrada', 'Entrada', 'importar', ` data-id="${esH(a.id)}"`), boton('salida', 'Salida', 'entrega', ` data-id="${esH(a.id)}"`), boton('editart', 'Editar', 'lapiz', ` data-id="${esH(a.id)}"`)].concat(abierta ? [] : [boton('pedir', 'Pedir compra', 'carrito', ` data-id="${esH(a.id)}"`)])
       : [boton('pedirmat', 'Pedir de este artículo', 'mas', ` data-id="${esH(a.id)}"`, 'primary small')];
     abrirAccion({
@@ -720,9 +757,9 @@
       campos: `<div class="row">${App.pill(EST_ART[e][0], EST_ART[e][1])}${abierta ? App.pill('Compra en curso: ' + EST_CO[abierta.estado][0].toLowerCase(), 's-listo', 'carrito') : ''}</div>
         <dl class="datos"><dt>Hay</dt><dd><b>${esH(cantTxt(a.cantidad, a.unidad))}</b></dd><dt>Mínimo y máximo</dt><dd>${esH(num(a.minimo))} y ${esH(num(a.maximo))}</dd>
           <dt>Precio aprox.</dt><dd>${esH(App.cop(a.costo))} por ${esH(SINGULAR[a.unidad] || 'unidad')}</dd><dt>Proveedor</dt><dd>${esH(a.proveedor || 'Sin dato')}</dd></dl>
-        <div class="tarea-pie">${botones.join('')}</div>
-        <div class="section-label">Últimos movimientos</div>
-        ${movs.length ? `<ol class="linea">${movs.map(m => `<li><b>${esH((m.tipo === 'entrada' ? '+' : m.tipo === 'salida' ? '-' : (num(m.cantidad) > 0 ? '+' : '')) + Math.abs(num(m.cantidad)) + ' · ' + (MOTIVO_MOV[m.motivo] || m.motivo))}</b><span class="meta">${esH([m.persona, m.proyecto, 'quedan ' + num(m.saldo), m.por, App.hace(m.fecha)].filter(Boolean).join(' · '))}</span></li>`).join('')}</ol>` : '<p class="meta">Sin movimientos.</p>'}`
+        ${botones.length ? `<div class="tarea-pie">${botones.join('')}</div>` : ''}
+        ${esGerente() ? '' : `        <div class="section-label">Últimos movimientos</div>
+        ${movs.length ? `<ol class="linea">${movs.map(m => `<li><b>${esH((m.tipo === 'entrada' ? '+' : m.tipo === 'salida' ? '-' : (num(m.cantidad) > 0 ? '+' : '')) + Math.abs(num(m.cantidad)) + ' · ' + (MOTIVO_MOV[m.motivo] || m.motivo))}</b><span class="meta">${esH([m.persona, m.proyecto, 'quedan ' + num(m.saldo), m.por, App.hace(m.fecha)].filter(Boolean).join(' · '))}</span></li>`).join('')}</ol>` : '<p class="meta">Sin movimientos.</p>'}`}`
     });
   }
   function conteo() {
