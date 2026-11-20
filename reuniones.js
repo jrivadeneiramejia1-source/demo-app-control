@@ -330,22 +330,49 @@
       faltan: Array.isArray(o.faltan) ? o.faltan.map(f => txt(f, 30)).filter(Boolean).slice(0, 6) : [], motivo: txt(o.motivo, 200), resumen: txt(o.resumen, 400)
     };
   }
-  /** Le pide al Worker agente-demo que lea el correo. Si no está conectado o falla, usa la respuesta de respaldo. */
-  async function leerConAgente(c) {
-    const cfg = window.AGENTE_DEMO || {};
+  /** Una llamada al Worker agente-demo. Dice si salió bien o si vale la pena volver a intentar (y cuánto esperar). */
+  async function llamarAgente(url, c, activas, intento) {
+    try {
+      const token = await window.nube.token();
+      const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 45000);
+      const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ correo: c.texto, asunto: c.asunto, hoy: hoy(), reuniones: activas }), signal: ctl.signal });
+      clearTimeout(t);
+      const j = await r.json().catch(() => null);
+      if (r.ok && j && j.ok && j.reunion) return { ok: true, datos: limpiar(j.reunion) };
+      const motivo = `el agente respondió ${r.status}${j && (j.detalle || j.error) ? ': ' + String(j.detalle || j.error).slice(0, 200) : ''}`;
+      // Sesión, permiso, clave o correo malo: no se arregla esperando.
+      if ([400, 401, 403, 413].includes(r.status) || (j && ['sesion', 'permiso', 'sin-clave', 'origen', 'correo', 'json', 'grande'].includes(j.error))) return { ok: false, reintentar: false, motivo };
+      // Cupo por minuto (de Gemini o del agente): se espera más.
+      if (r.status === 429) return { ok: false, reintentar: true, espera: 20000, motivo };
+      // Gemini saturado (503), lento o error del servidor: se vuelve a intentar.
+      return { ok: false, reintentar: true, espera: Math.min(15000, 3000 + intento * 2000), motivo };
+    } catch (e) {
+      const motivo = e && e.name === 'AbortError' ? 'el agente tardó más de 45 segundos' : 'no se pudo hablar con el agente (conexión o permiso del navegador)';
+      return { ok: false, reintentar: true, espera: Math.min(15000, 3000 + intento * 2000), motivo };
+    }
+  }
+  const REINTENTAR_HASTA = 180000;   // 3 minutos: para la presentación es mejor esperar que fallar
+  const dormir = ms => new Promise(r => setTimeout(r, ms));
+  /** Le pide al agente que lea el correo. Si Gemini está saturado, vuelve a intentar solo (hasta 3 minutos)
+      mientras la pantalla muestra en qué va. avance(texto) cambia ese texto; vigente() dice si todavía hay que seguir.
+      Si no se pudo, usa la respuesta de respaldo (en los correos de ejemplo) o dice el motivo. */
+  async function leerConAgente(c, avance, vigente) {
+    const cfg = window.AGENTE_DEMO || {}, sigue = vigente || (() => true), aviso = avance || (() => {});
     const activas = D().reuniones.filter(r => ACTIVA.includes(r.estado)).map(r => ({ id: r.id, comunidad: r.comunidad, fecha: r.fecha, hora: r.hora, lugar: r.lugar, estado: r.estado }));
     let motivo = 'el agente no está conectado';
     if (cfg.url) {
-      try {
-        const token = await window.nube.token();
-        const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 30000);
-        const r = await fetch(cfg.url, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token }, body: JSON.stringify({ correo: c.texto, asunto: c.asunto, hoy: hoy(), reuniones: activas }), signal: ctl.signal });
-        clearTimeout(t);
-        const j = await r.json().catch(() => null);
-        if (r.ok && j && j.ok && j.reunion) return { datos: limpiar(j.reunion), fuente: 'gemini' };
-        // Se guarda por qué falló, para mostrarlo (ayuda a saber qué arreglar en Cloudflare o en Gemini).
-        motivo = `el agente respondió ${r.status}${j && (j.detalle || j.error) ? ': ' + String(j.detalle || j.error).slice(0, 200) : ''}`;
-      } catch (e) { motivo = e && e.name === 'AbortError' ? 'el agente tardó más de 30 segundos' : 'no se pudo hablar con el agente (conexión o permiso del navegador)'; }
+      const t0 = Date.now();
+      for (let intento = 1; sigue(); intento++) {
+        if (intento > 1) aviso(`Intento ${intento}…`);
+        const r = await llamarAgente(cfg.url, c, activas, intento);
+        if (r.ok) return { datos: r.datos, fuente: 'gemini' };
+        motivo = r.motivo;
+        if (!r.reintentar || Date.now() - t0 + r.espera > REINTENTAR_HASTA) break;
+        for (let falta = Math.round(r.espera / 1000); falta > 0 && sigue(); falta--) {
+          aviso(`Gemini está ocupado (intento ${intento}). Vuelvo a intentar en ${falta} s…`);
+          await dormir(1000);
+        }
+      }
     }
     // Los correos de la bandeja no tienen respuesta de respaldo: se avisa y se puede intentar otra vez.
     return c.respaldo ? { datos: limpiar(c.respaldo), fuente: 'respaldo', motivo } : { datos: null, fuente: 'error', motivo };
@@ -365,13 +392,18 @@
       secundario: c.respaldo ? 'No esperar: usar el respaldo' : 'Dejar de esperar', alSecundario: () => noEsperar() });
     $('reSecundario').hidden = true;
     const leyendo = accion, t0 = Date.now();
-    const reloj = setInterval(() => {
+    let estado = '';
+    const pintarSeg = () => {
       const seg = Math.round((Date.now() - t0) / 1000), el = $('reSeg');
-      if (!el || accion !== leyendo) { clearInterval(reloj); return; }
-      el.textContent = seg < 8 ? `Leyendo… ${seg} s` : `Leyendo… ${seg} s. Gemini gratis a veces tarda${c.respaldo ? '; si quieres, sigue con la respuesta de respaldo' : ''}.`;
+      if (!el || accion !== leyendo) return false;
+      el.textContent = estado ? `Leyendo… ${seg} s. ${estado}` : seg < 8 ? `Leyendo… ${seg} s` : `Leyendo… ${seg} s. Gemini gratis a veces tarda${c.respaldo ? '; si quieres, sigue con la respuesta de respaldo' : ''}.`;
       if (seg >= 5) $('reSecundario').hidden = false;
-    }, 1000);
-    const { datos: d, fuente, motivo } = await Promise.race([leerConAgente(c), atajo]);
+      return true;
+    };
+    const reloj = setInterval(() => { if (!pintarSeg()) clearInterval(reloj); }, 1000);
+    const vigente = () => yo === lectura && accion === leyendo && !$('shReu').hidden;
+    const avance = txt => { estado = txt; pintarSeg(); };
+    const { datos: d, fuente, motivo } = await Promise.race([leerConAgente(c, avance, vigente), atajo]);
     clearInterval(reloj);
     if (yo !== lectura || $('shReu').hidden || accion !== leyendo) return;   // la cerraron o abrieron otra cosa mientras leía
     if (!d) return abrir({ titulo: 'El agente no pudo leer el correo', sub: `Motivo: ${motivo}.`, campos: `<details class="correo-orig" open><summary>Ver el correo</summary><pre>${esH(c.texto)}</pre></details>`,

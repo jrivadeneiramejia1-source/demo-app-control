@@ -628,10 +628,12 @@ try {
   await tocarReu('buzon', 'gm18c3');
   log('sin agente, un correo de la bandeja no se inventa: dice que no pudo y deja intentar otra vez', await hasta(t.page, () => /no pudo leer/.test(document.getElementById('reT').textContent) && !document.getElementById('reSecundario').hidden && /Intentar otra vez/.test(document.getElementById('reSecundario').textContent)));
   const fechaEste = new Date(Date.now() + 6 * 864e5).toISOString().slice(0, 10);
-  await t.ctx.route('https://agente2.prueba/', r => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ok: true, reunion: { tipo: 'nueva', reunionId: '', comunidad: 'Comunidad Ejemplo Este', fecha: fechaEste, hora: '09:00', lugar: '', asistentes: 50, refrigerios: true, almuerzo: false, carros: 2, logistica: [], faltan: ['lugar'], motivo: '', resumen: 'Reunión nueva con 50 personas, refrigerios y 2 camionetas.' } }) }));
+  let llamadasAgente2 = 0;
+  await t.ctx.route('https://agente2.prueba/', r => (++llamadasAgente2 === 1 ? r.fulfill({ status: 502, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ok: false, error: 'gemini', detalle: 'Gemini respondió 503' }) }) : r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ok: true, reunion: { tipo: 'nueva', reunionId: '', comunidad: 'Comunidad Ejemplo Este', fecha: fechaEste, hora: '09:00', lugar: '', asistentes: 50, refrigerios: true, almuerzo: false, carros: 2, logistica: [], faltan: ['lugar'], motivo: '', resumen: 'Reunión nueva con 50 personas, refrigerios y 2 camionetas.' } }) })));
   await t.page.evaluate(() => { window.AGENTE_DEMO = { url: 'https://agente2.prueba/' }; });
   await t.page.click('#reSecundario');
-  log('con el agente, el correo arma la reunión: 50 personas, refrigerio y 2 camionetas', await hasta(t.page, () => !!document.getElementById('rcCom') && document.getElementById('rcCom').value === 'Comunidad Ejemplo Este' && document.getElementById('rcAsis').value === '50' && document.getElementById('rcCarros').value === '2' && document.getElementById('rcRef').checked));
+  log('si Gemini está saturado (503), espera y vuelve a intentar solo, diciendo en qué va', await hasta(t.page, () => /Gemini está ocupado \(intento 1\)\. Vuelvo a intentar en \d+ s/.test(document.getElementById('reCampos').textContent), null, 8000));
+  log('con el agente, el correo arma la reunión: 50 personas, refrigerio y 2 camionetas (al segundo intento)', llamadasAgente2 >= 1 && await hasta(t.page, () => !!document.getElementById('rcCom') && document.getElementById('rcCom').value === 'Comunidad Ejemplo Este' && document.getElementById('rcAsis').value === '50' && document.getElementById('rcCarros').value === '2' && document.getElementById('rcRef').checked, null, 15000) && llamadasAgente2 === 2);
   log('la Jefe la crea, se reparten las tareas y el correo queda «Repartido»', await guardarReu() && await (async () => { const d = await reu(); const r = Object.values(d.reuniones).find(x => x.comunidad === 'Comunidad Ejemplo Este'); return !!r && r.correos.includes('gm-gm18c3') && Object.values(d.necesidades).filter(n => n.comunidad === 'Comunidad Ejemplo Este').length === 5; })() && await hasta(t.page, () => /Repartido/.test(document.getElementById('reuContenido').textContent) && !document.querySelector('#reuContenido [data-accion="buzon"]')));
   await t.page.screenshot({ path: path.join(CAPTURAS, '09b-bandeja.png'), fullPage: true });
   await t.page.click('#reuContenido [data-accion="borrarbuzon"][data-id="gm18c3"]'); await t.page.click('#cfSi');
@@ -667,7 +669,9 @@ try {
   // Doble toque rápido: no debe romper ni dejar dos sesiones
   await t.page.locator('#entradaLista [data-rol="carros"]').dblclick();
   log('doble toque al entrar deja una sola sesión (Marta)', await hasta(t.page, () => document.getElementById('avatarTop').classList.contains('av-carros')));
-  log('sin errores de consola en todo el recorrido', t.errores.length === 0, t.errores.join(' | '));
+  // El 502 que se fingió para probar el reintento del agente lo anota el navegador; no es un error de la app.
+  const erroresReales = t.errores.filter(e => !/status of 502/.test(e));
+  log('sin errores de consola en todo el recorrido', erroresReales.length === 0, erroresReales.join(' | '));
   await t.ctx.close();
 
   console.log('7. Tema oscuro, pantalla de 360 px y accesibilidad');
