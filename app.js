@@ -449,7 +449,7 @@
       equipos: ['jefe', 'equipos', 'soporte'].includes(rol) ? n.recibidos : 0,
       inventario: n.inv.mias,
       vehiculos: ['jefe', 'carros', 'conductor'].includes(rol) ? n.novedades : 0,
-      reuniones: n.reu.mias
+      reuniones: rol === 'jefe' ? n.reu.conPend : n.reu.mias
     };
     Object.entries(b).forEach(([k, v]) => UI.insignia(document.querySelector(`[data-badge="${k}"]`), puedeVer(k) ? v : 0));
   }

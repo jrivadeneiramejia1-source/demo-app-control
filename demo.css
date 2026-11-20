@@ -245,3 +245,7 @@ button.card .card-title { text-align: left; }
 .leyendo { min-height: 120px; }
 #reCampos .pill { white-space: normal; text-align: left; max-width: 100%; height: auto; min-height: 26px; line-height: 1.25; padding-top: 4px; padding-bottom: 4px; }
 #reCampos > * { min-width: 0; max-width: 100%; }
+/* Selector de foto: el input queda invisible pero se puede usar con teclado; el botón muestra el foco */
+.archivo-oculto { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip: rect(0 0 0 0); }
+.foto-btn { position: relative; }
+.foto-btn:focus-within { outline: 3px solid var(--accent); outline-offset: 2px; }

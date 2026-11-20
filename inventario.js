@@ -541,7 +541,7 @@
       campos: (sinAutorizacion ? campoTxt('acQue', 'Qué se compró', '', 'Ej: garrafones de agua', 100) + `<div class="fields cols">${campoNum('acCant', 'Cantidad', 1, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), 'unidades')}</div>` + campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), 'Otro') + campoTxt('acPara', 'Para qué', '', 'Ej: para la reunión de hoy', 140) + campoTxt('acQuien', 'Quién compró', '', 'Nombre', 60) : '') +
         campoTxt('acProv', 'Proveedor', (a && a.proveedor) || (c && c.proveedor) || '', 'Dónde se compró') +
         campoNum('acValor', 'Valor pagado (pesos)', c ? c.valorAprox : '', 0, null, c ? `Autorizado: aprox. ${A().cop(c.valorAprox)}.` : '') +
-        `<div class="field"><span class="lbl">Foto de la factura</span><label class="btn"><span data-ico="camara"></span><span id="acFotoTxt">Tomar o escoger foto</span><input id="acFoto" type="file" accept="image/*" capture="environment" hidden></label><img id="acFotoVer" class="factura-mini" alt="Foto de la factura" hidden></div>`,
+        `<div class="field"><span class="lbl">Foto de la factura</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="acFotoTxt">Tomar o escoger foto</span><input id="acFoto" class="archivo-oculto" type="file" accept="image/*" capture="environment"></label><img id="acFotoVer" class="factura-mini" alt="Foto de la factura" hidden></div>`,
       primario: 'Guardar compra', icono: 'check',
       listo: sinAutorizacion ? 'Listo: compra registrada. Quedó marcada sin autorización.' : `Listo: compra registrada. Le llegó el aviso a ${nombreRol('asistente')} para recibirla.`,
       ops: () => {

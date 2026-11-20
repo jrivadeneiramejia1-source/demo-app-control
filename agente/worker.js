@@ -2,18 +2,22 @@
    La app de la demo le manda el correo y las reuniones activas; el Worker NO escribe en la base de datos:
    la Jefe revisa lo que entendió el agente y ella confirma en la app.
 
-   Solo atiende a personas con sesión en la app: revisa el token de Firebase (firma RS256 de Google, proyecto, vencimiento).
-   Así nadie de afuera gasta el cupo gratis de Gemini.
+   Solo atiende a la Jefe (es la que recibe los correos): revisa el token de Firebase (firma RS256 de Google, proyecto,
+   vencimiento) y que la cuenta sea la Jefe de prueba o una cuenta propia con rol Jefe activa. Además tiene un límite de
+   llamadas por cuenta. Así nadie de afuera gasta el cupo gratis de Gemini.
+   La clave de Gemini debe ser de un proyecto de Google AI Studio SIN facturación: si se acaba el cupo, no cobra.
 
    Secreto que hay que crear en Cloudflare (Settings > Variables and Secrets, tipo Secret):
      GEMINI_API_KEY   la clave de Google AI Studio. No se comparte con nadie.
    Variables opcionales (tipo Text):
-     MODELO           modelo de Gemini. Por defecto prueba 'gemini-flash-latest' y, si no existe, otros de la lista.
+     MODELO           modelo de Gemini. Por defecto prueba 'gemini-3.1-flash-lite' y, si no existe, otros de la lista.
      PROYECTO         ID del proyecto de Firebase. Por defecto 'fir-app-control-d8494'.
    Solo datos inventados: en el plan gratis, Google puede usar lo que se le manda para mejorar sus productos. */
 
 const PROYECTO_POR_DEFECTO = 'fir-app-control-d8494';
-const MODELOS = ['gemini-flash-latest', 'gemini-3.5-flash', 'gemini-2.5-flash', 'gemini-flash-lite-latest'];
+const MODELOS = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+const JEFE_DE_PRUEBA = 'ana.perez@example.com';
+const MAX_POR_MINUTO = 8, MAX_POR_DIA = 150;
 const ORIGENES_FIJOS = ['https://jrivadeneiramejia1-source.github.io'];
 const ORIGEN_LOCAL = /^http:\/\/(127\.0\.0\.1|localhost):\d{1,5}$/;
 const LLAVES_GOOGLE = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
@@ -40,7 +44,7 @@ async function llavesGoogle() {
   cacheLlaves = { llaves: Array.isArray(j.keys) ? j.keys : [], hasta: Date.now() + Math.min(6 * 3600, edad ? Number(edad[1]) : 3600) * 1000 };
   return cacheLlaves.llaves;
 }
-/** Devuelve el uid si el token es de una sesión válida de este proyecto; si no, null. */
+/** Devuelve los datos del token si es de una sesión válida de este proyecto; si no, null. */
 async function revisarToken(token, proyecto) {
   try {
     const partes = String(token || '').split('.');
@@ -51,11 +55,31 @@ async function revisarToken(token, proyecto) {
     if (cuerpo.aud !== proyecto || cuerpo.iss !== 'https://securetoken.google.com/' + proyecto) return null;
     if (!(cuerpo.exp > ahora) || !(cuerpo.iat <= ahora + 300) || typeof cuerpo.sub !== 'string' || !cuerpo.sub) return null;
     const jwk = (await llavesGoogle()).find(k => k.kid === cab.kid);
-    if (!jwk) return null;
+    if (!jwk) return null;   // llave desconocida (Google las cambia cada tantas horas; la caché dura lo que Google indica)
     const llave = await crypto.subtle.importKey('jwk', { kty: 'RSA', n: jwk.n, e: jwk.e, alg: 'RS256', ext: true }, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
     const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', llave, deB64u(partes[2]), new TextEncoder().encode(partes[0] + '.' + partes[1]));
-    return ok ? cuerpo.sub : null;
+    return ok ? cuerpo : null;
   } catch (e) { return null; }
+}
+
+/** ¿Es la Jefe? La de prueba por su correo; una cuenta propia, por su perfil en Firestore (leído con su propio token). */
+async function esJefe(token, datos, proyecto) {
+  if (datos.email === JEFE_DE_PRUEBA) return true;
+  try {
+    const r = await fetch(`https://firestore.googleapis.com/v1/projects/${encodeURIComponent(proyecto)}/databases/(default)/documents/usuarios/${encodeURIComponent(datos.sub)}`, { headers: { Authorization: 'Bearer ' + token } });
+    if (!r.ok) return false;
+    const f = ((await r.json()) || {}).fields || {};
+    return !!(f.rol && f.rol.stringValue === 'jefe' && f.activo && f.activo.booleanValue === true);
+  } catch (e) { return false; }
+}
+/** Límite de llamadas por cuenta (en memoria de este Worker; Cloudflare puede tener varias copias, así que es aproximado). */
+const usos = new Map();
+function pasaLimite(uid) {
+  const t = Date.now(), lista = (usos.get(uid) || []).filter(x => t - x < 86400000);
+  if (lista.filter(x => t - x < 60000).length >= MAX_POR_MINUTO || lista.length >= MAX_POR_DIA) { usos.set(uid, lista); return false; }
+  lista.push(t); usos.set(uid, lista);
+  if (usos.size > 500) usos.delete(usos.keys().next().value);
+  return true;
 }
 
 /* ---------- Gemini ---------- */
@@ -118,10 +142,12 @@ async function preguntarGemini(env, prompt, correo) {
   let ultimo = 'sin respuesta';
   for (const modelo of lista) {
     for (const conEsquema of [true, false]) {
-      const generationConfig = conEsquema ? { responseMimeType: 'application/json', responseSchema: ESQUEMA, temperature: 0 } : { responseMimeType: 'application/json', temperature: 0 };
+      // Gemini 3 pide dejar la temperatura por defecto y pensar poco para responder rápido; Gemini 2 va con temperatura 0.
+      const g3 = !/^gemini-2/.test(modelo);
+      const generationConfig = Object.assign({ responseMimeType: 'application/json' }, conEsquema ? { responseSchema: ESQUEMA } : {}, g3 ? { thinkingConfig: { thinkingLevel: 'low' } } : { temperature: 0 });
       const cuerpo = { systemInstruction: { parts: [{ text: prompt }] }, contents: [{ role: 'user', parts: [{ text: 'Correo:\n' + correo }] }], generationConfig };
       const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify(cuerpo) });
-      if (r.status === 404) { ultimo = 'modelo ' + modelo + ' no existe'; break; }
+      if (r.status === 404 || r.status === 403) { ultimo = 'modelo ' + modelo + ' no disponible'; break; }
       if (r.status === 400 && conEsquema) { ultimo = 'esquema no aceptado'; continue; }
       if (r.status === 429) return { error: 'cupo', detalle: 'Gemini llegó al límite gratis por ahora' };
       if (!r.ok) return { error: 'gemini', detalle: 'Gemini respondió ' + r.status };
@@ -145,8 +171,11 @@ export default {
     if (!origenPermitido(origen)) return json({ ok: false, error: 'origen' }, 403);
     if (!env.GEMINI_API_KEY) return json({ ok: false, error: 'sin-clave', detalle: 'Falta el secreto GEMINI_API_KEY en Cloudflare' }, 500, cab);
     const token = /^Bearer\s+(.+)$/i.exec(req.headers.get('Authorization') || '');
-    const uid = token ? await revisarToken(token[1], env.PROYECTO || PROYECTO_POR_DEFECTO) : null;
-    if (!uid) return json({ ok: false, error: 'sesion', detalle: 'Entra a la app otra vez' }, 401, cab);
+    const proyecto = env.PROYECTO || PROYECTO_POR_DEFECTO;
+    const datos = token ? await revisarToken(token[1], proyecto) : null;
+    if (!datos) return json({ ok: false, error: 'sesion', detalle: 'Entra a la app otra vez' }, 401, cab);
+    if (!(await esJefe(token[1], datos, proyecto))) return json({ ok: false, error: 'permiso', detalle: 'Solo la Jefe usa el agente' }, 403, cab);
+    if (!pasaLimite(datos.sub)) return json({ ok: false, error: 'cupo', detalle: 'Muchas lecturas seguidas: espera un minuto' }, 429, cab);
     const largo = Number(req.headers.get('Content-Length') || 0);
     if (largo > MAX_CUERPO) return json({ ok: false, error: 'grande' }, 413, cab);
     const crudo = await req.text();
@@ -154,7 +183,7 @@ export default {
     let p; try { p = JSON.parse(crudo); } catch (e) { return json({ ok: false, error: 'json' }, 400, cab); }
     const correo = limpiarTexto(p && p.asunto ? 'Asunto: ' + p.asunto + '\n\n' + p.correo : p && p.correo, MAX_CORREO);
     if (correo.length < 10) return json({ ok: false, error: 'correo' }, 400, cab);
-    const hoy = /^\d{4}-\d{2}-\d{2}$/.test(p.hoy) ? p.hoy : new Date().toISOString().slice(0, 10);
+    const hoy = /^\d{4}-\d{2}-\d{2}$/.test(p.hoy) ? p.hoy : new Date(Date.now() - 5 * 3600e3).toISOString().slice(0, 10);   // hora de Colombia
     const reuniones = (Array.isArray(p.reuniones) ? p.reuniones : []).slice(0, MAX_REUNIONES).map(r => ({
       id: limpiarTexto(r && r.id, 40), comunidad: limpiarTexto(r && r.comunidad, 80), fecha: limpiarTexto(r && r.fecha, 10), hora: limpiarTexto(r && r.hora, 5), lugar: limpiarTexto(r && r.lugar, 120), estado: limpiarTexto(r && r.estado, 20)
     })).filter(r => r.id);

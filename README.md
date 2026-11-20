@@ -46,7 +46,7 @@ Equipos, Vehículos y Reuniones por ahora solo se ven: lo que hace cada rol ahí
 - `index.html`, `app.js`, `demo.css`: la app. `inventario.js`: el módulo Inventario (bodega y compras).
 - `push.js`, `sw.js`, `manifest.webmanifest`, `iconos/control-*.png`: avisos al teléfono (Web Push) e instalación en la pantalla de inicio.
 - `reuniones.js`: el módulo Reuniones. `correos-demo.js`: los 4 correos de ejemplo y la respuesta de respaldo de cada uno (se usa si el agente no está conectado o falla).
-- `agente/worker.js`: Worker «agente-demo» para Cloudflare. Revisa el token de la sesión de Firebase, le pasa el correo a Gemini y devuelve en JSON lo que entendió (no escribe en la base). Secreto `GEMINI_API_KEY`; su dirección va en `config.js` (`window.AGENTE_DEMO`).
+- `agente/worker.js`: Worker «agente-demo» para Cloudflare. Solo atiende a la Jefe (revisa el token de Firebase y el rol) y tiene límite de lecturas por cuenta; le pasa el correo a Gemini y devuelve en JSON lo que entendió (no escribe en la base). La clave de Gemini debe ser de un proyecto sin facturación. Secreto `GEMINI_API_KEY`; su dirección va en `config.js` (`window.AGENTE_DEMO`).
 - `avisos/worker.js`: servidor de avisos «avisos-demo» para Cloudflare Workers (gratis). Se pega a mano en Cloudflare con los secretos `VAPID_D` y `VAPID_PUB`.
 - `generar-llaves.html`: crea en el navegador el par de llaves de los avisos. La privada va solo en Cloudflare; la pública va en `config.js` (`window.AVISOS_DEMO`).
 - `lib/xlsx/`: SheetJS (Apache-2.0) para descargar el Excel del Resumen.

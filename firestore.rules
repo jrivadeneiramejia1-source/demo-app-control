@@ -48,6 +48,12 @@ service cloud.firestore {
     function rutaCodigo(c, r) {
       return esDireccion(r) ? /databases/$(database)/documents/codigosDireccion/$(c) : /databases/$(database)/documents/codigos/$(c);
     }
+    function rutaNec(id) { return /databases/$(database)/documents/necesidades/$(id); }
+    // ¿Ya llegó ese día (AAAA-MM-DD) en Colombia (UTC-5)? Desde las 00:00 hora de Colombia.
+    function yaFue(f) {
+      return f is string && f.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && timestamp.date(int(f.split('-')[0]), int(f.split('-')[1]), int(f.split('-')[2])) + duration.value(5, 'h') <= request.time;
+    }
     // Estados a los que cada quien puede pasar su tarea de reunión.
     function estadosDe(tipo) {
       return tipo in ['refrigerios', 'almuerzo', 'carros'] ? ['autorizado', 'rechazado']
@@ -84,9 +90,16 @@ service cloud.firestore {
     match /reuniones/{id} {
       allow read: if esDemo();
       allow create, delete: if esJefe();
+      // Administrativo: solo en la misma escritura que guarda el acta de ESA reunión, el día de la reunión o después,
+      // y agregando una sola línea al historial.
       allow update: if esJefe()
         || (esDemo() && rol() == 'administrativo' && antes().estado in ['programada', 'reprogramada']
-            && nuevo().estado == 'realizada' && soloCambia(['estado', 'historial']));
+            && nuevo().estado == 'realizada' && soloCambia(['estado', 'historial', 'actaId']) && yaFue(antes().fecha)
+            && nuevo().historial.size() == antes().get('historial', []).size() + 1
+            && get(rutaNec(nuevo().actaId)).data.estado == 'pendiente'
+            && getAfter(rutaNec(nuevo().actaId)).data.tipo == 'acta'
+            && getAfter(rutaNec(nuevo().actaId)).data.reunionId == id
+            && getAfter(rutaNec(nuevo().actaId)).data.estado == 'listo');
     }
 
     // Lo que le toca a cada rol en una reunión (una tarea por documento). Cada quien cambia solo la suya,
@@ -94,15 +107,27 @@ service cloud.firestore {
     match /necesidades/{id} {
       allow read: if esDemo();
       // Las crea la Jefe; Transporte crea el viaje del conductor al autorizar los carros.
+      // El viaje solo nace en la misma escritura que autoriza esos carros, con el mismo conductor y cantidad.
       allow create: if esJefe()
-        || (esDemo() && rol() == 'carros' && nuevo().tipo == 'viaje' && nuevo().responsableRol == 'conductor' && nuevo().estado == 'pendiente');
+        || (esDemo() && rol() == 'carros'
+            && nuevo().keys().hasOnly(['reunionId', 'comunidad', 'fechaReunion', 'tipo', 'detalle', 'cantidad', 'responsableRol', 'estado', 'por', 'en', 'motivo', 'conductor', 'items', 'acta', 'carrosId'])
+            && nuevo().tipo == 'viaje' && nuevo().responsableRol == 'conductor' && nuevo().estado == 'pendiente'
+            && nuevo().carrosId is string
+            && get(rutaNec(nuevo().carrosId)).data.estado == 'pendiente'
+            && getAfter(rutaNec(nuevo().carrosId)).data.tipo == 'carros'
+            && getAfter(rutaNec(nuevo().carrosId)).data.estado == 'autorizado'
+            && getAfter(rutaNec(nuevo().carrosId)).data.reunionId == nuevo().reunionId
+            && getAfter(rutaNec(nuevo().carrosId)).data.conductor == nuevo().conductor
+            && getAfter(rutaNec(nuevo().carrosId)).data.cantidad == nuevo().cantidad);
+      // Cada quien decide SU tarea una vez (mientras está pendiente). El acta, el día de la reunión o después.
       allow update: if esJefe()
-        || (esDemo() && antes().responsableRol == rol() && antes().estado != 'cancelado'
+        || (esDemo() && antes().responsableRol == rol() && antes().estado == 'pendiente'
             && soloCambia(['estado', 'por', 'en', 'motivo', 'conductor', 'items', 'acta'])
-            && nuevo().estado in estadosDe(antes().tipo))
+            && nuevo().estado in estadosDe(antes().tipo)
+            && (antes().tipo != 'acta' || yaFue(antes().fechaReunion)))
         // El conductor que no puede devuelve los carros a Transporte para que escoja otro.
         || (esDemo() && rol() == 'conductor' && antes().tipo == 'carros' && antes().estado == 'autorizado'
-            && nuevo().estado == 'pendiente' && soloCambia(['estado', 'conductor', 'motivo']));
+            && nuevo().estado == 'pendiente' && nuevo().conductor == '' && soloCambia(['estado', 'conductor', 'motivo']));
       allow delete: if esJefe();
     }
 

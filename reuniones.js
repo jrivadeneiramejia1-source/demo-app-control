@@ -47,7 +47,7 @@
   }
   const tareas = () => D().necesidades.filter(esTarea).sort((a, b) => ordenFecha(reunionPorId(a.reunionId), reunionPorId(b.reunionId)));
   function progreso(r) {
-    const ns = necDe(r.id).filter(n => n.estado !== 'cancelado' && n.tipo !== 'acta');
+    const ns = necDe(r.id).filter(n => n.estado !== 'cancelado' && n.tipo !== 'acta' && !(n.tipo === 'viaje' && n.estado === 'no-va'));
     return { hechas: ns.filter(n => HECHO.includes(n.estado)).length, total: ns.length };
   }
   /** Números para Inicio y para la insignia de la pestaña. */
@@ -219,6 +219,15 @@
   async function guardar() {
     if (guardando || !accion || !accion.ops) return;
     $('reErr').hidden = true;
+    // Si la tarea o la reunión cambió mientras la hoja estaba abierta (otra persona actuó), no se escribe encima.
+    if (accion.base) {
+      const act = necPorId(accion.base.id);
+      if (!act || !esTarea(act) || ['estado', 'cantidad', 'fechaReunion', 'conductor'].some(k => act[k] !== accion.base[k])) return fallar('Esa tarea cambió mientras la tenías abierta. Ciérrala y ábrela otra vez.');
+    }
+    if (accion.reunion) {
+      const act = reunionPorId(accion.reunion.id);
+      if (!act || !ACTIVA.includes(act.estado) || act.fecha !== accion.reunion.fecha || act.lugar !== accion.reunion.lugar || num(act.asistentes) !== num(accion.reunion.asistentes)) return fallar('La reunión cambió mientras revisabas. Toca otra vez «Llegó este correo».');
+    }
     pushPendientes = [];
     const ops = accion.ops(); if (!ops) return;
     const lista = ops.filter(Boolean), envios = pushPendientes.slice();
@@ -280,10 +289,13 @@
     return activas.find(r => r.id === d.reunionId) || activas.find(r => normal(r.comunidad) === normal(d.comunidad)) || null;
   }
 
+  let lectura = 0;
   async function procesarCorreo(c) {
+    const yo = ++lectura;
     abrir({ titulo: 'El agente está leyendo el correo…', sub: c.asunto, campos: `<div class="leyendo">${UI.esqueleto(2)}</div>` });
+    const leyendo = accion;
     const { datos: d, fuente } = await leerConAgente(c);
-    if ($('shReu').hidden) return;   // la cerraron mientras leía
+    if (yo !== lectura || $('shReu').hidden || accion !== leyendo) return;   // la cerraron o abrieron otra cosa mientras leía
     const etiqueta = fuente === 'gemini' ? A().pill('Leído por Gemini', 's-disco', 'check') : A().pill('Respuesta de respaldo: el agente no está conectado o no respondió', 's-pend', 'info');
     const encabezado = `<div class="row">${etiqueta}</div><div class="card agente-res"><b>Lo que entendió</b><span>${esH(d.resumen || 'Sin resumen')}</span></div>
       <details class="correo-orig"><summary>Ver el correo</summary><pre>${esH(c.texto)}</pre></details>`;
@@ -295,9 +307,10 @@
       return confirmarNueva(c, d, encabezado, fuente);
     }
     if (!r) return abrir({ titulo: 'No encontré la reunión de este correo', sub: `No hay una reunión activa con la ${d.comunidad || 'comunidad del correo'}. Primero tiene que llegar el correo de la reunión nueva.`, campos: encabezado });
-    if (d.tipo === 'faltantes') return confirmarFaltantes(c, d, r, encabezado, fuente);
-    if (d.tipo === 'reprograma') return confirmarReprograma(c, d, r, encabezado, fuente);
-    return confirmarCancela(c, d, r, encabezado, fuente);
+    if (d.tipo === 'faltantes') confirmarFaltantes(c, d, r, encabezado, fuente);
+    else if (d.tipo === 'reprograma') confirmarReprograma(c, d, r, encabezado, fuente);
+    else confirmarCancela(c, d, r, encabezado, fuente);
+    accion.reunion = Object.assign({}, r);
   }
   const origen = f => (f === 'gemini' ? 'Agente (Gemini)' : 'Agente (respaldo)');
   const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
@@ -362,6 +375,8 @@
         necDe(r.id).filter(n => n.tipo === 'logistica' && n.estado !== 'cancelado').forEach(n => ops.push(['mezclar', 'necesidades', n.id, { detalle: `Alistar ${lugar || 'el lugar'} para ${plural(asis, 'persona', 'personas')}` }]));
         if (asis !== num(r.asistentes) && comida.length) ops.push(aviso('compras', 'Cambió la comida de una reunión', `${r.comunidad}: ahora son ${asis} personas. Revisa otra vez.`));
         ops.push(aviso('logistica', 'Datos nuevos de una reunión', `${r.comunidad}: ${cambios}.`));
+        if (lugar !== (r.lugar || '')) new Set(necDe(r.id).filter(n => ['carros', 'viaje'].includes(n.tipo) && !['cancelado', 'no-va'].includes(n.estado)).map(n => n.responsableRol))
+          .forEach(rol => ops.push(aviso(rol, 'Cambió el lugar de una reunión', `${r.comunidad}: ${cambios}.`)));
         ops.push(aviso('profesional', 'Datos nuevos de una reunión', `${r.comunidad}: ${cambios}.`));
         return ops;
       }
@@ -415,7 +430,7 @@
   function autorizar(n) {
     const r = reunionPorId(n.reunionId);
     abrir({ titulo: `Autorizar ${(TIPO[n.tipo] || [''])[0].toLowerCase()}`, sub: `${n.detalle}. ${r ? r.comunidad + ', ' + fechaTxt(r) : ''}`, primario: 'Autorizar', icono: 'check', secundario: 'Rechazar',
-      listo: 'Listo: autorizado.', alSecundario: () => rechazar(n),
+      listo: 'Listo: autorizado.', alSecundario: () => { rechazar(n); accion.base = Object.assign({}, n); },
       ops: () => [['mezclar', 'necesidades', n.id, hecho({ estado: 'autorizado', motivo: '' })]] });
   }
   function rechazar(n) {
@@ -437,7 +452,7 @@
         const cond = valor('rcCond');
         return [['mezclar', 'necesidades', n.id, hecho({ estado: 'autorizado', conductor: cond, motivo: '' })],
           ['set', 'necesidades', window.nube.idNuevo('ne'), { reunionId: n.reunionId, comunidad: n.comunidad, fechaReunion: n.fechaReunion, tipo: 'viaje', detalle: `Llevar al equipo a la ${n.comunidad}`, cantidad: n.cantidad,
-            responsableRol: 'conductor', estado: 'pendiente', por: '', en: '', motivo: '', conductor: cond, items: [], acta: null }],
+            responsableRol: 'conductor', estado: 'pendiente', por: '', en: '', motivo: '', conductor: cond, items: [], acta: null, carrosId: n.id }],
           aviso('conductor', 'Tienes un viaje', `${cond}: llevar al equipo a la ${n.comunidad}${r ? ', ' + fechaTxt(r) : ''}. Confírmalo.`)];
       } });
   }
@@ -484,7 +499,7 @@
       campos: `<div class="fields cols">${campoNum('rcAsis', 'Asistentes', '', 0, 5000)}<div></div></div>` +
         `<div class="fields cols">${campoTxt('rcIni', 'Hora de inicio', r.hora, '', 5, 'time')}${campoTxt('rcFin', 'Hora de cierre', '', '', 5, 'time')}</div>` +
         `<div class="field"><label for="rcObs">Observaciones y compromisos</label><textarea id="rcObs" rows="3" maxlength="600" placeholder="Ej: la comunidad pidió una segunda reunión"></textarea></div>` +
-        `<div class="field"><span class="lbl">Foto de la lista firmada</span><label class="btn"><span data-ico="camara"></span><span id="rcFotoTxt">Tomar o escoger foto</span><input id="rcFoto" type="file" accept="image/*" capture="environment" hidden></label><img id="rcFotoVer" class="factura-mini" alt="Foto de la lista firmada" hidden></div>`,
+        `<div class="field"><span class="lbl">Foto de la lista firmada</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="rcFotoTxt">Tomar o escoger foto</span><input id="rcFoto" class="archivo-oculto" type="file" accept="image/*" capture="environment"></label><img id="rcFotoVer" class="factura-mini" alt="Foto de la lista firmada" hidden></div>`,
       primario: 'Guardar acta', icono: 'check', listo: 'Listo: acta registrada. La reunión quedó como realizada.',
       ops: () => {
         const asis = entero('rcAsis'), ini = valor('rcIni'), fin = valor('rcFin'), obs = valor('rcObs');
@@ -493,7 +508,7 @@
         if (!/^\d{2}:\d{2}$/.test(fin) || fin <= ini) return fallar('La hora de cierre debe ser después de la de inicio.', 'rcFin');
         if (obs.length < 5) return fallar('Escribe las observaciones de la reunión.', 'rcObs');
         return [['mezclar', 'necesidades', n.id, hecho({ estado: 'listo', acta: { asistentes: asis, inicio: ini, fin, observaciones: obs, foto: fotoActa } })],
-          ['mezclar', 'reuniones', r.id, { estado: 'realizada', historial: paso(r, `Acta registrada: ${plural(asis, 'asistente', 'asistentes')}`) }],
+          ['mezclar', 'reuniones', r.id, { estado: 'realizada', actaId: n.id, historial: paso(r, `Acta registrada: ${plural(asis, 'asistente', 'asistentes')}`) }],
           aviso('jefe', 'Acta registrada', `${r.comunidad}: ${plural(asis, 'asistente', 'asistentes')}. ${obs.slice(0, 120)}`)];
       } });
     $('rcFoto').addEventListener('change', async e => {
@@ -536,7 +551,7 @@
   function alTocar(e) {
     const b = e.target.closest('[data-accion]'); if (!b) return;
     const id = b.dataset.id, n = necPorId(id), r = reunionPorId(id);
-    const conRol = fn => n && puedoHacer(n.responsableRol) && esTarea(n) ? fn(n) : null;
+    const conRol = fn => { if (!(n && puedoHacer(n.responsableRol) && esTarea(n))) return null; const x = fn(n); if (accion) accion.base = Object.assign({}, n); return x === undefined ? true : x; };
     const mapa = {
       ver: () => r && ver(r), correo: () => { const c = correos().find(x => x.id === id); return c && esJefe() ? (procesarCorreo(c), true) : null; },
       autorizar: () => conRol(autorizar), rechazar: () => conRol(rechazar), carros: () => conRol(carros), viajeok: () => conRol(viajeOk), nopuedo: () => conRol(noPuedo),

@@ -14,8 +14,11 @@ const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLen
 const otra = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
 const jwk = Object.assign(publicKey.export({ format: 'jwk' }), { kid: 'k1', alg: 'RS256', use: 'sig' });
 const b64u = x => Buffer.from(x).toString('base64url');
+let numero = 0;
 function token(cambios = {}, llave = privateKey, kid = 'k1') {
   const ahora = Math.floor(Date.now() / 1000);
+  // Por defecto es la Jefe de prueba, con un uid distinto cada vez (para no gastar el límite por cuenta).
+  cambios = Object.assign({ email: 'ana.perez@example.com', sub: 'uid-ana-' + (++numero) }, cambios);
   const cab = b64u(JSON.stringify({ alg: 'RS256', kid, typ: 'JWT' }));
   const cuerpo = b64u(JSON.stringify(Object.assign({ aud: PROY, iss: 'https://securetoken.google.com/' + PROY, sub: 'uid-prueba', iat: ahora - 10, exp: ahora + 3600 }, cambios)));
   const firma = crypto.sign('sha256', Buffer.from(cab + '.' + cuerpo), llave).toString('base64url');
@@ -23,16 +26,24 @@ function token(cambios = {}, llave = privateKey, kid = 'k1') {
 }
 
 // fetch falso: llaves de Google y Gemini. modoGemini decide qué contesta Gemini.
-let llamadas = [], modoGemini = 'bien', respuesta = null;
+let llamadas = [], llamadasFS = [], modoGemini = 'bien', respuesta = null;
 const RESP_BIEN = { tipo: 'nueva', reunionId: '', comunidad: 'Comunidad Ejemplo Oriente', fecha: '2026-11-27', hora: '08:30', lugar: '', asistentes: 40, refrigerios: true, almuerzo: true, carros: 2, logistica: ['Sonido y micrófono', 'Sillas'], faltan: ['lugar'], motivo: '', resumen: 'Reunión nueva.' };
 globalThis.fetch = async (url, op = {}) => {
   url = String(url);
   if (url.includes('securetoken@system.gserviceaccount.com')) return new Response(JSON.stringify({ keys: [jwk] }), { status: 200, headers: { 'cache-control': 'public, max-age=3600' } });
+  if (url.startsWith('https://firestore.googleapis.com/')) {
+    llamadasFS.push({ url, auth: (op.headers || {}).Authorization });
+    const uid = decodeURIComponent(url.split('/usuarios/')[1] || '');
+    const perfiles = { 'uid-jefa-real': { rol: 'jefe', activo: true }, 'uid-jefa-pausada': { rol: 'jefe', activo: false }, 'uid-logistica': { rol: 'logistica', activo: true } };
+    const f = perfiles[uid];
+    if (!f) return new Response('{}', { status: 403 });
+    return new Response(JSON.stringify({ fields: { rol: { stringValue: f.rol }, activo: { booleanValue: f.activo } } }), { status: 200 });
+  }
   if (url.startsWith('https://generativelanguage.googleapis.com/')) {
     const cuerpo = JSON.parse(op.body);
     llamadas.push({ url, cuerpo, clave: (op.headers || {})['x-goog-api-key'] });
     const conEsquema = !!cuerpo.generationConfig.responseSchema;
-    if (modoGemini === 'sin-modelo' && url.includes('gemini-flash-latest')) return new Response('{}', { status: 404 });
+    if (modoGemini === 'sin-modelo' && url.includes('gemini-3.1-flash-lite')) return new Response('{}', { status: 404 });
     if (modoGemini === 'sin-esquema' && conEsquema) return new Response('{}', { status: 400 });
     if (modoGemini === 'cupo') return new Response('{}', { status: 429 });
     const texto = modoGemini === 'cercado' ? '```json\n' + JSON.stringify(respuesta || RESP_BIEN) + '\n```' : JSON.stringify(respuesta || RESP_BIEN);
@@ -69,7 +80,22 @@ console.log('2. Token de Firebase');
 { const { r } = await pedir({ tok: token({}, otra.privateKey) }); t('token firmado con otra llave: 401', r.status === 401); }
 { const { r } = await pedir({ tok: token({}, privateKey, 'k-desconocida') }); t('token con llave desconocida: 401', r.status === 401); }
 { const { r } = await pedir({ tok: token({ sub: '' }) }); t('token sin usuario: 401', r.status === 401); }
+{ const { r } = await pedir({ tok: token({ alg: 'none' }).split('.').slice(0, 2).join('.') + '.' }); t('token sin firma: 401', r.status === 401); }
+
 t('ninguna de esas llamó a Gemini', llamadas.length === 0, llamadas.length);
+
+console.log('2b. Solo la Jefe y con límite');
+{ const { r, j } = await pedir({ tok: token({ email: 'pedro.castillo@example.com' }) }); t('otra persona de prueba (Logística): 403', r.status === 403 && j.error === 'permiso'); }
+{ const { r } = await pedir({ tok: token({ email: 'logistica@ejemplo.test', sub: 'uid-logistica' }) }); t('cuenta propia de Logística: 403', r.status === 403); }
+{ const { r } = await pedir({ tok: token({ email: 'jefa.pausada@ejemplo.test', sub: 'uid-jefa-pausada' }) }); t('cuenta propia de Jefe pausada: 403', r.status === 403); }
+{ const { r } = await pedir({ tok: token({ email: 'sin.perfil@ejemplo.test', sub: 'uid-sin-perfil' }) }); t('cuenta sin perfil: 403', r.status === 403); }
+llamadasFS = [];
+{ const tk = token({ email: 'jefa.real@ejemplo.test', sub: 'uid-jefa-real' }); const { r } = await pedir({ tok: tk }); t('cuenta propia de Jefe activa: 200 (lee su perfil con su propio token)', r.status === 200 && llamadasFS.length === 1 && llamadasFS[0].auth === 'Bearer ' + tk && /usuarios\/uid-jefa-real$/.test(llamadasFS[0].url)); }
+{
+  const tk = token({ sub: 'uid-limite' }); let estados = [];
+  for (let k = 0; k < 9; k++) estados.push((await pedir({ tok: tk })).r.status);
+  t('más de 8 lecturas en un minuto con la misma cuenta: 429', estados.slice(0, 8).every(x => x === 200) && estados[8] === 429, estados.join(','));
+}
 
 console.log('3. Lectura del correo');
 llamadas = []; modoGemini = 'bien';
@@ -78,12 +104,14 @@ llamadas = []; modoGemini = 'bien';
   t('con token válido responde 200 con la reunión entendida', r.status === 200 && j.ok && j.reunion.comunidad === 'Comunidad Ejemplo Oriente' && j.reunion.carros === 2 && j.reunion.faltan[0] === 'lugar', JSON.stringify(j));
   const c = llamadas[0];
   t('manda la clave solo en el encabezado x-goog-api-key', c && c.clave === 'clave-de-prueba' && !c.url.includes('clave-de-prueba'));
-  t('le pide JSON con el esquema y temperatura 0', c.cuerpo.generationConfig.responseMimeType === 'application/json' && c.cuerpo.generationConfig.responseSchema.required.includes('tipo') && c.cuerpo.generationConfig.temperature === 0);
+  t('le pide JSON con el esquema y, con Gemini 3, que piense poco (sin tocar la temperatura)', c.url.includes('gemini-3.1-flash-lite') && c.cuerpo.generationConfig.responseMimeType === 'application/json' && c.cuerpo.generationConfig.responseSchema.required.includes('tipo') && c.cuerpo.generationConfig.thinkingConfig.thinkingLevel === 'low' && c.cuerpo.generationConfig.temperature === undefined);
   t('las instrucciones llevan la fecha de hoy y las reuniones activas', /Hoy es 2026-11-19/.test(c.cuerpo.systemInstruction.parts[0].text) && /re-001/.test(c.cuerpo.systemInstruction.parts[0].text));
   t('el correo va con su asunto', /Asunto: Convocatoria/.test(c.cuerpo.contents[0].parts[0].text));
 }
 llamadas = []; modoGemini = 'sin-modelo';
-{ const { r, j } = await pedir(); t('si el modelo no existe, prueba el siguiente', r.status === 200 && j.modelo !== 'gemini-flash-latest' && llamadas.length === 2, llamadas.map(x => x.url.split('/models/')[1]).join(' ')); }
+{ const { r, j } = await pedir(); t('si el modelo no existe, prueba el siguiente', r.status === 200 && j.modelo === 'gemini-flash-latest' && llamadas.length === 2, llamadas.map(x => x.url.split('/models/')[1]).join(' ')); }
+llamadas = []; modoGemini = 'bien';
+{ const { r } = await pedir({ entorno: { GEMINI_API_KEY: 'x', MODELO: 'gemini-2.5-flash' } }); t('con un modelo Gemini 2 usa temperatura 0', r.status === 200 && llamadas[0].url.includes('gemini-2.5-flash') && llamadas[0].cuerpo.generationConfig.temperature === 0 && !llamadas[0].cuerpo.generationConfig.thinkingConfig); }
 llamadas = []; modoGemini = 'sin-esquema';
 { const { r } = await pedir(); t('si no acepta el esquema, lo pide solo como JSON', r.status === 200 && llamadas.length === 2 && !llamadas[1].cuerpo.generationConfig.responseSchema); }
 llamadas = []; modoGemini = 'cercado';
