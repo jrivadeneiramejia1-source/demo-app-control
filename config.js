@@ -10,10 +10,10 @@ window.FIREBASE_CONFIG = {
   appId: "1:433360043841:web:da6dc035b1f025eb572bc0"
 };
 
-/* Avisos al teléfono (Web Push, gratis). Se llena cuando exista el Worker "avisos-demo" de Cloudflare:
-     url:   la dirección del Worker avisos-demo (algo como https://avisos-demo.TU-SUBDOMINIO.workers.dev).
-     vapid: la llave PÚBLICA que muestra generar-llaves.html (no es secreta; la privada va solo en Cloudflare).
-   Mientras estén vacíos, la app funciona igual y solo no manda avisos al teléfono.
-   Descomenta y llena así:
-window.AVISOS_DEMO = { url: '', vapid: '' };
-*/
+/* Avisos al teléfono (Web Push, gratis) con el Worker "avisos-demo" de Cloudflare.
+     url:   la dirección del Worker avisos-demo.
+     vapid: la llave PÚBLICA de generar-llaves.html (no es secreta; la privada está solo en Cloudflare como VAPID_D). */
+window.AVISOS_DEMO = {
+  url: "https://avisos-demo.jrivadeneiramejia1.workers.dev",
+  vapid: "BM7_pE-Z6EtHdsDWdW48Q4Sh3-wipaXFKCcFMph30Qe8P8FsqTxfiOQF0ViK-nQQVa_LApA7bH-qIcyq8ryPqEE"
+};
