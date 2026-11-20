@@ -317,7 +317,7 @@
       { mod: 'vehiculos', k: 'i-doc', n: n.docsPorVencer, lbl: 'SOAT o revisión por vencer', icono: 'calendario', tono: 'peligro', roles: ['jefe', 'carros', 'conductor'] },
       { mod: 'reuniones', k: 'i-reu', n: n.reu.conPend, lbl: 'Reuniones con algo pendiente', icono: 'reunion', tono: 'org', roles: ['jefe'] },
       { mod: 'reuniones', k: 'i-act', n: n.reu.actas, lbl: 'Actas por registrar', icono: 'hojas', tono: 'peligro', roles: ['jefe', 'administrativo'] },
-      { mod: 'reuniones', k: 'i-rmi', n: n.reu.mias, lbl: 'Tareas de reuniones para ti', icono: 'reunion', tono: 'listo', roles: ['compras', 'carros', 'conductor', 'logistica', 'profesional'] },
+      { mod: 'reuniones', k: 'i-rmi', n: n.reu.mias, lbl: 'Tareas de reuniones para ti', icono: 'reunion', tono: 'listo', roles: ['compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional'] },
       { mod: 'reuniones', k: 'i-prox', n: n.reu.proximas, lbl: 'Próximas reuniones', icono: 'calendario', tono: 'listo', roles: ['gerente', 'logistica', 'profesional', 'administrativo'] },
       { mod: 'equipos', k: 'i-rec', n: n.recibidos, lbl: 'Equipos en Recibidos', icono: 'recibidos', tono: 'listo', roles: ['jefe', 'equipos', 'soporte'] }
     ].filter(c => (typeof c.roles === 'function' ? c.roles() : c.roles.includes(p.rol)) && puedeVer(c.mod));

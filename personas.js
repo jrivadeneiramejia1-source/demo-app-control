@@ -7,7 +7,7 @@
   'use strict';
   const CLAVE_DEMO = 'demo-control-2026';
   // Permisos por módulo: 'no' (no lo ve), 'ver', 'pide', 'edita', 'reporta', 'autoriza', 'compra', 'bodega', 'gerente', 'jefe',
-  // 'encargado', 'soporte', 'logistica', 'asiste', 'actas'. Equipos, Vehículos y Reuniones por ahora solo se ven (sus fases vienen después).
+  // 'encargado', 'soporte', 'logistica', 'asiste', 'actas', 'informa'. Equipos, Vehículos y Reuniones por ahora solo se ven (sus fases vienen después).
   // pref: las 3 letras con que empieza el código del rol (así se sabe para qué rol es un código).
   const ROLES = [
     { rol: 'gerente', area: 'Dirección', rolTxt: 'Gerente', cargo: 'Gerente', pref: 'GER',
@@ -19,11 +19,11 @@
     { rol: 'soporte', area: 'Equipos', rolTxt: 'Soporte', cargo: 'Técnico de soporte', pref: 'SOP',
       permisos: { equipos: 'soporte', inventario: 'pide', vehiculos: 'no', reuniones: 'no' } },
     { rol: 'compras', area: 'Inventario', rolTxt: 'Compras', cargo: 'Encargado de compras', pref: 'COM',
-      permisos: { equipos: 'no', inventario: 'compra', vehiculos: 'no', reuniones: 'autoriza' } },
+      permisos: { equipos: 'no', inventario: 'compra', vehiculos: 'no', reuniones: 'informa' } },
     { rol: 'asistente', area: 'Inventario', rolTxt: 'Bodega', cargo: 'Encargada de bodega', pref: 'BOD',
-      permisos: { equipos: 'no', inventario: 'bodega', vehiculos: 'no', reuniones: 'no' } },
+      permisos: { equipos: 'no', inventario: 'bodega', vehiculos: 'no', reuniones: 'informa' } },
     { rol: 'carros', area: 'Vehículos', rolTxt: 'Transporte', cargo: 'Coordinadora de transporte', pref: 'TRA',
-      permisos: { equipos: 'no', inventario: 'pide', vehiculos: 'autoriza', reuniones: 'autoriza' } },
+      permisos: { equipos: 'no', inventario: 'pide', vehiculos: 'autoriza', reuniones: 'informa' } },
     { rol: 'conductor', area: 'Vehículos', rolTxt: 'Conductor', cargo: 'Conductor', pref: 'CON',
       permisos: { equipos: 'no', inventario: 'pide', vehiculos: 'reporta', reuniones: 'asiste' } },
     { rol: 'logistica', area: 'Reuniones', rolTxt: 'Logística', cargo: 'Auxiliar de logística', pref: 'LOG',
@@ -50,7 +50,7 @@
   ];
   const PERMISO_TXT = { no: 'Sin acceso', ver: 'Solo ver', pide: 'Pide material', edita: 'Edita', reporta: 'Reporta novedades', autoriza: 'Autoriza',
     compra: 'Hace las compras', bodega: 'Encargada de bodega', gerente: 'Ve todo a detalle', jefe: 'Ve y cambia todo',
-    encargado: 'Encargado del módulo', soporte: 'Mantenimiento y entregas', logistica: 'Logística de la reunión', asiste: 'Asiste a reuniones', actas: 'Registra actas y formatos' };
+    encargado: 'Encargado del módulo', soporte: 'Mantenimiento y entregas', logistica: 'Logística de la reunión', asiste: 'Asiste a reuniones', actas: 'Registra actas y formatos', informa: 'Informa lo que hay' };
 
   const rolDe = rol => ROLES.find(r => r.rol === rol) || null;
   const corto = nombre => { const p = String(nombre || '').trim().split(/\s+/); return p.length > 1 ? `${p[0]} ${p[1][0]}.` : (p[0] || ''); };

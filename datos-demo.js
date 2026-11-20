@@ -279,32 +279,35 @@
     function nec(reunionId, tipo, detalle, cantidad, responsableRol, estado, extra) {
       const r = reuniones[reunionId];
       return Object.assign({ reunionId, comunidad: r.comunidad, fechaReunion: r.fecha, tipo, detalle, cantidad, responsableRol, estado,
-        por: '', en: '', motivo: '', conductor: '', items: [], acta: null }, extra || {});
+        por: '', en: '', motivo: '', conductor: '', items: [], acta: null, informes: [] }, extra || {});
     }
     const hecho = (por, n, h) => ({ por, en: iso(n, h, 0) });
+    // Lo que informan Compras, Transporte o Bodega para que la Jefe decida.
+    const inf = (rol, por, texto, n, h) => ({ rol, por, texto, en: iso(n, h, 0) });
     const necesidades = {
-      'ne-001': nec('re-001', 'carros', 'Dos camionetas para el equipo de campo', 2, 'carros', 'autorizado', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Marta Gómez', -2, 9))),
+      'ne-001': nec('re-001', 'carros', 'Dos camionetas para el equipo de campo', 2, 'jefe', 'autorizado', Object.assign({ conductor: 'Carlos Pinto',
+        informes: [inf('carros', 'Marta Gómez', 'Están libres la ABC 123 y la DEF 456. Carlos puede manejar.', -2, 8)] }, hecho('Ana Pérez', -2, 9))),
       'ne-002': nec('re-001', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Norte', 2, 'conductor', 'pendiente', { conductor: 'Carlos Pinto' }),
-      'ne-003': nec('re-001', 'refrigerios', 'Refrigerios para 30 personas', 30, 'compras', 'pendiente'),
-      'ne-004': nec('re-001', 'almuerzo', 'Almuerzo para 30 personas', 30, 'compras', 'pendiente'),
+      'ne-003': nec('re-001', 'refrigerios', 'Refrigerios para 30 personas', 30, 'jefe', 'pendiente', { informes: [inf('asistente', 'Sofía Herrera', 'En bodega hay 12 refrigerios; faltan 18 por comprar.', -1, 10)] }),
+      'ne-004': nec('re-001', 'almuerzo', 'Almuerzo para 30 personas', 30, 'jefe', 'pendiente'),
       'ne-005': nec('re-001', 'logistica', 'Alistar el salón para 30 personas', 30, 'logistica', 'pendiente', { items: items([1]) }),
       'ne-006': nec('re-001', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'pendiente'),
       'ne-007': nec('re-001', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'pendiente'),
-      'ne-008': nec('re-002', 'carros', 'Una camioneta para el equipo', 1, 'carros', 'pendiente'),
-      'ne-009': nec('re-002', 'refrigerios', 'Refrigerios para 20 personas', 20, 'compras', 'pendiente'),
+      'ne-008': nec('re-002', 'carros', 'Una camioneta para el equipo', 1, 'jefe', 'pendiente'),
+      'ne-009': nec('re-002', 'refrigerios', 'Refrigerios para 20 personas', 20, 'jefe', 'pendiente'),
       'ne-010': nec('re-002', 'logistica', 'Alistar el kiosco para 20 personas', 20, 'logistica', 'pendiente', { items: items([]) }),
       'ne-011': nec('re-002', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Laura Medina', -1, 16)),
       'ne-012': nec('re-002', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'pendiente'),
-      'ne-013': nec('re-003', 'carros', 'Una camioneta para el equipo', 1, 'carros', 'autorizado', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Marta Gómez', -16, 10))),
+      'ne-013': nec('re-003', 'carros', 'Una camioneta para el equipo', 1, 'jefe', 'autorizado', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Ana Pérez', -16, 10))),
       'ne-014': nec('re-003', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Centro', 1, 'conductor', 'listo', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Carlos Pinto', -15, 8))),
-      'ne-015': nec('re-003', 'almuerzo', 'Almuerzo para 15 personas', 15, 'compras', 'autorizado', hecho('Luis Rodríguez', -16, 11)),
+      'ne-015': nec('re-003', 'almuerzo', 'Almuerzo para 15 personas', 15, 'jefe', 'autorizado', hecho('Ana Pérez', -16, 11)),
       'ne-016': nec('re-003', 'logistica', 'Alistar la escuela para 15 personas', 15, 'logistica', 'listo', Object.assign({ items: items([0, 1, 2, 3]) }, hecho('Pedro Castillo', -11, 15))),
       'ne-017': nec('re-003', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Laura Medina', -14, 9)),
       'ne-018': nec('re-003', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'listo', Object.assign({
         acta: { asistentes: 14, inicio: '10:00', fin: '12:30', observaciones: 'Se presentó el proyecto. La comunidad pidió una segunda reunión para revisar el cronograma.', foto: '' } }, hecho('Natalia Vargas', -10, 16))),
-      'ne-019': nec('re-004', 'carros', 'Una camioneta para el equipo', 1, 'carros', 'autorizado', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Marta Gómez', -6, 9))),
+      'ne-019': nec('re-004', 'carros', 'Una camioneta para el equipo', 1, 'jefe', 'autorizado', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Ana Pérez', -6, 9))),
       'ne-020': nec('re-004', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Occidente', 1, 'conductor', 'listo', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Carlos Pinto', -5, 8))),
-      'ne-021': nec('re-004', 'refrigerios', 'Refrigerios para 25 personas', 25, 'compras', 'autorizado', hecho('Luis Rodríguez', -6, 11)),
+      'ne-021': nec('re-004', 'refrigerios', 'Refrigerios para 25 personas', 25, 'jefe', 'autorizado', hecho('Ana Pérez', -6, 11)),
       'ne-022': nec('re-004', 'logistica', 'Alistar la cancha para 25 personas', 25, 'logistica', 'listo', Object.assign({ items: items([0, 1, 2, 3]) }, hecho('Pedro Castillo', -2, 15))),
       'ne-023': nec('re-004', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Laura Medina', -4, 9)),
       'ne-024': nec('re-004', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'pendiente')
@@ -331,5 +334,5 @@
     return { equipos, compras, vehiculos, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 6, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 7, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

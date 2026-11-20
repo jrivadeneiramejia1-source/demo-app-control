@@ -8,7 +8,8 @@ rules_version = '2';
 //   Jefe (Ana): carga y reinicia los datos de prueba, autoriza las compras y puede hacer cualquier paso (menos autorizarse a sí misma).
 //   Compras (Luis): registra la compra autorizada (proveedor, valor, factura) y las compras hechas sin autorización.
 //   Bodega (Sofía): entradas, salidas, conteos, entregas y recibe lo comprado.
-//   Reuniones: la Jefe confirma lo que entendió el agente y reparte; Compras autoriza comida, Transporte los carros y el conductor,
+//   Reuniones: la Jefe confirma lo que entendió el agente y reparte; Compras, Transporte y Bodega informan lo que hay y la Jefe
+//   autoriza la comida y los carros (escoge el conductor);
 //   el Conductor confirma el viaje, Logística alista, el Profesional confirma si va y Administrativo registra el acta.
 //   Todos: piden material y piden compras a su nombre, y marcan sus avisos como leídos.
 service cloud.firestore {
@@ -48,6 +49,12 @@ service cloud.firestore {
     function rutaCodigo(c, r) {
       return esDireccion(r) ? /databases/$(database)/documents/codigosDireccion/$(c) : /databases/$(database)/documents/codigos/$(c);
     }
+    // Quiénes informan lo que hay en cada tarea de reunión (la comida y los carros los autoriza la Jefe).
+    function informanEn(tipo) {
+      return tipo in ['refrigerios', 'almuerzo'] ? ['compras', 'asistente']
+        : tipo == 'carros' ? ['carros', 'asistente']
+        : tipo == 'logistica' ? ['asistente'] : [];
+    }
     function rutaNec(id) { return /databases/$(database)/documents/necesidades/$(id); }
     // ¿Ya llegó ese día (AAAA-MM-DD) en Colombia (UTC-5)? Desde las 00:00 hora de Colombia.
     function yaFue(f) {
@@ -56,8 +63,7 @@ service cloud.firestore {
     }
     // Estados a los que cada quien puede pasar su tarea de reunión.
     function estadosDe(tipo) {
-      return tipo in ['refrigerios', 'almuerzo', 'carros'] ? ['autorizado', 'rechazado']
-        : tipo in ['viaje', 'asistencia'] ? ['listo', 'no-va']
+      return tipo in ['viaje', 'asistencia'] ? ['listo', 'no-va']
         : tipo == 'logistica' ? ['pendiente', 'listo']
         : tipo == 'acta' ? ['listo'] : [];
     }
@@ -107,25 +113,22 @@ service cloud.firestore {
     match /necesidades/{id} {
       allow read: if esDemo();
       // Las crea la Jefe; Transporte crea el viaje del conductor al autorizar los carros.
-      // El viaje solo nace en la misma escritura que autoriza esos carros, con el mismo conductor y cantidad.
-      allow create: if esJefe()
-        || (esDemo() && rol() == 'carros'
-            && nuevo().keys().hasOnly(['reunionId', 'comunidad', 'fechaReunion', 'tipo', 'detalle', 'cantidad', 'responsableRol', 'estado', 'por', 'en', 'motivo', 'conductor', 'items', 'acta', 'carrosId'])
-            && nuevo().tipo == 'viaje' && nuevo().responsableRol == 'conductor' && nuevo().estado == 'pendiente'
-            && nuevo().carrosId is string
-            && get(rutaNec(nuevo().carrosId)).data.estado == 'pendiente'
-            && getAfter(rutaNec(nuevo().carrosId)).data.tipo == 'carros'
-            && getAfter(rutaNec(nuevo().carrosId)).data.estado == 'autorizado'
-            && getAfter(rutaNec(nuevo().carrosId)).data.reunionId == nuevo().reunionId
-            && getAfter(rutaNec(nuevo().carrosId)).data.conductor == nuevo().conductor
-            && getAfter(rutaNec(nuevo().carrosId)).data.cantidad == nuevo().cantidad);
+      // Las crea la Jefe (también el viaje del conductor, al autorizar los carros).
+      allow create: if esJefe();
       // Cada quien decide SU tarea una vez (mientras está pendiente). El acta, el día de la reunión o después.
       allow update: if esJefe()
         || (esDemo() && antes().responsableRol == rol() && antes().estado == 'pendiente'
             && soloCambia(['estado', 'por', 'en', 'motivo', 'conductor', 'items', 'acta'])
             && nuevo().estado in estadosDe(antes().tipo)
             && (antes().tipo != 'acta' || yaFue(antes().fechaReunion)))
-        // El conductor que no puede devuelve los carros a Transporte para que escoja otro.
+        // Compras, Transporte y Bodega agregan lo que hay (un informe a la vez, sin tocar los de los demás) para que la Jefe decida.
+        || (esDemo() && rol() in informanEn(antes().tipo) && antes().estado == 'pendiente' && soloCambia(['informes'])
+            && nuevo().informes is list && nuevo().informes.size() == antes().get('informes', []).size() + 1 && nuevo().informes.size() <= 20
+            && nuevo().informes == antes().get('informes', []).concat([nuevo().informes[nuevo().informes.size() - 1]])
+            && nuevo().informes[nuevo().informes.size() - 1].rol == rol()
+            && nuevo().informes[nuevo().informes.size() - 1].texto is string
+            && nuevo().informes[nuevo().informes.size() - 1].texto.size() <= 200)
+        // El conductor que no puede devuelve los carros para que la Jefe escoja otro.
         || (esDemo() && rol() == 'conductor' && antes().tipo == 'carros' && antes().estado == 'autorizado'
             && nuevo().estado == 'pendiente' && nuevo().conductor == '' && soloCambia(['estado', 'conductor', 'motivo']));
       allow delete: if esJefe();

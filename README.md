@@ -12,7 +12,7 @@ Cada pantalla trae una etiqueta azul **Versión pagada**: al tocarla dice qué c
 | 3. Equipos | Equipos y Entregas juntas | Pendiente |
 | 4. Vehículos | Hoja de vida, novedades con foto, entrega y recibo | Pendiente |
 | 5. Inventario y compras | Bodega con las compras adentro: Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras (con foto de factura e historial), Conteo físico y Resumen con Excel. Permisos por rol en las reglas y avisos al teléfono | Hecha (va antes que 3 y 4, a pedido de los jefes) |
-| 6. Reuniones y agente | Cuatro correos de ejemplo; el agente (Worker `agente-demo` con Gemini) los lee y la Jefe confirma y reparte: Compras autoriza la comida, Transporte los carros y el conductor, el Conductor confirma, Logística alista, el Profesional confirma si va y Administrativo registra el acta con foto. Resumen para Jefe y Gerente | Hecha (falta conectar Gemini) |
+| 6. Reuniones y agente | Cuatro correos de ejemplo; el agente (Worker `agente-demo` con Gemini) los lee y la Jefe confirma y reparte: Compras, Transporte y Bodega informan lo que hay y la Jefe autoriza la comida y los carros (escoge el conductor); el Conductor confirma, Logística alista, el Profesional confirma si va y Administrativo registra el acta con foto. Resumen para Jefe y Gerente | Hecha (falta conectar Gemini) |
 | 7. Pulido | Modo presentación y guion | Pendiente |
 
 ## Cómo se entra
@@ -32,9 +32,9 @@ Los códigos se manejan en **Cambiar de persona > Personas y códigos**, que sol
 | Dirección | Ana Pérez | Jefe | Ve y cambia todo | Autoriza las compras y puede hacer cualquier paso | Ve y cambia todo | Ve y cambia todo |
 | Equipos | Daniel Ortiz | Encargado de equipos | Encargado | Pide material | No | No |
 | Equipos | Valentina Ruiz | Soporte | Mantenimiento y entregas | Pide material | No | No |
-| Inventario | Luis Rodríguez | Compras | No | Hace las compras | No | Autoriza |
-| Inventario | Sofía Herrera | Bodega | No | Encargada de bodega | No | No |
-| Vehículos | Marta Gómez | Transporte | No | Pide material | Autoriza | Autoriza |
+| Inventario | Luis Rodríguez | Compras | No | Hace las compras | No | Informa lo que hay |
+| Inventario | Sofía Herrera | Bodega | No | Encargada de bodega | No | Informa lo que hay (comida, carros, logística) |
+| Vehículos | Marta Gómez | Transporte | No | Pide material | Autoriza | Informa qué carros hay |
 | Vehículos | Carlos Pinto | Conductor | No | Pide material | Reporta novedades | Asiste |
 | Reuniones | Pedro Castillo | Logística | No | Pide material | No | Logística |
 | Reuniones | Laura Medina | Profesional | No | Pide material | No | Asiste |
