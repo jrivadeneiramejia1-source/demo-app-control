@@ -247,6 +247,8 @@
     };
 
     // ---------- REUNIONES ----------
+    // La reunión guarda lo general; lo que le toca a cada rol va aparte en «necesidades» (una por tarea),
+    // para que cada persona solo pueda cambiar la suya (lo piden las reglas).
     function correo(comunidad, fecha, hora, lugar) {
       return 'Asunto: Reunión con ' + comunidad + '\n\n' +
         'Buenos días.\n\n' +
@@ -256,54 +258,56 @@
         'Gracias.\n' +
         'Equipo de coordinación de reuniones';
     }
+    function reunion(comunidad, n, hora, lugar, asistentes, estado, historial, extra) {
+      return Object.assign({ comunidad, fecha: dias(n), hora, lugar, asistentes, jefe: 'Ana Pérez', estado, faltan: [],
+        proyecto: 'Proyecto Costa Norte', correo: correo(comunidad, dias(n), hora, lugar), historial, origen: 'correo' }, extra || {});
+    }
     const reuniones = {
-      're-001': {
-        comunidad: 'Comunidad Ejemplo Norte', fecha: dias(6), hora: '08:00', lugar: 'Salón comunal de Ejemplo Norte',
-        jefe: 'Ana Pérez', asistentes: ['Laura Medina', 'Pedro Castillo', 'Natalia Vargas', 'Carlos Pinto', 'Jorge Ibarra', 'Paola Ríos'],
-        estado: 'programada',
-        necesidades: [
-          { id: 'ne-001', tipo: 'carros', cantidad: 2, detalle: 'Dos camionetas para el equipo de campo',
-            responsable: 'Marta Gómez', responsableRol: 'carros', estado: 'autorizado' },
-          { id: 'ne-002', tipo: 'refrigerios', cantidad: 30, detalle: 'Refrigerios para 30 personas',
-            responsable: 'Luis Rodríguez', responsableRol: 'compras', estado: 'pendiente' },
-          { id: 'ne-003', tipo: 'almuerzo', cantidad: 30, detalle: 'Almuerzo para 30 personas',
-            responsable: 'Luis Rodríguez', responsableRol: 'compras', estado: 'pendiente' }
-        ],
-        correo: correo('Comunidad Ejemplo Norte', dias(6), '08:00', 'el salón comunal de Ejemplo Norte'),
-        historial: [{ fecha: iso(-3, 9, 30), texto: 'Reunión creada desde el correo recibido' }]
-      },
-      're-002': {
-        comunidad: 'Comunidad Ejemplo Sur', fecha: dias(13), hora: '09:30', lugar: 'Kiosco principal de Ejemplo Sur',
-        jefe: 'Ana Pérez', asistentes: ['Laura Medina', 'Pedro Castillo', 'Natalia Vargas', 'Carlos Pinto', 'Camilo Suárez'],
-        estado: 'reprogramada',
-        necesidades: [
-          { id: 'ne-004', tipo: 'carros', cantidad: 1, detalle: 'Una camioneta para el equipo',
-            responsable: 'Marta Gómez', responsableRol: 'carros', estado: 'pendiente' },
-          { id: 'ne-005', tipo: 'refrigerios', cantidad: 20, detalle: 'Refrigerios para 20 personas',
-            responsable: 'Luis Rodríguez', responsableRol: 'compras', estado: 'pendiente' }
-        ],
-        correo: correo('Comunidad Ejemplo Sur', dias(9), '09:30', 'el kiosco principal de Ejemplo Sur'),
-        historial: [
-          { fecha: iso(-6, 10, 0), texto: 'Reunión creada desde el correo recibido' },
-          { fecha: iso(-1, 15, 20), texto: 'Cambió la fecha del ' + dias(9) + ' al ' + dias(13) + ' porque la comunidad pidió más tiempo' }
-        ]
-      },
-      're-003': {
-        comunidad: 'Comunidad Ejemplo Centro', fecha: dias(-10), hora: '10:00', lugar: 'Escuela de Ejemplo Centro',
-        jefe: 'Ana Pérez', asistentes: ['Jorge Ibarra', 'Paola Ríos', 'Camilo Suárez'],
-        estado: 'realizada',
-        necesidades: [
-          { id: 'ne-006', tipo: 'carros', cantidad: 1, detalle: 'Una camioneta para el equipo',
-            responsable: 'Marta Gómez', responsableRol: 'carros', estado: 'autorizado' },
-          { id: 'ne-007', tipo: 'almuerzo', cantidad: 15, detalle: 'Almuerzo para 15 personas',
-            responsable: 'Luis Rodríguez', responsableRol: 'compras', estado: 'autorizado' }
-        ],
-        correo: correo('Comunidad Ejemplo Centro', dias(-10), '10:00', 'la escuela de Ejemplo Centro'),
-        historial: [
-          { fecha: iso(-18, 8, 45), texto: 'Reunión creada desde el correo recibido' },
-          { fecha: iso(-10, 16, 0), texto: 'Reunión realizada sin novedades' }
-        ]
-      }
+      're-001': reunion('Comunidad Ejemplo Norte', 6, '08:00', 'Salón comunal de Ejemplo Norte', 30, 'programada',
+        [{ fecha: iso(-3, 9, 30), texto: 'Reunión creada desde el correo recibido', por: 'Agente' }, { fecha: iso(-3, 10, 5), texto: 'La Jefe la revisó y repartió las tareas', por: 'Ana Pérez' }]),
+      're-002': reunion('Comunidad Ejemplo Sur', 13, '09:30', 'Kiosco principal de Ejemplo Sur', 20, 'reprogramada',
+        [{ fecha: iso(-6, 10, 0), texto: 'Reunión creada desde el correo recibido', por: 'Agente' },
+          { fecha: iso(-1, 15, 20), texto: 'Cambió la fecha del ' + dias(9) + ' al ' + dias(13) + ' porque la comunidad pidió más tiempo', por: 'Ana Pérez' }],
+        { proyecto: 'Proyecto Ruta Alta' }),
+      're-003': reunion('Comunidad Ejemplo Centro', -10, '10:00', 'Escuela de Ejemplo Centro', 15, 'realizada',
+        [{ fecha: iso(-18, 8, 45), texto: 'Reunión creada desde el correo recibido', por: 'Agente' }, { fecha: iso(-10, 16, 0), texto: 'Acta registrada: 14 asistentes', por: 'Natalia Vargas' }]),
+      're-004': reunion('Comunidad Ejemplo Occidente', -1, '14:00', 'Cancha de Ejemplo Occidente', 25, 'programada',
+        [{ fecha: iso(-7, 11, 0), texto: 'Reunión creada desde el correo recibido', por: 'Agente' }], { proyecto: 'Proyecto Ruta Alta' })
+    };
+    const ITEMS_LOG = ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'];
+    const items = marcados => ITEMS_LOG.map((t, k) => ({ t, ok: marcados.includes(k) }));
+    function nec(reunionId, tipo, detalle, cantidad, responsableRol, estado, extra) {
+      const r = reuniones[reunionId];
+      return Object.assign({ reunionId, comunidad: r.comunidad, fechaReunion: r.fecha, tipo, detalle, cantidad, responsableRol, estado,
+        por: '', en: '', motivo: '', conductor: '', items: [], acta: null }, extra || {});
+    }
+    const hecho = (por, n, h) => ({ por, en: iso(n, h, 0) });
+    const necesidades = {
+      'ne-001': nec('re-001', 'carros', 'Dos camionetas para el equipo de campo', 2, 'carros', 'autorizado', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Marta Gómez', -2, 9))),
+      'ne-002': nec('re-001', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Norte', 2, 'conductor', 'pendiente', { conductor: 'Carlos Pinto' }),
+      'ne-003': nec('re-001', 'refrigerios', 'Refrigerios para 30 personas', 30, 'compras', 'pendiente'),
+      'ne-004': nec('re-001', 'almuerzo', 'Almuerzo para 30 personas', 30, 'compras', 'pendiente'),
+      'ne-005': nec('re-001', 'logistica', 'Alistar el salón para 30 personas', 30, 'logistica', 'pendiente', { items: items([1]) }),
+      'ne-006': nec('re-001', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'pendiente'),
+      'ne-007': nec('re-001', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'pendiente'),
+      'ne-008': nec('re-002', 'carros', 'Una camioneta para el equipo', 1, 'carros', 'pendiente'),
+      'ne-009': nec('re-002', 'refrigerios', 'Refrigerios para 20 personas', 20, 'compras', 'pendiente'),
+      'ne-010': nec('re-002', 'logistica', 'Alistar el kiosco para 20 personas', 20, 'logistica', 'pendiente', { items: items([]) }),
+      'ne-011': nec('re-002', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Laura Medina', -1, 16)),
+      'ne-012': nec('re-002', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'pendiente'),
+      'ne-013': nec('re-003', 'carros', 'Una camioneta para el equipo', 1, 'carros', 'autorizado', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Marta Gómez', -16, 10))),
+      'ne-014': nec('re-003', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Centro', 1, 'conductor', 'listo', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Carlos Pinto', -15, 8))),
+      'ne-015': nec('re-003', 'almuerzo', 'Almuerzo para 15 personas', 15, 'compras', 'autorizado', hecho('Luis Rodríguez', -16, 11)),
+      'ne-016': nec('re-003', 'logistica', 'Alistar la escuela para 15 personas', 15, 'logistica', 'listo', Object.assign({ items: items([0, 1, 2, 3]) }, hecho('Pedro Castillo', -11, 15))),
+      'ne-017': nec('re-003', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Laura Medina', -14, 9)),
+      'ne-018': nec('re-003', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'listo', Object.assign({
+        acta: { asistentes: 14, inicio: '10:00', fin: '12:30', observaciones: 'Se presentó el proyecto. La comunidad pidió una segunda reunión para revisar el cronograma.', foto: '' } }, hecho('Natalia Vargas', -10, 16))),
+      'ne-019': nec('re-004', 'carros', 'Una camioneta para el equipo', 1, 'carros', 'autorizado', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Marta Gómez', -6, 9))),
+      'ne-020': nec('re-004', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Occidente', 1, 'conductor', 'listo', Object.assign({ conductor: 'Carlos Pinto' }, hecho('Carlos Pinto', -5, 8))),
+      'ne-021': nec('re-004', 'refrigerios', 'Refrigerios para 25 personas', 25, 'compras', 'autorizado', hecho('Luis Rodríguez', -6, 11)),
+      'ne-022': nec('re-004', 'logistica', 'Alistar la cancha para 25 personas', 25, 'logistica', 'listo', Object.assign({ items: items([0, 1, 2, 3]) }, hecho('Pedro Castillo', -2, 15))),
+      'ne-023': nec('re-004', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Laura Medina', -4, 9)),
+      'ne-024': nec('re-004', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'pendiente')
     };
 
     // ---------- AVISOS ----------
@@ -315,7 +319,7 @@
       'av-007': aviso('gerente', 'Compra por autorizar', 'Ana Pérez pide comprar 6 unidades de mouse inalámbrico (aprox. $ 180.000). La autorizas tú porque la pidió la Jefe.', iso(0, 8, 20), 'inventario'),
       'av-009': aviso('equipos', 'Equipos en Recibidos', 'Hay 3 equipos en Recibidos esperando revisión: DEMO-0010, DEMO-0011 y DEMO-0012.', iso(0, 7, 45), 'equipos'),
       'av-010': aviso('logistica', 'Reunión próxima', 'La reunión en la Comunidad Ejemplo Norte es en 6 días: hay que alistar refrigerios, almuerzo y sonido.', iso(-1, 16, 0), 'reuniones'),
-      'av-011': aviso('administrativo', 'Formatos de la reunión', 'Prepara la lista de asistencia y el acta para la reunión en la Comunidad Ejemplo Norte.', iso(-1, 16, 5), 'reuniones'),
+      'av-011': aviso('administrativo', 'Acta por registrar', 'La reunión de ayer en la Comunidad Ejemplo Occidente ya pasó: registra el acta y el formato diario.', iso(0, 7, 30), 'reuniones'),
       'av-008': aviso('compras', 'Compra autorizada: hay que comprar', 'Ana Pérez autorizó comprar 8 resmas de papel carta.', iso(-4, 15, 5), 'inventario'),
       'av-002': aviso('jefe', 'Compra sin autorización', 'Se compró algo sin autorización: garrafones de agua.', iso(-5, 17, 40), 'inventario'),
       'av-003': aviso('carros', 'SOAT por vencer', 'El SOAT del ABC 123 vence en 12 días.', iso(-1, 7, 30), 'vehiculos'),
@@ -324,8 +328,8 @@
       'av-006': aviso('asistente', 'Pedidos de material por entregar', 'Tienes 3 pedidos de material por entregar.', iso(-1, 17, 10), 'inventario')
     };
 
-    return { equipos, compras, vehiculos, reuniones, avisos, articulos, movimientos, solicitudes };
+    return { equipos, compras, vehiculos, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 5, generar });
+  window.DatosDemo = Object.freeze({ VERSION: 6, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

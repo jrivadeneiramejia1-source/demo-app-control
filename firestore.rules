@@ -8,6 +8,8 @@ rules_version = '2';
 //   Jefe (Ana): carga y reinicia los datos de prueba, autoriza las compras y puede hacer cualquier paso (menos autorizarse a sí misma).
 //   Compras (Luis): registra la compra autorizada (proveedor, valor, factura) y las compras hechas sin autorización.
 //   Bodega (Sofía): entradas, salidas, conteos, entregas y recibe lo comprado.
+//   Reuniones: la Jefe confirma lo que entendió el agente y reparte; Compras autoriza comida, Transporte los carros y el conductor,
+//   el Conductor confirma el viaje, Logística alista, el Profesional confirma si va y Administrativo registra el acta.
 //   Todos: piden material y piden compras a su nombre, y marcan sus avisos como leídos.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -46,6 +48,13 @@ service cloud.firestore {
     function rutaCodigo(c, r) {
       return esDireccion(r) ? /databases/$(database)/documents/codigosDireccion/$(c) : /databases/$(database)/documents/codigos/$(c);
     }
+    // Estados a los que cada quien puede pasar su tarea de reunión.
+    function estadosDe(tipo) {
+      return tipo in ['refrigerios', 'almuerzo', 'carros'] ? ['autorizado', 'rechazado']
+        : tipo in ['viaje', 'asistencia'] ? ['listo', 'no-va']
+        : tipo == 'logistica' ? ['pendiente', 'listo']
+        : tipo == 'acta' ? ['listo'] : [];
+    }
     // Cambio que le toca decidir al Gerente: una compra que pidió la Jefe pasa a autorizada o rechazada, o sale de ahí.
     function decideGerente() {
       return antes().get('pideRol', '') == 'jefe' && nuevo().get('estado', '') != antes().get('estado', '')
@@ -67,8 +76,34 @@ service cloud.firestore {
 
     // Módulos que en esta fase solo se ven: los escribe la Jefe al cargar los datos de prueba.
     match /{col}/{id} {
-      allow read: if esDemo() && col in ['equipos', 'vehiculos', 'reuniones'];
-      allow write: if esJefe() && col in ['equipos', 'vehiculos', 'reuniones'];
+      allow read: if esDemo() && col in ['equipos', 'vehiculos'];
+      allow write: if esJefe() && col in ['equipos', 'vehiculos'];
+    }
+
+    // Reuniones: las arma la Jefe con lo que entendió el agente. Administrativo la marca como realizada al registrar el acta.
+    match /reuniones/{id} {
+      allow read: if esDemo();
+      allow create, delete: if esJefe();
+      allow update: if esJefe()
+        || (esDemo() && rol() == 'administrativo' && antes().estado in ['programada', 'reprogramada']
+            && nuevo().estado == 'realizada' && soloCambia(['estado', 'historial']));
+    }
+
+    // Lo que le toca a cada rol en una reunión (una tarea por documento). Cada quien cambia solo la suya,
+    // sin tocar de qué reunión es, qué es ni a quién le toca.
+    match /necesidades/{id} {
+      allow read: if esDemo();
+      // Las crea la Jefe; Transporte crea el viaje del conductor al autorizar los carros.
+      allow create: if esJefe()
+        || (esDemo() && rol() == 'carros' && nuevo().tipo == 'viaje' && nuevo().responsableRol == 'conductor' && nuevo().estado == 'pendiente');
+      allow update: if esJefe()
+        || (esDemo() && antes().responsableRol == rol() && antes().estado != 'cancelado'
+            && soloCambia(['estado', 'por', 'en', 'motivo', 'conductor', 'items', 'acta'])
+            && nuevo().estado in estadosDe(antes().tipo))
+        // El conductor que no puede devuelve los carros a Transporte para que escoja otro.
+        || (esDemo() && rol() == 'conductor' && antes().tipo == 'carros' && antes().estado == 'autorizado'
+            && nuevo().estado == 'pendiente' && soloCambia(['estado', 'conductor', 'motivo']));
+      allow delete: if esJefe();
     }
 
     // Bodega: artículos y movimientos.

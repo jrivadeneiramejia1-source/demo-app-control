@@ -18,7 +18,7 @@
 <link rel="preload" href="fuentes/bricolage.woff2" as="font" type="font/woff2" crossorigin>
 <script>try { var t = localStorage.getItem('cp_tema'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
 <link rel="stylesheet" href="comun.css?v=1">
-<link rel="stylesheet" href="demo.css?v=6">
+<link rel="stylesheet" href="demo.css?v=7">
 <link rel="stylesheet" href="caribe.css?v=2">
 </head>
 <body>
@@ -149,10 +149,9 @@
   <!-- REUNIONES -->
   <section class="view" id="vReuniones" aria-labelledby="tReuniones" hidden>
     <div class="vista-cab"><h2 class="titulo-vista" id="tReuniones">Reuniones</h2><span class="pill s-pend" id="permReuniones"></span></div>
-    <div class="summary" id="sumReuniones"></div>
-    <div class="count" id="cntReuniones" aria-live="polite"></div>
-    <div class="list" id="listaReuniones"></div>
-    <div class="note fase"><b>Fase 6:</b> botón «Llegó un correo» con cuatro correos de ejemplo. Gemini lo lee, crea o actualiza la reunión y reparte las tareas; cada persona autoriza lo suyo.</div>
+    <div class="summary cuatro" id="sumReuniones"></div>
+    <div class="chips secciones" id="reuSecciones" role="group" aria-label="Partes de reuniones"></div>
+    <div id="reuContenido" class="inv-contenido" tabindex="-1"></div>
     <button class="pagada" type="button" data-pagada="reuniones"><span data-ico="pagada"></span>Versión pagada: el agente lee solo el buzón real de Outlook</button>
   </section>
 </main>
@@ -247,6 +246,21 @@
   </form>
 </div>
 
+<!-- HOJA: ACCIÓN DE REUNIONES (correo, autorizar, conductor, lista de logística, acta) -->
+<div class="backdrop" id="shReu" hidden>
+  <form class="sheet" id="reForm" novalidate aria-labelledby="reT">
+    <div class="grab" aria-hidden="true"></div>
+    <h2 id="reT"></h2>
+    <p class="sub" id="reSub"></p>
+    <div id="reCampos" class="fields"></div>
+    <div class="err" id="reErr" role="alert" hidden></div>
+    <div class="sheet-actions">
+      <button class="btn danger" type="button" id="reSecundario" hidden></button>
+      <div class="row"><button class="btn" type="button" data-cerrar id="reCerrar">Cancelar</button><button class="btn primary" type="submit" id="rePrimario"></button></div>
+    </div>
+  </form>
+</div>
+
 <!-- HOJA: CONFIRMAR -->
 <div class="backdrop confirm" id="shConfirmar" hidden>
   <div class="sheet" aria-labelledby="cfT">
@@ -260,13 +274,15 @@
 
 <script src="iconos.js?v=3"></script>
 <script src="comun.js?v=1"></script>
-<script src="config.js?v=3"></script>
+<script src="config.js?v=4"></script>
 <script src="personas.js?v=5"></script>
-<script src="datos-demo.js?v=5"></script>
-<script src="nube.js?v=5"></script>
+<script src="datos-demo.js?v=6"></script>
+<script src="nube.js?v=6"></script>
 <script src="push.js?v=1"></script>
-<script src="inventario.js?v=4"></script>
+<script src="inventario.js?v=5"></script>
+<script src="correos-demo.js?v=1"></script>
+<script src="reuniones.js?v=1"></script>
 <script src="gente.js?v=2"></script>
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

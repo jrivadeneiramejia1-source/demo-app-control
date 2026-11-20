@@ -24,7 +24,7 @@ export default [
     languageOptions: { globals: { ...globals.serviceworker } }
   },
   {
-    files: ['avisos/**/*.js'],
+    files: ['avisos/**/*.js', 'agente/**/*.js'],
     languageOptions: { ecmaVersion: 2023, sourceType: 'module', globals: { ...globals.serviceworker } },
     rules: reglas
   },

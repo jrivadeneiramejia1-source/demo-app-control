@@ -5,7 +5,7 @@
 (function () {
   'use strict';
   const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
-  const COLECCIONES = ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos'];
+  const COLECCIONES = ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'necesidades', 'avisos'];
   let A = null, FS = null, auth = null, db = null;
 
   /** ¿config.js ya tiene los datos del proyecto? (si no, la app explica qué falta en vez de fallar). */
@@ -73,6 +73,8 @@
 
   /* ---------- cuentas reales (con el código del rol) ---------- */
   const uid = () => (auth && auth.currentUser ? auth.currentUser.uid : '');
+  /** Token de la sesión (lo revisa el Worker del agente para saber que es alguien de la app). */
+  const token = () => (auth && auth.currentUser ? auth.currentUser.getIdToken() : Promise.reject(new Error('sin sesión')));
   const limpiarCodigo = c => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z]{3})([A-Z0-9]{4})([A-Z0-9]{4})$/, '$1-$2-$3');
   async function entrarCuenta(correo, clave) {
     if (!auth) { const e = new Error('Firebase no cargó'); e.code = 'sin-sdk'; throw e; }
@@ -188,5 +190,5 @@
   }
 
   window.nube = Object.freeze({ configLista, explicar, iniciar, entrar, salir, escuchar, guardar, mezclar, borrar, sembrar, idNuevo, incremento, lote, COLECCIONES,
-    uid, entrarCuenta, crearCuenta, usarCodigo, codigoNuevo, limpiarCodigo });
+    uid, token, entrarCuenta, crearCuenta, usarCodigo, codigoNuevo, limpiarCodigo });
 })();

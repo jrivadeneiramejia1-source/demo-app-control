@@ -848,5 +848,5 @@
   $('acForm').addEventListener('submit', e => { e.preventDefault(); guardar(); });
   $('acSecundario').addEventListener('click', () => { if (accion && accion.alSecundario) accion.alSecundario(); });
 
-  window.Inventario = Object.freeze({ pintar, resumen, tareas, irA: s => { if (SECCIONES.some(x => x[0] === s)) seccion = s; } });
+  window.Inventario = Object.freeze({ pintar, resumen, tareas, leerFoto, irA: s => { if (SECCIONES.some(x => x[0] === s)) seccion = s; } });
 })();

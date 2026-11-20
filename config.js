@@ -17,3 +17,5 @@ window.AVISOS_DEMO = {
   url: "https://avisos-demo.jrivadeneiramejia1.workers.dev",
   vapid: "BM7_pE-Z6EtHdsDWdW48Q4Sh3-wipaXFKCcFMph30Qe8P8FsqTxfiOQF0ViK-nQQVa_LApA7bH-qIcyq8ryPqEE"
 };
+// Agente de reuniones (Worker «agente-demo» en Cloudflare con Gemini). Vacío = se usa la respuesta de respaldo de cada correo.
+window.AGENTE_DEMO = { url: "" };

@@ -52,7 +52,7 @@ function usuarioActual() {
   const usuarios = leerUsuarios();
   const correo = Object.keys(usuarios).find((c) => usuarios[c].uid === uid);
   if (!correo) { cacheUsuario = null; return null; }
-  cacheUsuario = { uid, email: correo };
+  cacheUsuario = { uid, email: correo, getIdToken: () => Promise.resolve('token-falso-' + uid) };
   return cacheUsuario;
 }
 

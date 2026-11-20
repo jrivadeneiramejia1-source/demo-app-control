@@ -15,7 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], reuniones: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [] },
+    datos: { equipos: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], reuniones: [], necesidades: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     oyentes: [],
     filtro: { equipos: '', inventario: '', vehiculos: '', reuniones: '' },
@@ -32,7 +32,6 @@
   const diasHasta = s => { const f = aFecha(s); if (!f) return null; const h = aFecha(hoyISO()); return Math.round((f - h) / 86400000); };
   const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
   const fechaCorta = s => { const f = aFecha(s); if (!f) return ''; const y = f.getFullYear() !== new Date().getFullYear() ? ' ' + f.getFullYear() : ''; return `${f.getDate()} ${MESES[f.getMonth()]}${y}`; };
-  const hora12 = h => { const m = /^(\d{1,2}):(\d{2})/.exec(String(h || '')); if (!m) return ''; const n = +m[1]; return `${((n + 11) % 12) + 1}:${m[2]} ${n < 12 ? 'a. m.' : 'p. m.'}`; };
   const cuando = d => d == null ? '' : d === 0 ? 'hoy' : d === 1 ? 'mañana' : d === -1 ? 'ayer' : d > 0 ? `en ${d} días` : `hace ${-d} días`;
   const hace = iso => {
     const t = Date.parse(iso); if (!Number.isFinite(t)) return '';
@@ -190,12 +189,13 @@
   const objetos = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
   const LIMPIAR = {
     vehiculos: v => Object.assign({}, v, { novedades: objetos(v.novedades) }),
-    reuniones: r => Object.assign({}, r, { necesidades: objetos(r.necesidades), asistentes: Array.isArray(r.asistentes) ? r.asistentes : [] })
+    reuniones: r => Object.assign({}, r, { historial: objetos(r.historial), faltan: Array.isArray(r.faltan) ? r.faltan.filter(x => typeof x === 'string') : [], correos: Array.isArray(r.correos) ? r.correos : [] }),
+    necesidades: n => Object.assign({}, n, { items: objetos(n.items) })
   };
   function escucharTodo() {
     // Las personas y los códigos solo los leen el Gerente y el Jefe (para el panel «Personas y códigos»).
     const p = S.persona, panel = !p.real ? [] : p.rol === 'gerente' ? ['usuarios', 'codigos', 'codigosDireccion'] : p.rol === 'jefe' ? ['usuarios', 'codigos'] : [];
-    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'avisos', 'suscripciones'].concat(panel).forEach(col => {
+    ['equipos', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'reuniones', 'necesidades', 'avisos', 'suscripciones'].concat(panel).forEach(col => {
       S.oyentes.push(nube.escuchar(col, lista => {
         S.datos[col] = lista.map(LIMPIAR[col] || (x => x)); S.llegaron.add(col);
         // El aviso de que faltan los datos de prueba (o de que no se pudieron cargar) se queda hasta que lleguen artículos.
@@ -286,11 +286,10 @@
     const inv = window.Inventario.resumen(rol);
     const docsPorVencer = d.vehiculos.reduce((n, v) => n + [v.soat, v.tecno].filter(f => { const x = diasHasta(f); return x != null && x <= 30; }).length, 0);
     const novedades = d.vehiculos.reduce((n, v) => n + (v.novedades || []).filter(x => !x.revisada).length, 0);
-    const necesidadesDe = r => (r.necesidades || []).filter(x => x.estado === 'pendiente' && (rol === 'jefe' || x.responsableRol === rol));
-    const reunionesPend = d.reuniones.filter(r => r.estado !== 'cancelada' && r.estado !== 'realizada' && necesidadesDe(r).length).length;
+    const reu = window.Reuniones.resumen();
     const recibidos = d.equipos.filter(e => e.estado === 'recibido').length;
     const proximas = d.reuniones.filter(r => r.estado === 'programada' || r.estado === 'reprogramada').length;
-    return { inv, docsPorVencer, novedades, reunionesPend, recibidos, proximas };
+    return { inv, reu, docsPorVencer, novedades, recibidos, proximas };
   }
 
   function pintarInicio() {
@@ -308,8 +307,10 @@
       { mod: 'inventario', k: 'i-mis', n: n.inv.misPedidos, lbl: 'Tus pedidos de material en espera', icono: 'caja', tono: 'listo', roles: () => permiso('inventario') === 'pide' },
       { mod: 'vehiculos', k: 'i-nov', n: n.novedades, lbl: 'Novedades sin revisar', icono: 'carro', tono: 'org', roles: ['jefe', 'carros', 'conductor'] },
       { mod: 'vehiculos', k: 'i-doc', n: n.docsPorVencer, lbl: 'SOAT o revisión por vencer', icono: 'calendario', tono: 'peligro', roles: ['jefe', 'carros', 'conductor'] },
-      { mod: 'reuniones', k: 'i-reu', n: n.reunionesPend, lbl: p.rol === 'jefe' ? 'Reuniones con algo pendiente' : 'Reuniones que esperan tu respuesta', icono: 'reunion', tono: 'listo', roles: ['jefe', 'compras', 'carros'] },
-      { mod: 'reuniones', k: 'i-prox', n: n.proximas, lbl: 'Próximas reuniones', icono: 'calendario', tono: 'listo', roles: ['conductor', 'logistica', 'profesional', 'administrativo'] },
+      { mod: 'reuniones', k: 'i-reu', n: n.reu.conPend, lbl: 'Reuniones con algo pendiente', icono: 'reunion', tono: 'org', roles: ['jefe'] },
+      { mod: 'reuniones', k: 'i-act', n: n.reu.actas, lbl: 'Actas por registrar', icono: 'hojas', tono: 'peligro', roles: ['jefe', 'administrativo'] },
+      { mod: 'reuniones', k: 'i-rmi', n: n.reu.mias, lbl: 'Tareas de reuniones para ti', icono: 'reunion', tono: 'listo', roles: ['compras', 'carros', 'conductor', 'logistica', 'profesional'] },
+      { mod: 'reuniones', k: 'i-prox', n: n.reu.proximas, lbl: 'Próximas reuniones', icono: 'calendario', tono: 'listo', roles: ['gerente', 'logistica', 'profesional', 'administrativo'] },
       { mod: 'equipos', k: 'i-rec', n: n.recibidos, lbl: 'Equipos en Recibidos', icono: 'recibidos', tono: 'listo', roles: ['jefe', 'equipos', 'soporte'] }
     ].filter(c => (typeof c.roles === 'function' ? c.roles() : c.roles.includes(p.rol)) && puedeVer(c.mod));
     const sum = $('sumInicio');
@@ -407,37 +408,6 @@
     }).join(''), 'No hay carros con ese filtro');
   }
 
-  const EST_RE = { programada: ['Programada', 's-listo', 'listo'], reprogramada: ['Reprogramada', 's-org', 'org'], cancelada: ['Cancelada', 's-peligro', 'peligro'], realizada: ['Realizada', 's-disco', 'disco'] };
-  const NEC_TXT = { carros: 'Carros', refrigerios: 'Refrigerios', almuerzo: 'Almuerzo' };
-  const NEC_EST = { pendiente: ['Pendiente', 's-org'], autorizado: ['Autorizado', 's-disco'], rechazado: ['Rechazado', 's-peligro'] };
-  function pintarReuniones() {
-    const proximas = r => r.estado === 'programada' || r.estado === 'reprogramada';
-    // Primero las próximas (la más cercana arriba); después las realizadas o canceladas (la más reciente arriba).
-    const todas = S.datos.reuniones.slice().sort((a, b) => (proximas(b) - proximas(a)) || (proximas(a) ? String(a.fecha).localeCompare(String(b.fecha)) : String(b.fecha).localeCompare(String(a.fecha))));
-    const conPend = r => (r.necesidades || []).some(x => x.estado === 'pendiente');
-    tablero('reuniones', [
-      { k: 'r-prox', n: todas.filter(proximas).length, lbl: 'Próximas', icono: 'calendario', tono: 'listo', filtro: 'proximas' },
-      { k: 'r-pend', n: todas.filter(r => proximas(r) && conPend(r)).length, lbl: 'Con algo pendiente', icono: 'reloj', tono: 'org', filtro: 'pendiente' },
-      { k: 'r-hech', n: todas.filter(r => r.estado === 'realizada').length, lbl: 'Realizadas', icono: 'checkCirculo', tono: 'disco', filtro: 'realizada' }
-    ]);
-    const f = S.filtro.reuniones;
-    const vis = todas.filter(r => !f || (f === 'proximas' && proximas(r)) || (f === 'pendiente' && proximas(r) && conPend(r)) || (f === 'realizada' && r.estado === 'realizada'));
-    contar('cntReuniones', vis.length, todas.length, 'reuniones');
-    lista('listaReuniones', 'reuniones', vis.map(r => {
-      const st = EST_RE[r.estado] || ['Sin estado', 'none', 'pend'];
-      const d = diasHasta(r.fecha);
-      return `<div class="card st-${st[2]}">
-        <div class="card-head"><div class="card-title">${esH(r.comunidad)}</div>${pill(st[0], st[1])}</div>
-        <p class="card-sub">${esH(fechaCorta(r.fecha))}, ${esH(hora12(r.hora))} (${esH(cuando(d))}) · ${esH(r.lugar)}</p>
-        <div class="facts"><span>Jefe: <b>${esH(r.jefe)}</b></span><span>${(r.asistentes || []).length} asistentes</span></div>
-        ${(r.necesidades || []).length ? `<ul class="necesidades">${r.necesidades.map(x => {
-          const e = NEC_EST[x.estado] || ['Sin estado', 'none'];
-          return `<li><span><b>${esH(NEC_TXT[x.tipo] || x.tipo)}</b> · ${esH(x.detalle || x.cantidad)} · ${esH(x.responsable)}</span>${pill(e[0], e[1])}</li>`;
-        }).join('')}</ul>` : ''}
-      </div>`;
-    }).join(''), 'No hay reuniones con ese filtro');
-  }
-
   /* ---------- avisos (campana) ---------- */
   const misAvisos = () => {
     const rol = S.persona ? S.persona.rol : '';
@@ -479,7 +449,7 @@
       equipos: ['jefe', 'equipos', 'soporte'].includes(rol) ? n.recibidos : 0,
       inventario: n.inv.mias,
       vehiculos: ['jefe', 'carros', 'conductor'].includes(rol) ? n.novedades : 0,
-      reuniones: ['jefe', 'compras', 'carros'].includes(rol) ? n.reunionesPend : 0
+      reuniones: n.reu.mias
     };
     Object.entries(b).forEach(([k, v]) => UI.insignia(document.querySelector(`[data-badge="${k}"]`), puedeVer(k) ? v : 0));
   }
@@ -488,7 +458,7 @@
     if (!S.persona) return;
     pintarInsignias();
     pintarAvisos();
-    ({ inicio: pintarInicio, equipos: pintarEquipos, inventario: () => window.Inventario.pintar(), vehiculos: pintarVehiculos, reuniones: pintarReuniones })[S.vista]();
+    ({ inicio: pintarInicio, equipos: pintarEquipos, inventario: () => window.Inventario.pintar(), vehiculos: pintarVehiculos, reuniones: () => window.Reuniones.pintar() })[S.vista]();
     if (window.Gente) window.Gente.pintar();
   }
 

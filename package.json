@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "lint": "eslint .",
-    "pruebas": "node pruebas/falso-prueba.mjs && node pruebas/worker.mjs && node pruebas/push.mjs && node pruebas/prueba.mjs"
+    "pruebas": "node pruebas/falso-prueba.mjs && node pruebas/worker.mjs && node pruebas/agente.mjs && node pruebas/push.mjs && node pruebas/prueba.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
