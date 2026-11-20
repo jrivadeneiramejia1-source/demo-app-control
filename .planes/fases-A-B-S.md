@@ -40,5 +40,18 @@ Ideas tomadas de apps parecidas: Sortly (estados de la orden y solo el dueño bo
 4. ¿Qué compras autoriza el Gerente? a) Solo las que pide la Jefe (como ahora). b) Además, todas las que pasen de un monto (¿cuánto?).
 5. ¿Una bodega o varias (por proyecto)? Recomendado: una ahora y varias como «Versión pagada».
 
+## Respuestas del jefe (20 de noviembre de 2026, tarde) y decisiones finales
+Estas mandan sobre las preguntas pendientes de arriba.
+1. Códigos o invitaciones de Gerente y Jefe: no respondió. Se aplica lo recomendado: los crea la Jefe y sirven una sola vez. El primer código de Jefe se crea a mano en Firebase (explicarlo en el README).
+2. Pausar o cambiar a otra Jefe: el jefe dijo que NO se cambia de jefe. Una Jefe no puede pausar ni cambiar el rol de otra Jefe ni del Gerente; eso solo se hace desde la consola de Firebase. «Pausar» = quitarle el acceso a una persona por un tiempo (no ve nada hasta que se lo devuelvan).
+3. Ver y editar: SÍ, como en A2 (la Jefe escoge por persona y por módulo qué ve y con qué nivel). El jefe prefiere que una sola persona maneje los permisos: el panel de personas y permisos es SOLO de la Jefe.
+4. Compras que autoriza el Gerente:
+   - Hay un monto límite guardado en Firebase (`ajustesApp/compras.montoGerente`), inicial $1.000.000. Solo el Gerente lo cambia (desde su Resumen), para que la Jefe no lo pueda subir y saltarse la revisión. Las reglas lo hacen cumplir.
+   - Compra por debajo del monto: la autoriza la Jefe. Igual o mayor al monto: después de la Jefe, la autoriza el Gerente (dos pasos: «autorizada por la Jefe» y luego «autorizada por el Gerente»). Si alguno rechaza, se detiene.
+   - Compra que pide la Jefe: siempre la autoriza el Gerente (como ahora), sin importar el monto.
+   - El Gerente también puede pedir compras (no es lo normal): pasan directo a Compras marcadas «Pedida por el Gerente», porque nadie está por encima de él; quedan en el resumen y en el historial.
+   - Nadie autoriza su propio pedido. El Gerente ve el detalle completo (B1) antes de autorizar.
+5. Una bodega o varias: no respondió. Se aplica lo recomendado: una bodega ahora; varias bodegas como «Versión pagada».
+
 ## Cómo se entrega
 Rama `desarrollo`; a `main` solo con el «sí» de Jeiler (también falta pasar el commit 91ed074). `npm run lint`, `npm run pruebas`, pruebas de reglas, capturas revisadas y decir qué quedó sin probar.
