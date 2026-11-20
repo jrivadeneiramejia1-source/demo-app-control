@@ -2,6 +2,8 @@
 
 Los jefes probaron la demo y les gustó. Ahora piden lo siguiente, en este orden.
 
+> **Plan acordado (20 de noviembre de 2026, con las respuestas del jefe): [`.planes/fases-a-b-s.md`](.planes/fases-a-b-s.md).** Cubre las fases A, B y S. Si algo de abajo choca con ese plan, manda el plan. Para empezar, Jeiler dice «haz el plan» o «ejecuta». Equipos, Vehículos y Reuniones se dejan como están en ese plan.
+
 ## Antes de empezar
 - La corrección de reglas de novedades (commit 91ed074) está en `desarrollo` y falta pasarla a `main` con el «sí» de Jeiler.
 - Seguir con la app como está (JS sin compilar, GitHub Pages, Firebase). No pasar a React: habría que rehacer todo y agregar un paso de compilar, sin ganancia para la demo.
