@@ -14,17 +14,28 @@ Cada pantalla trae una etiqueta azul **Versión pagada**: al tocarla dice qué c
 | 5. Inventario y compras | Bodega con las compras adentro: Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras (con foto de factura e historial), Conteo físico y Resumen con Excel. Permisos por rol en las reglas y avisos al teléfono | Hecha (va antes que 3 y 4, a pedido de los jefes) |
 | 6. Reuniones y agente | Cuatro correos de ejemplo; el agente (Worker `agente-demo` con Gemini) los lee y la Jefe confirma y reparte: Compras, Transporte y Bodega informan lo que hay y la Jefe autoriza la comida y los carros (escoge el conductor); el Conductor confirma, Logística alista, el Profesional confirma si va y Administrativo registra el acta con foto. Resumen para Jefe y Gerente | Hecha (falta conectar Gemini) |
 | 7. Pulido | Modo presentación y guion | Pendiente |
+| 8. Permisos, invitaciones y seguridad (Fases A y S) | Personas y permisos solo de la Jefe, niveles por módulo y por persona, invitaciones por Excel, correo confirmado, entrar con Google, reglas de Firebase cerradas por módulo y probadas en el emulador (`npm run reglas`) | Hecha |
+| 9. Inventario a fondo (Fase B) | Inventario por niveles, **Panorama de la Jefe**, compras con varias líneas y cotizaciones, **monto del Gerente** con autorización en dos pasos, el Gerente también puede pedir, alerta si pagan más de lo autorizado o llega menos, recibir compras de varios artículos, kárdex y mínimo sugerido, cada quien lee solo lo suyo | Hecha (faltan los préstamos de herramientas y los pedidos de material con varias líneas) |
 
 ## Cómo se entra
-Dos formas, desde la pantalla de entrada:
+Desde la pantalla de entrada hay dos formas:
 
-1. **Personas de prueba** (para presentar): una por rol, todas con la clave `demo-control-2026` (inventada y pública). Se cambia de persona en vivo desde el botón de arriba.
-2. **Mi cuenta** (como sería el uso real): cada persona crea su cuenta con su correo, su clave y el **código de su rol**. El código decide el rol: aunque alguien diga ser jefe, entra con el rol del código. Firebase revisa el código (las reglas), no solo la pantalla.
+1. **Personas de prueba** (para presentar): una por rol, todas con la clave `demo-control-2026` (inventada y pública). Se cambia de persona en vivo desde el botón de arriba. **Para uso real con datos de la empresa se apagan** (ver «Pasar a uso real»).
+2. **Mi cuenta** (uso real): la persona entra **con Google** o con **su correo y una clave que ella inventa** (10 caracteres o más). Su rol y sus permisos los pone la Jefe de antes; la persona no los escoge ni los cambia (lo revisa Firebase, no solo la pantalla).
 
-Los códigos se manejan en **Cambiar de persona > Personas y códigos**, que solo sale con una cuenta propia de Gerente o de Jefe (las personas de prueba tienen la clave pública, por eso no lo ven). Hay un código por rol, con el formato `LOG-7KQ4-M2XP` (las 3 letras dicen el rol). Ahí mismo se ve quién se registró, se le cambia el rol o se pausa su acceso. Si un código se riega, se cambia y el viejo deja de servir.
-- Los códigos de **Gerente y Jefe** solo los ve y crea el Gerente, y **sirven una sola vez** (colección `codigosDireccion`). El Jefe maneja los demás roles.
-- El **primer código de Gerente** se crea a mano en Firebase: Firestore Database > Datos > Iniciar colección `codigosDireccion`, documento con ID `GER-XXXX-XXXX` y campos `rol` = `gerente`, `activo` = `true` (booleano), `por` = `consola`, `en` = la fecha.
-- En Firebase debe quedar activa la creación de cuentas (**Authentication > Settings > User actions > Enable create (sign-up)**).
+### Cómo entra cada persona (invitaciones)
+1. **La Jefe** abre **Cambiar de persona > Personas y permisos** (solo ella lo ve; el Gerente no), descarga la **plantilla de Excel**, la llena (nombre, correo y rol; los niveles y permisos extra son opcionales) y la sube. La app muestra lo que entendió y marca lo que está mal (rol que no existe, correo repetido, nombre con `=`). Al tocar **Guardar** queda una invitación por correo.
+2. **La persona** abre la app, toca **Es mi primera vez** y escribe su correo y una clave (o toca **Continuar con Google**).
+3. **Con correo y clave**, Firebase le manda un correo para confirmar que el correo es suyo; sin confirmarlo no ve nada. **Con Google** no hace falta: Google ya lo confirmó.
+4. Al confirmar, la app busca la invitación de ese correo y le crea el perfil con el rol, los niveles y los permisos extra que dijo la Jefe. **La invitación sirve una sola vez.**
+5. Si su correo **no está en la lista**, la app le dice «Tu correo no está en la lista» y no ve nada. **Olvidé mi clave** manda el correo de cambio de clave.
+
+Alternativa sin Excel: la Jefe puede crear un **código por rol** (`LOG-7KQ4-M2XP`, las 3 letras dicen el rol) y dárselo a la persona, que lo escribe en «Tengo un código de rol». Los códigos de Gerente y Jefe también los crea la Jefe y **sirven una sola vez**.
+- **El primer código de Jefe se crea a mano** en Firebase: Firestore Database > Datos > Iniciar colección `codigosDireccion`, documento con ID `JEF-XXXX-XXXX` y campos `rol` = `jefe`, `activo` = `true` (booleano), `por` = `consola`, `en` = la fecha. Con ese código se registra la primera Jefe.
+- **A un Gerente o a otra Jefe no se les cambia nada desde la app** (ni rol, ni pausa, ni permisos): solo desde la consola de Firebase. Así una Jefe no puede sacar a otra.
+
+### Niveles por persona
+Además de su rol, la Jefe le puede poner a cada persona, **por módulo** (Equipos, Inventario, Vehículos, Reuniones): *Como su rol*, *Sin acceso*, *Solo ver* o un nivel de trabajo de ese módulo (por ejemplo, Inventario: *Pide material*, *Hace las compras*, *Encargada de bodega*). Sirve para subir o bajar: un bodeguero que solo mira Equipos, o un conductor que también atiende la bodega. En Reuniones solo se sube o se baja a *Solo ver* (allí cada rol hace su tarea). Las reglas de Firebase lo cumplen: con *Solo ver* o *Sin acceso* ni siquiera se puede leer lo que no toca.
 
 | Área | Persona de prueba | Rol | Equipos | Inventario | Vehículos | Reuniones |
 |---|---|---|---|---|---|---|
@@ -61,21 +72,36 @@ Firebase revisa los permisos extra en las reglas, no solo la pantalla.
 - `nube.js`: conexión con Firebase (Authentication con correo y clave, y Firestore). Nuevo: no usa la clave compartida de las apps reales ni manda errores a Slack.
 - `config.js`: datos del proyecto de Firebase de la demo, ID `fir-app-control-d8494` (no son secretos).
 - `personas.js`: los roles, sus permisos y las personas de prueba. `datos-demo.js`: los datos de ejemplo, con fechas relativas al día en que se cargan.
-- `firestore.rules`: reglas de la base de datos (entran las personas de prueba y las cuentas con un código válido). Se pegan en Firebase.
+- `firestore.rules`: reglas de la base de datos (entran las personas de prueba y las cuentas propias con correo confirmado; cada nivel lee y escribe solo lo suyo). `firebase.json` solo sirve para el emulador de las pruebas.
+- `SEGURIDAD.md`: qué se revisó, qué se encontró y se arregló, y qué falta. Se pegan en Firebase.
 - `caribe.css`: el estilo de la demo (azul mar sobrio, relieve con sombras, letra Nunito en `fuentes/nunito.woff2`, licencia SIL OFL 1.1). Va después de `demo.css`.
 - `comun.css`, `comun.js`, `iconos.js`, `fuentes/`, `codigos.js`, `lib/codigos/`: copiados de `apps-consulta-previa` (ver `DESIGN.md`). En `iconos.js` se agregaron iconos Phosphor (licencia MIT): inicio, carro, carrito, reunión, cambiar, pagada, correo y llave.
-- `gente.js`: panel «Personas y códigos» (Gerente y Jefe): códigos, personas registradas, rol, acceso y permisos extra.
+- `gente.js`: panel «Personas y permisos» (solo la Jefe): invitaciones por Excel, personas registradas, rol, acceso, niveles por módulo, permisos extra, códigos y el interruptor de las personas de prueba.
 - `buzon/Codigo.gs`: Apps Script del Gmail de prueba. Cada minuto pasa a la app los correos sin leer que hablen de reuniones (solo asunto, texto y fecha; no guarda quién lo mandó).
 - `pruebas/`: Firebase falso (`firebase-*.js`) y pruebas con Playwright.
 
 ## Datos en Firestore
+Colecciones nuevas: `invitaciones` (una por correo, en minúscula: nombre, rol, niveles y permisos extra; la crea la Jefe y se gasta al entrar la persona) y `ajustesApp` (`compras` = `{ montoGerente }`, lo cambia solo el Gerente con cuenta propia; `seguridad` = `{ personasPrueba }`, lo cambia solo la Jefe con cuenta propia). En `usuarios`, además del rol, cada perfil puede llevar `permisos` (nivel por módulo que le puso la Jefe). En `compras` y `solicitudes` las cuentas propias dejan su `pideUid`.
+
 Colecciones de primer nivel: `reuniones` y `necesidades` (una tarea por documento: comida, carros, viaje, logística, asistencia y acta), `usuarios` (perfil de cada cuenta propia: nombre, rol y si tiene acceso), `codigos` (código de cada rol de trabajo; lo leen Gerente y Jefe con cuenta propia), `codigosDireccion` (códigos de Gerente y Jefe, de un solo uso; solo el Gerente), `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `hojas` (actas de entrega y devolución con sus firmas), `tareasEq` (agenda de mantenimientos y backups), `avisos`, `buzon` (correos del Gmail de prueba; los leen la Jefe y la Administrativa encargada), `suscripciones` (teléfonos con avisos activados; Reiniciar no las borra) y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). Solo la Jefe carga, actualiza y reinicia los datos de prueba (así lo piden las reglas): si otra persona entra primero, la app le dice que entre una vez como Ana. La Jefe de prueba (Ana) tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
 
 ## Permisos (los hace cumplir Firebase, no solo la pantalla)
-- Compras: alguien pide → la Jefe autoriza (si la pidió la Jefe, el Gerente) → Compras (Luis) la compra → Bodega (Sofía) la recibe. Nadie autoriza su propio pedido.
-- Cualquiera pide material y pide compras a su nombre. El Gerente autoriza o rechaza sin poder cambiar cantidad ni valor; Compras registra la compra sin tocar lo autorizado.
-- La bodega (Sofía) recibe, entrega, registra entradas, salidas y conteos; la cantidad nunca queda negativa. La Jefe puede hacer cualquier paso.
+Las reglas (`firestore.rules`) no preguntan «¿qué rol tiene?» sino «¿qué **nivel** tiene en este módulo?» (el de su rol, o el que le puso la Jefe). Cada nivel solo lee lo que le toca: sin acceso no lee nada del módulo, y quien solo pide material no ve los movimientos de la bodega y, con cuenta propia, solo ve **sus** pedidos y compras.
+- **Compras**: alguien pide → la Jefe autoriza → Compras la compra → Bodega la recibe. Nadie autoriza su propio pedido.
+  - Si la compra vale el **monto del Gerente** (por defecto 1.000.000; lo cambia solo el Gerente con su cuenta, así la Jefe no lo puede subir) **o más**, después de la Jefe la autoriza el Gerente (estado «Falta el Gerente»). Si la pidió la Jefe, la decide siempre el Gerente. Si la pide el Gerente, nace autorizada y queda marcada como suya.
+  - Antes de decidir se ve todo: cada artículo con su precio, el total, a quién se compra, para qué, las cotizaciones (hasta 3 fotos), lo que hay en bodega y el último precio pagado.
+  - Si pagan más del 10 % de lo autorizado, o llega menos de lo comprado, la Jefe recibe el aviso (y el Gerente si él la había autorizado).
+- Cualquiera con nivel de pedir pide material y compras a su nombre. Compras registra la compra sin tocar lo autorizado. Las compras y los movimientos no se borran ni se editan (el rastro de lo gastado).
+- La bodega recibe, entrega, registra entradas, salidas y conteos; la cantidad nunca queda negativa. La Jefe puede hacer cualquier paso (menos autorizar lo suyo).
 - Cada quien marca como leídos solo sus avisos.
+
+## Pasar a uso real (pasos en la consola de Firebase)
+1. Firestore Database > Reglas (Rules): pegar `firestore.rules` y **Publicar**.
+2. Authentication > Sign-in method: activar **Correo/contraseña** y **Google**. En Settings > **Authorized domains** debe estar la dirección donde se publica la app (por ejemplo `usuario.github.io`).
+3. Authentication > Settings > **Password policy**: poner el mínimo en 10 caracteres y activar «Require email verification» si aparece (la app ya exige el correo confirmado, y las reglas también). En Templates puedes poner en español el correo de confirmación.
+4. Crear a mano el **primer código de Jefe** (ver «Cómo entra cada persona»).
+5. Cuando se use con datos de la empresa: entrar con la cuenta de la Jefe > Personas y permisos > Seguridad > **Apagar las personas de prueba**, y poner `window.PERSONAS_PRUEBA = false` en `config.js` para quitarlas de la pantalla de entrada.
+6. Recomendado (aún no está en el código): activar **App Check** (reCAPTCHA v3, gratis) en Firebase > App Check para que solo la app pueda hablar con la base de datos. Ver `SEGURIDAD.md`.
 
 ## Correo real (Gmail de prueba)
 El correo llega de verdad: alguien manda un correo de reunión al Gmail de prueba y en menos de un minuto aparece en **Reuniones > Correos** de la Jefe; ella lo lee con el agente y reparte. Solo correos **inventados**: la demo es pública.
@@ -92,9 +118,10 @@ Pasos (una sola vez):
 
 ## Pruebas
 ```
-npm ci
+npm install            # no hay package-lock.json: npm ci no sirve
 npx playwright install chromium     # o usar un Chrome instalado: CHROME=/ruta/a/chrome
 npm run lint
-npm run pruebas
+npm run pruebas        # corre todo: reglas de Firebase, Workers y la app con navegador
+npm run reglas         # solo las reglas, contra el emulador de Firestore (gratis; necesita Java)
 ```
-Las capturas quedan en `capturas/`. Sin emulador de Firebase, las reglas (`firestore.rules`) se prueban al entrar en la app publicada.
+Las capturas quedan en `capturas/`. Las reglas de Firebase se prueban con el emulador (`pruebas/reglas.mjs`): cada persona intenta lo permitido y lo prohibido (incluidos ataques) y Firebase debe dejar o negar. Después de pegar las reglas en Firebase conviene entrar una vez con cada nivel.

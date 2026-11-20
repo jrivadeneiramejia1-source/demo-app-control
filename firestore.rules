@@ -4,8 +4,12 @@ rules_version = '2';
 // (su perfil en usuarios/<uid> dice el rol y si el acceso está activo). Sin eso, nadie puede leer ni escribir nada.
 // El rol de una cuenta propia lo pone el código: la persona no lo puede escoger ni cambiar.
 // Cada persona solo puede hacer lo que le toca (lo cumple Firebase, no solo la pantalla):
-//   Gerente (Ricardo): ve todo; solo autoriza o rechaza las compras que pide la Jefe.
-//   Jefe (Ana): carga y reinicia los datos de prueba, autoriza las compras y puede hacer cualquier paso (menos autorizarse a sí misma).
+//   Gerente (Ricardo): ve todo; autoriza o rechaza las compras que pide la Jefe y las que valen el monto que él fija (ajustesApp/compras)
+//   o más, después de la Jefe; si él pide una compra, nace autorizada. No maneja personas ni códigos.
+//   Jefe (Ana): carga y reinicia los datos de prueba, autoriza las compras (las grandes pasan después al Gerente), maneja personas,
+//   niveles e invitaciones (solo con cuenta propia, nunca a otra Jefe ni al Gerente) y puede hacer cualquier paso (menos autorizarse a sí misma).
+//   Nivel por módulo: lo que dice el rol, salvo que la Jefe le haya puesto otro a esa persona (usuarios/<uid>.permisos).
+//   Las cuentas propias necesitan el correo confirmado. Las personas de prueba se pueden apagar (ajustesApp/seguridad).
 //   Compras (Luis): registra la compra autorizada (proveedor, valor, factura) y las compras hechas sin autorización.
 //   Bodega (Sofía): entradas, salidas, conteos, entregas y recibe lo comprado.
 //   Reuniones: la Jefe confirma lo que entendió el agente y reparte; Compras, Transporte y Bodega informan lo que hay y la Jefe
@@ -115,6 +119,16 @@ service cloud.firestore {
     // Puede pedir material y compras a su nombre (con «solo ver» o «sin acceso» no).
     function puedePedir() { return esDemo() && nivel('inventario') in ['pide', 'compra', 'bodega', 'gerente', 'jefe']; }
     function veInventario() { return esDemo() && nivel('inventario') != 'no'; }
+    // Quien solo pide material (nivel «pide») no ve los movimientos de la bodega, y en una cuenta real solo ve SUS pedidos y compras
+    // (los que llevan su pideUid). Las personas de prueba (demo) ven todo.
+    function veMovimientos() { return veInventario() && nivel('inventario') != 'pide'; }
+    function veLoSuyo() { return veInventario() && (nivel('inventario') != 'pide' || esPrueba() || antes().get('pideUid', '') == request.auth.uid); }
+    // Lo que la persona pone al pedir: marca de su propia cuenta, máximo 5 líneas y 3 cotizaciones.
+    function pedidoOk() {
+      return nuevo().get('pideUid', request.auth.uid) == request.auth.uid
+        && nuevo().get('lineas', []) is list && nuevo().get('lineas', []).size() <= 5
+        && nuevo().get('cotizaciones', []) is list && nuevo().get('cotizaciones', []).size() <= 3;
+    }
     function veVehiculos() { return esDemo() && nivel('vehiculos') != 'no'; }
     function veReuniones() { return esDemo() && nivel('reuniones') != 'no'; }
     // En Reuniones, «solo ver» y «sin acceso» no actúan.
@@ -329,15 +343,16 @@ service cloud.firestore {
       allow delete: if esJefe();
     }
     match /movimientos/{id} {
-      allow read: if veInventario();
+      allow read: if veMovimientos();
       allow create: if esJefe() || (esBodega() && nuevo().por is string && nuevo().porRol == rol());
       allow update, delete: if esPrueba() && rol() == 'jefe';
     }
 
     // Pedidos de material: cada quien pide a su nombre; la bodega los entrega o los cierra.
     match /solicitudes/{id} {
-      allow read: if veInventario();
-      allow create: if puedePedir() && (nuevo().pideRol == rol() || esJefe()) && (nuevo().estado == 'pendiente' || esJefe());
+      allow read: if veLoSuyo();
+      allow create: if puedePedir() && (nuevo().pideRol == rol() || esJefe()) && (nuevo().estado == 'pendiente' || esJefe())
+        && nuevo().get('pideUid', request.auth.uid) == request.auth.uid;
       allow update: if esBodega();
       allow delete: if esJefe();
     }
@@ -351,13 +366,13 @@ service cloud.firestore {
     function montoGerente() { return exists(rutaMonto()) ? get(rutaMonto()).data.get('montoGerente', 1000000) : 1000000; }
     function decideCampos() { return soloCambia(['estado', 'autoriza', 'autorizaJefe', 'motivoRechazo', 'historial']); }
     match /compras/{id} {
-      allow read: if veInventario();
+      allow read: if veLoSuyo();
       // Pedir: a su propio nombre y en estado "pedido". Compras también registra compras hechas sin autorización.
       // La Jefe de prueba crea cualquier compra porque carga y reinicia los datos de ejemplo.
       allow create: if (esJefe() && esPrueba())
-        || (nuevo().estado == 'pedido' && nuevo().pideRol == rol() && rol() != 'gerente' && puedePedir())
-        || (nuevo().estado == 'autorizado' && nuevo().pideRol == 'gerente' && esGerente())
-        || (nuevo().estado == 'sin-autorizar' && esCompras());
+        || (nuevo().estado == 'pedido' && nuevo().pideRol == rol() && rol() != 'gerente' && puedePedir() && pedidoOk())
+        || (nuevo().estado == 'autorizado' && nuevo().pideRol == 'gerente' && esGerente() && pedidoOk())
+        || (nuevo().estado == 'sin-autorizar' && esCompras() && pedidoOk());
       allow update:
         // La Jefe de prueba puede todo (reinicia los datos de ejemplo).
         if (esPrueba() && rol() == 'jefe')

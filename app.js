@@ -216,8 +216,11 @@
     // Cada persona se suscribe solo a lo de los módulos que puede ver (las reglas de Firebase hacen lo mismo).
     const ve = m => permiso(m) !== 'no';
     const cols = ['avisos', 'suscripciones', 'ajustesApp']
-      .concat(ve('equipos') ? ['equipos', 'hojas', 'tareasEq'] : [], ve('inventario') ? ['compras', 'articulos', 'movimientos', 'solicitudes'] : [],
+      .concat(ve('equipos') ? ['equipos', 'hojas', 'tareasEq'] : [], ve('inventario') ? ['compras', 'articulos', 'solicitudes'].concat(permiso('inventario') === 'pide' ? [] : ['movimientos']) : [],
         ve('vehiculos') ? ['vehiculos', 'novedades', 'entregas'] : [], ve('reuniones') ? ['reuniones', 'necesidades'] : [], panel);
+    // Una cuenta real que solo pide material solo puede leer SUS pedidos y compras (las reglas lo exigen): se piden filtrados.
+    const soloLoMio = p.real && permiso('inventario') === 'pide';
+    const donde = col => (soloLoMio && ['compras', 'solicitudes'].includes(col) ? ['pideUid', nube.uid()] : null);
     cols.forEach(col => {
       S.suscritas.add(col);
       S.oyentes.push(nube.escuchar(col, lista => {
@@ -236,7 +239,7 @@
         if (['suscripciones', 'usuarios', 'codigos', 'codigosDireccion', 'invitaciones', 'ajustesApp'].includes(col)) return;
         S.erroresLectura = S.erroresLectura || {}; S.erroresLectura[col] = nube.explicar(e);
         error(errorVisible()); pintarTodo();
-      }));
+      }, donde(col)));
     });
   }
 
@@ -381,8 +384,10 @@
   /* ---------- avisos (campana) ---------- */
   const misAvisos = () => {
     const rol = S.persona ? S.persona.rol : '';
+    // Los avisos del inventario van a la función de cada quien (bodega, compras, jefe, gerente), que sale de su nivel y no solo de su rol.
+    const fn = window.Inventario ? window.Inventario.funcion() : '';
     // Bodega con el permiso extra «compra» también recibe los avisos de Compras.
-    return S.datos.avisos.filter(a => a.para === rol || a.para === 'todos' || (a.para === 'compras' && rol === 'asistente' && tieneExtra('compra'))).sort((a, b) => String(b.en).localeCompare(String(a.en)));
+    return S.datos.avisos.filter(a => a.para === rol || a.para === 'todos' || (fn && a.para === fn) || (a.para === 'compras' && rol === 'asistente' && tieneExtra('compra'))).sort((a, b) => String(b.en).localeCompare(String(a.en)));
   };
   // Cada persona marca SUS avisos como leídos (la marca es su id de cuenta), aunque haya varias personas con el mismo rol.
   const yo = () => nube.uid();

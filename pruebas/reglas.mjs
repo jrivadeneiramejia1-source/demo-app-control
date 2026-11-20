@@ -211,6 +211,39 @@ await prueba('los niveles de las reglas coinciden con personas.js', async () => 
   const cuentasTxt = txt.slice(txt.indexOf('function cuentas()'), txt.indexOf('function ROLES()'));
   for (const p of D.PERSONAS) if (!cuentasTxt.includes(`'${p.correo}': '${p.rol}'`)) throw new Error('persona de prueba que falta en las reglas: ' + p.correo); });
 
+
+console.log('Inventario: cada nivel lee solo lo suyo (B6)');
+await limpiar();
+await sembrar(async db => { await setDoc(doc(db, 'movimientos', 'mo-1'), { articulo: 'Guantes', cantidad: 2, tipo: 'salida' });
+  await setDoc(doc(db, 'compras', 'cp-a'), compra({ pideUid: 'pide1', pide: 'Persona Uno' })); await setDoc(doc(db, 'compras', 'cp-b'), compra({ pideUid: 'pide2', pide: 'Persona Dos' }));
+  await setDoc(doc(db, 'solicitudes', 'so-a'), { articulo: 'Guantes', cantidad: 1, pideUid: 'pide1', pideRol: 'profesional', estado: 'pendiente' });
+  await setDoc(doc(db, 'solicitudes', 'so-b'), { articulo: 'Guantes', cantidad: 1, pideUid: 'pide2', pideRol: 'profesional', estado: 'pendiente' }); });
+await prueba('quien solo pide no lee los movimientos de la bodega', async () => assertFails(getDoc(doc(await cuenta('pide1', 'profesional'), 'movimientos', 'mo-1'))));
+await prueba('Bodega, Compras y quien solo ve sí leen los movimientos', async () => { await assertSucceeds(getDoc(doc(prueba_('asistente'), 'movimientos', 'mo-1')));
+  await assertSucceeds(getDoc(doc(prueba_('compras'), 'movimientos', 'mo-1'))); await assertSucceeds(getDoc(doc(await cuenta('ver1', 'conductor', { permisos: { inventario: 'ver' } }), 'movimientos', 'mo-1'))); });
+await prueba('una cuenta real que solo pide lee sus compras y sus pedidos, y no los de otros', async () => {
+  const db = await cuenta('pide1', 'profesional');
+  await assertSucceeds(getDoc(doc(db, 'compras', 'cp-a'))); await assertFails(getDoc(doc(db, 'compras', 'cp-b')));
+  await assertSucceeds(getDoc(doc(db, 'solicitudes', 'so-a'))); await assertFails(getDoc(doc(db, 'solicitudes', 'so-b'))); });
+await prueba('la lista que trae solo lo suyo se deja leer; la lista de todo, no', async () => {
+  const db = await cuenta('pide1', 'profesional'), { query, where } = await import('firebase/firestore');
+  await assertSucceeds(getDocs(query(collection(db, 'compras'), where('pideUid', '==', 'pide1'))));
+  await assertFails(getDocs(collection(db, 'compras'))); await assertFails(getDocs(query(collection(db, 'compras'), where('pideUid', '==', 'pide2')))); });
+await prueba('Bodega, Compras, la Jefe y el Gerente leen todas las compras', async () => { for (const r of ['asistente', 'compras', 'jefe', 'gerente']) await assertSucceeds(getDocs(collection(prueba_(r), 'compras'))); });
+await prueba('al pedir, la cuenta real deja marcada su propia cuenta (no la de otra persona)', async () => {
+  const db = await cuenta('pide3', 'profesional');
+  await assertSucceeds(setDoc(doc(db, 'compras', 'cp-n1'), compra({ pideRol: 'profesional', pideUid: 'pide3' })));
+  await assertFails(setDoc(doc(db, 'compras', 'cp-n2'), compra({ pideRol: 'profesional', pideUid: 'pide1' }))); });
+await prueba('una compra con más de 5 líneas o más de 3 cotizaciones no se acepta', async () => {
+  const db = await cuenta('pide4', 'profesional'), l = { que: 'X', cantidad: 1, unidad: 'unidades', valor: 1 };
+  await assertSucceeds(setDoc(doc(db, 'compras', 'cp-l1'), compra({ pideRol: 'profesional', pideUid: 'pide4', lineas: [l, l, l, l, l], cotizaciones: ['a', 'b', 'c'] })));
+  await assertFails(setDoc(doc(db, 'compras', 'cp-l2'), compra({ pideRol: 'profesional', pideUid: 'pide4', lineas: [l, l, l, l, l, l] })));
+  await assertFails(setDoc(doc(db, 'compras', 'cp-l3'), compra({ pideRol: 'profesional', pideUid: 'pide4', cotizaciones: ['a', 'b', 'c', 'd'] }))); });
+await prueba('una persona solo con «solo ver» en Inventario no pide material ni compras', async () => {
+  const db = await cuenta('ver2', 'conductor', { permisos: { inventario: 'ver' } });
+  await assertFails(setDoc(doc(db, 'compras', 'cp-v'), compra({ pideRol: 'conductor', pideUid: 'ver2' })));
+  await assertFails(setDoc(doc(db, 'solicitudes', 'so-v'), { articulo: 'X', cantidad: 1, pideRol: 'conductor', estado: 'pendiente', pideUid: 'ver2' })); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

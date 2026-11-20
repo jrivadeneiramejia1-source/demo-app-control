@@ -317,6 +317,16 @@ button.card .card-title { text-align: left; }
 .perm-grid { display: grid; gap: 4px 12px; }
 @media (min-width: 560px) { .perm-grid { grid-template-columns: 1fr 1fr; } }
 .err-txt { color: var(--danger, #B0281F); }
+/* Compras con varias líneas, cotizaciones y kárdex */
+.lineas-tabla { width: 100%; border-collapse: collapse; font-size: .86rem; margin: 6px 0 10px; }
+.lineas-tabla th, .lineas-tabla td { text-align: left; vertical-align: top; padding: 6px 6px; border-bottom: 1px solid var(--line, rgba(0,0,0,.12)); }
+.lineas-tabla th { font-size: .74rem; color: var(--muted, #56615B); font-weight: 700; }
+.lineas-tabla td:nth-child(n+2), .lineas-tabla th:nth-child(n+2) { white-space: nowrap; }
+.lineas-tabla td .meta { display: block; font-weight: 400; }
+.lineas-tabla tfoot td { border-bottom: 0; }
+.linea-extra { border: 1px dashed var(--line, rgba(0,0,0,.2)); border-radius: 12px; padding: 8px 12px 10px; margin: 8px 0; }
+.cot-mini { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.cot-mini img { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line, rgba(0,0,0,.15)); }
 #impresion { display: none; }
 @media print {
   body.imprimiendo > *:not(#impresion) { display: none !important; }

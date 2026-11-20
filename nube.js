@@ -208,9 +208,11 @@
     }
   }
 
-  /** Escucha una colección en vivo. fn recibe un arreglo de { id, ...datos }. Devuelve la función para dejar de escuchar. */
-  function escuchar(col, fn, fnError) {
-    return FS.onSnapshot(FS.collection(db, col),
+  /** Escucha una colección en vivo. fn recibe un arreglo de { id, ...datos }. Devuelve la función para dejar de escuchar.
+      donde = [campo, valor]: solo los documentos con ese valor (las reglas lo exigen a quien solo puede leer lo suyo). */
+  function escuchar(col, fn, fnError, donde) {
+    const ref = donde ? FS.query(FS.collection(db, col), FS.where(donde[0], '==', donde[1])) : FS.collection(db, col);
+    return FS.onSnapshot(ref,
       s => fn(s.docs.map(d => Object.assign({ id: d.id }, d.data()))),
       e => { if (fnError) fnError(e); });
   }

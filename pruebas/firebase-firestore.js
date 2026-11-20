@@ -100,10 +100,14 @@ function snapDoc(ref, datosGuardados) {
   };
 }
 
+// query(colRef, where(campo, '==', valor)): solo el filtro de igualdad (lo único que usa la app).
+export function where(campo, op, valor) { return { campo, op, valor }; }
+export function query(colRef, ...filtros) { return Object.assign({}, colRef, { filtros }); }
 function snapColeccion(colRef, datos) {
   const col = datos[colRef.id] || {};
+  const pasa = (d) => (colRef.filtros || []).every((f) => f.op === '==' && d[f.campo] === f.valor);
   // Firestore ordena por id de documento.
-  const docs = Object.keys(col).sort().map((id) => snapDoc(doc(colRef, id), col[id]));
+  const docs = Object.keys(col).sort().filter((id) => pasa(col[id])).map((id) => snapDoc(doc(colRef, id), col[id]));
   return {
     docs,
     size: docs.length,
