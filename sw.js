@@ -9,8 +9,8 @@ self.addEventListener('push', e => {
   const etiqueta = d.etiqueta ? String(d.etiqueta) : undefined;
   e.waitUntil(self.registration.showNotification(d.titulo || 'Control (demo)', {
     body: d.texto || '',
-    icon: './iconos/control-192.png',
-    badge: './iconos/control-badge-96.png',
+    icon: './iconos/control-192.png?v=4',
+    badge: './iconos/control-badge-96.png?v=4',
     tag: etiqueta,
     renotify: !!etiqueta,
     lang: 'es',

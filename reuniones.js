@@ -19,6 +19,8 @@
   const esJefe = () => perm() === 'jefe';
   const esGerente = () => miRol() === 'gerente';
   const puedoHacer = rol => miRol() === rol || esJefe();
+  // Administrativa con el permiso extra «encargada»: ve todas las tareas y la bandeja de correos (sin autorizar).
+  const esEncargada = () => miRol() === 'administrativo' && A().tieneExtra('encargada');
   const ahora = () => new Date().toISOString();
   const num = v => Number(v) || 0;
   const ITEMS_LOG = () => window.DatosDemo.ITEMS_LOG;
@@ -75,7 +77,7 @@
   function secciones() {
     if (esGerente()) return [['resumen', 'Resumen'], ['proximas', 'Próximas'], ['pasadas', 'Realizadas y canceladas']];
     const s = [['hacer', 'Lo que me toca'], ['proximas', 'Próximas'], ['pasadas', 'Realizadas y canceladas']];
-    if (esJefe()) s.splice(1, 0, ['correos', 'Correos']), s.push(['resumen', 'Resumen']);
+    if (esJefe() || esEncargada()) s.splice(1, 0, ['correos', 'Correos']), s.push(['resumen', 'Resumen']);
     return s;
   }
   function pintar() {
@@ -110,13 +112,15 @@
     if (f === 'actas') lista = lista.filter(t => t.tipo === 'acta');
     const mias = lista.filter(esMia), otras = lista.filter(t => !esMia(t));
     let h = '';
-    if (esJefe()) {
+    if (esJefe() || esEncargada()) {
       const orden = ['jefe', 'conductor', 'logistica', 'profesional', 'administrativo'];
       const grupos = {};
       lista.forEach(t => { (grupos[t.responsableRol] = grupos[t.responsableRol] || []).push(t); });
-      if (Object.keys(grupos).some(r => r !== 'jefe')) h += '<p class="meta">Como Jefe puedes hacer cualquier paso aunque le toque a otra persona.</p>';
+      if (esJefe() && Object.keys(grupos).some(r => r !== 'jefe')) h += '<p class="meta">Como Jefe puedes hacer cualquier paso aunque le toque a otra persona.</p>';
+      if (!esJefe()) h += '<p class="meta">Como encargada ves lo que le toca a cada quien. Lo que se autoriza lo hace la Jefe.</p>';
+      const titulo = rol => rol === miRol() ? 'Te toca a ti' : rol === 'jefe' ? (esJefe() ? 'Te toca autorizar' : 'Lo autoriza ' + esH(nombreRol('jefe'))) : 'Le toca a ' + esH(nombreRol(rol));
       h += Object.keys(grupos).sort((a, b) => orden.indexOf(a) - orden.indexOf(b)).map(rol =>
-        `<div class="section-label">${rol === 'jefe' ? 'Te toca autorizar' : 'Le toca a ' + esH(nombreRol(rol))} (${grupos[rol].length})</div><div class="list">${grupos[rol].map(tarjeta).join('')}</div>`).join('');
+        `<div class="section-label">${titulo(rol)} (${grupos[rol].length})</div><div class="list">${grupos[rol].map(tarjeta).join('')}</div>`).join('');
       return h || UI.vacio('checkCirculo', 'Nada pendiente', 'Todas las reuniones están al día. Cuando llegue un correo, revísalo en «Correos».');
     }
     h += `<div class="section-label">Te toca a ti (${mias.length})</div>`;
@@ -191,10 +195,29 @@
   /* --- Correos (Jefe) --- */
   const correos = () => window.CorreosDemo.generar(new Date());
   const yaLlego = id => D().reuniones.some(r => Array.isArray(r.correos) && r.correos.includes(id));
+  /* Bandeja: los correos que llegan de verdad al Gmail de prueba (los sube el Apps Script de la carpeta buzon/). */
+  const bandeja = () => (D().buzon || []).filter(b => b && typeof b.texto === 'string').sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  const deBandeja = b => ({ id: 'gm-' + b.id, buzonId: b.id, de: 'Gmail de prueba', asunto: String(b.asunto || '(sin asunto)'), texto: String(b.texto || ''), respaldo: null });
+  function htmlBandeja() {
+    const App = A(), bz = bandeja();
+    let h = `<div class="section-label">Bandeja del Gmail de prueba (${bz.length})</div>`;
+    if (App.S.errBuzon) return h + `<div class="note">No se pudo leer la bandeja: ${esH(App.S.errBuzon)}</div>`;
+    if (App.cargando('buzon')) return h + UI.esqueleto(1);
+    if (!bz.length) return h + UI.vacio('correo', 'Todavía no llega ningún correo', 'Manda un correo de reunión (inventado) al Gmail de prueba. En menos de un minuto aparece aquí.');
+    return h + `<div class="list">${bz.map(b => { const c = deBandeja(b), listo = yaLlego(c.id); return `<div class="card correo">
+      <span class="card-head"><span class="card-title">${esH(c.asunto)}</span>${listo ? App.pill('Repartido', 's-disco', 'check') : App.pill('Nuevo', 's-org', 'correo')}</span>
+      <span class="meta">Llegó ${esH(App.hace(b.fecha))}</span>
+      <span class="correo-prev">${esH(c.texto.split('\n').map(x => x.trim()).filter(Boolean).slice(0, 2).join(' '))}</span>
+      ${esJefe() ? `<div class="tarea-pie">${listo ? '' : boton('buzon', 'Leer con el agente', 'correo', b.id, 'primary small')}${boton('borrarbuzon', 'Borrar', 'borrar', b.id, 'ghost small')}</div>` : ''}
+    </div>`; }).join('')}</div>`;
+  }
   function htmlCorreos() {
     const App = A(), conectado = !!(window.AGENTE_DEMO && window.AGENTE_DEMO.url);
-    let h = `<div class="note">En la versión pagada el agente lee solo el buzón de Outlook. Aquí toca «Llegó este correo» para simular que llegó: el agente lo lee, tú revisas lo que entendió y se reparten las tareas.</div>`;
+    let h = esJefe() ? '' : '<div class="note">Ves los correos que llegan. La Jefe los lee con el agente y reparte las tareas.</div>';
     h += App.pill(conectado ? 'Agente conectado (Gemini)' : 'Agente sin conectar: se usa la respuesta de respaldo', conectado ? 's-disco' : 's-pend', conectado ? 'check' : 'info');
+    h += htmlBandeja();
+    if (!esJefe()) return h;
+    h += `<div class="section-label">Correos de ejemplo</div><div class="note">Para presentar sin mandar correos: toca «Llegó este correo» y el agente lo lee como si acabara de llegar. En la versión pagada el agente lee solo el buzón de Outlook de la empresa.</div>`;
     h += `<div class="list">${correos().map((c, k) => `<div class="card correo">
       <span class="card-head"><span class="card-title">${k + 1}. ${esH(c.etiqueta)}</span>${yaLlego(c.id) ? App.pill('Ya llegó', 's-disco', 'check') : ''}</span>
       <span class="meta"><b>${esH(c.de)}</b> · ${esH(c.asunto)}</span>
@@ -324,7 +347,8 @@
         motivo = `el agente respondió ${r.status}${j && (j.detalle || j.error) ? ': ' + String(j.detalle || j.error).slice(0, 200) : ''}`;
       } catch (e) { motivo = e && e.name === 'AbortError' ? 'el agente tardó más de 30 segundos' : 'no se pudo hablar con el agente (conexión o permiso del navegador)'; }
     }
-    return { datos: limpiar(c.respaldo), fuente: 'respaldo', motivo };
+    // Los correos de la bandeja no tienen respuesta de respaldo: se avisa y se puede intentar otra vez.
+    return c.respaldo ? { datos: limpiar(c.respaldo), fuente: 'respaldo', motivo } : { datos: null, fuente: 'error', motivo };
   }
   function buscarReunion(d) {
     const activas = D().reuniones.filter(r => ACTIVA.includes(r.estado));
@@ -336,20 +360,22 @@
     const yo = ++lectura;
     // Mientras lee: cuenta los segundos y, si tarda, deja seguir con la respuesta de respaldo sin esperar.
     let noEsperar;
-    const atajo = new Promise(res => { noEsperar = () => res({ datos: limpiar(c.respaldo), fuente: 'respaldo', motivo: 'no se esperó al agente' }); });
+    const atajo = new Promise(res => { noEsperar = () => res(c.respaldo ? { datos: limpiar(c.respaldo), fuente: 'respaldo', motivo: 'no se esperó al agente' } : { datos: null, fuente: 'error', motivo: 'se dejó de esperar al agente' }); });
     abrir({ titulo: 'El agente está leyendo el correo…', sub: c.asunto, campos: `<p class="meta" id="reSeg" aria-live="polite">Leyendo… 0 s</p><div class="leyendo">${UI.esqueleto(2)}</div>`,
-      secundario: 'No esperar: usar el respaldo', alSecundario: () => noEsperar() });
+      secundario: c.respaldo ? 'No esperar: usar el respaldo' : 'Dejar de esperar', alSecundario: () => noEsperar() });
     $('reSecundario').hidden = true;
     const leyendo = accion, t0 = Date.now();
     const reloj = setInterval(() => {
       const seg = Math.round((Date.now() - t0) / 1000), el = $('reSeg');
       if (!el || accion !== leyendo) { clearInterval(reloj); return; }
-      el.textContent = seg < 8 ? `Leyendo… ${seg} s` : `Leyendo… ${seg} s. Gemini gratis a veces tarda; si quieres, sigue con la respuesta de respaldo.`;
+      el.textContent = seg < 8 ? `Leyendo… ${seg} s` : `Leyendo… ${seg} s. Gemini gratis a veces tarda${c.respaldo ? '; si quieres, sigue con la respuesta de respaldo' : ''}.`;
       if (seg >= 5) $('reSecundario').hidden = false;
     }, 1000);
     const { datos: d, fuente, motivo } = await Promise.race([leerConAgente(c), atajo]);
     clearInterval(reloj);
     if (yo !== lectura || $('shReu').hidden || accion !== leyendo) return;   // la cerraron o abrieron otra cosa mientras leía
+    if (!d) return abrir({ titulo: 'El agente no pudo leer el correo', sub: `Motivo: ${motivo}.`, campos: `<details class="correo-orig" open><summary>Ver el correo</summary><pre>${esH(c.texto)}</pre></details>`,
+      secundario: 'Intentar otra vez', alSecundario: () => procesarCorreo(c) });
     const etiqueta = fuente === 'gemini' ? A().pill('Leído por Gemini', 's-disco', 'check') : A().pill('Respuesta de respaldo: ' + motivo, 's-pend', 'info');
     const encabezado = `<div class="row">${etiqueta}</div><div class="card agente-res"><b>Lo que entendió</b><span>${esH(d.resumen || 'Sin resumen')}</span></div>
       <details class="correo-orig"><summary>Ver el correo</summary><pre>${esH(c.texto)}</pre></details>`;
@@ -646,12 +672,19 @@
     seccion = b.dataset.sec; A().S.filtro.reuniones = '';
     A().pintarTodo();
   });
+  async function borrarDeBandeja(b) {
+    const ok = await A().confirmar('¿Borrar este correo de la bandeja?', `«${b.asunto || 'Sin asunto'}». Solo se borra de la app; en el Gmail de prueba sigue.`, 'Borrar');
+    if (!ok) return;
+    try { await window.nube.borrar('buzon', b.id); A().toast('Listo: correo borrado de la bandeja.'); } catch (e) { A().toast(window.nube.explicar(e)); }
+  }
   function alTocar(e) {
     const b = e.target.closest('[data-accion]'); if (!b) return;
     const id = b.dataset.id, n = necPorId(id), r = reunionPorId(id);
     const conRol = (fn, informa) => { if (!(n && (informa ? puedeInformar(n) : puedeDecidir(n)))) return null; const x = fn(n); if (accion) accion.base = Object.assign({}, n); return x === undefined ? true : x; };
     const mapa = {
       ver: () => r && ver(r), correo: () => { const c = correos().find(x => x.id === id); return c && esJefe() ? (procesarCorreo(c), true) : null; },
+      buzon: () => { const b = bandeja().find(x => x.id === id); return b && esJefe() && !yaLlego('gm-' + b.id) ? (procesarCorreo(deBandeja(b)), true) : null; },
+      borrarbuzon: () => { const b = bandeja().find(x => x.id === id); if (!b || !esJefe()) return null; borrarDeBandeja(b); return true; },
       informar: () => conRol(informar, true), autorizar: () => conRol(autorizar), rechazar: () => conRol(rechazar), carros: () => conRol(carros), viajeok: () => conRol(viajeOk), nopuedo: () => conRol(noPuedo),
       voy: () => conRol(voy), logistica: () => conRol(logistica), acta: () => conRol(acta)
     };

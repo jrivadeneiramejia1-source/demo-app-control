@@ -1,6 +1,6 @@
 /* demo.css — Lo propio de la demo de la app de control. El resto del diseño viene de comun.css (ver DESIGN.md). */
 
-/* Marca: el candado dentro del cuadro con el color del encabezado. */
+/* Marca: el ícono de la app (cuatro casillas) en el encabezado. */
 .marca-demo { display: grid; place-items: center; background: var(--hero-vidrio); color: var(--hero-ink); }
 .marca-demo .ph { width: 24px; height: 24px; }
 
@@ -265,3 +265,9 @@ button.card .card-title { text-align: left; }
 .fotos-fila { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .ent-foto { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
 .barra-botones { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
+
+/* Permisos extra en «Personas y códigos» */
+.extras { border: 1px solid var(--line, rgba(0,0,0,.12)); border-radius: 12px; padding: 6px 12px 10px; margin: 8px 0 0; }
+.extras legend { padding: 0 6px; }
+.extras .marca-fila > span { display: flex; flex-direction: column; gap: 2px; }
+.extras .marca-fila .meta { display: block; font-weight: 400; }

@@ -2,7 +2,8 @@
    Códigos: uno activo por rol, en codigos/<CÓDIGO> = { rol, activo, por, en }. Los de Gerente y Jefe van en codigosDireccion:
    solo los ve el Gerente y sirven una sola vez. Nadie más los puede leer. El panel solo sale con cuentas propias.
    Quien se registra escribe su código; Firebase revisa que exista, esté activo y sea de ese rol (ver firestore.rules).
-   Personas: usuarios/<uid> = { nombre, correo, rol, codigo, activo }. Aquí se les cambia el rol o se pausa su acceso.
+   Personas: usuarios/<uid> = { nombre, correo, rol, codigo, activo, extras }. Aquí se les cambia el rol, se pausa su acceso
+   o se les marcan permisos extra (por ejemplo, la persona de Bodega que también compra).
    El Gerente maneja todo; el Jefe todo menos los códigos y las personas de Gerente y de Jefe. */
 (function () {
   'use strict';
@@ -52,9 +53,18 @@
         <span class="meta">${esH(u.correo)}${u.en ? ' · se registró ' + esH(A().hace(u.en)) : ''}</span>
         ${maneja ? `<div class="row"><label class="sr" for="gr-${esH(u.id)}">Rol de ${esH(u.nombre)}</label><select id="gr-${esH(u.id)}" data-g="rol" data-id="${esH(u.id)}">${opciones}</select>
           <button class="btn small ${u.activo === true ? 'ghost' : 'primary'}" type="button" data-g="${u.activo === true ? 'pausar' : 'devolver'}" data-id="${esH(u.id)}">${u.activo === true ? 'Pausar acceso' : 'Devolver acceso'}</button></div>` : ''}
+        ${htmlExtras(u, maneja)}
       </div>`;
     }).join('')}</div>` : UI.vacio('persona', 'Todavía nadie se registró', 'Crea el código de un rol, cópialo y mándaselo a la persona. Ella entra por «Mi cuenta» y crea su cuenta con ese código.');
     $('genteCuerpo').innerHTML = h;
+  }
+
+  // Permisos extra de la persona (los que sirven para su rol). Quien la maneja los marca o desmarca.
+  function htmlExtras(u, maneja) {
+    const D = window.DEMO, del = D.EXTRAS.filter(e => e.roles.includes(u.rol)), tiene = D.extrasDe(u.rol, u.extras);
+    if (!del.length) return '';
+    if (!maneja) return tiene.length ? `<span class="meta">Permisos extra: ${esH(del.filter(e => tiene.includes(e.id)).map(e => e.txt).join(', '))}</span>` : '';
+    return `<fieldset class="extras"><legend class="meta">Permisos extra</legend>${del.map(e => `<label class="marca-fila"><input type="checkbox" data-g="extra" data-id="${esH(u.id)}" data-x="${esH(e.id)}"${tiene.includes(e.id) ? ' checked' : ''}><span><b>${esH(e.txt)}</b><span class="meta">${esH(e.detalle)}</span></span></label>`).join('')}</fieldset>`;
   }
 
   async function hacer(fn, listo) {
@@ -62,7 +72,7 @@
     ocupado = true;
     try { await fn(); if (listo) A().toast(listo); }
     catch (e) { A().toast(window.nube.explicar(e)); }
-    finally { ocupado = false; }
+    finally { ocupado = false; pintar(); }
   }
   // Código nuevo para el rol; los viejos de ese rol se borran (dejan de servir para registrarse).
   function nuevo(rol) {
@@ -94,10 +104,21 @@
     if (g === 'devolver') hacer(() => window.nube.mezclar('usuarios', u.id, { activo: true }), `Listo: ${u.nombre} ya puede entrar otra vez.`);
   });
   $('genteCuerpo').addEventListener('change', e => {
+    const D = window.DEMO;
+    const x = e.target.closest('input[data-g="extra"]');
+    if (x) {
+      const u = A().S.datos.usuarios.find(v => v.id === x.dataset.id);
+      if (!u || !puedeManejar(u.rol) || u.id === window.nube.uid()) return;
+      const antes = D.extrasDe(u.rol, u.extras), extras = x.checked ? antes.concat([x.dataset.x]) : antes.filter(v => v !== x.dataset.x);
+      const ex = D.EXTRAS.find(v => v.id === x.dataset.x);
+      return hacer(() => window.nube.mezclar('usuarios', u.id, { extras: D.extrasDe(u.rol, Array.from(new Set(extras))) }),
+        `Listo: ${u.nombre} ${x.checked ? 'ya tiene' : 'ya no tiene'} el permiso «${ex ? ex.txt : 'extra'}».`);
+    }
     const s = e.target.closest('select[data-g="rol"]'); if (!s) return;
-    const u = A().S.datos.usuarios.find(x => x.id === s.dataset.id), rol = s.value;
+    const u = A().S.datos.usuarios.find(v => v.id === s.dataset.id), rol = s.value;
     if (!u || !puedeManejar(u.rol) || !puedeManejar(rol) || rol === u.rol) return;
-    hacer(() => window.nube.mezclar('usuarios', u.id, { rol }), `Listo: ${u.nombre} ahora es ${window.DEMO.rolDe(rol).rolTxt}.`);
+    // Al cambiar de rol se quitan los permisos extra que no sirven para el rol nuevo.
+    hacer(() => window.nube.mezclar('usuarios', u.id, { rol, extras: D.extrasDe(rol, u.extras) }), `Listo: ${u.nombre} ahora es ${D.rolDe(rol).rolTxt}.`);
   });
 
   window.Gente = Object.freeze({ abrir, pintar });

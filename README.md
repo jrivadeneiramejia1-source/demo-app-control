@@ -40,7 +40,13 @@ Los códigos se manejan en **Cambiar de persona > Personas y códigos**, que sol
 | Reuniones | Laura Medina | Profesional | No | Pide material | No | Asiste |
 | Reuniones | Natalia Vargas | Administrativo | No | Pide material | No | Registra actas y formatos |
 
-Equipos por ahora solo se ve: lo que hace cada rol ahí se arma en su fase.
+Equipos por ahora solo se ve: lo que hace cada rol ahí se arma en su fase. En Equipos, el **Encargado** hace el mantenimiento y entrega los equipos con el acta (nombre, firma y computador); **Soporte** recibe esos registros y está pendiente de las entregas.
+
+**Permisos extra.** Además del rol que da el código, el Gerente o la Jefe le marcan a cada persona lo que hace de más, en **Personas y códigos** (solo con cuentas propias):
+- Bodega: **También hace y recibe compras** (registra las compras autorizadas, como Compras).
+- Soporte: **También sigue las actas de entrega** (se usará en la fase de Equipos).
+- Administrativo: **Encargada de reuniones** (ve todas las tareas de todas las reuniones y la bandeja de correos; lo que se autoriza sigue siendo de la Jefe).
+Firebase revisa los permisos extra en las reglas, no solo la pantalla.
 
 ## Archivos
 - `index.html`, `app.js`, `demo.css`: la app. `inventario.js`: el módulo Inventario (bodega y compras).
@@ -57,17 +63,31 @@ Equipos por ahora solo se ve: lo que hace cada rol ahí se arma en su fase.
 - `firestore.rules`: reglas de la base de datos (entran las personas de prueba y las cuentas con un código válido). Se pegan en Firebase.
 - `caribe.css`: el estilo de la demo (azul mar sobrio, relieve con sombras, letra Nunito en `fuentes/nunito.woff2`, licencia SIL OFL 1.1). Va después de `demo.css`.
 - `comun.css`, `comun.js`, `iconos.js`, `fuentes/`, `codigos.js`, `lib/codigos/`: copiados de `apps-consulta-previa` (ver `DESIGN.md`). En `iconos.js` se agregaron iconos Phosphor (licencia MIT): inicio, carro, carrito, reunión, cambiar, pagada, correo y llave.
-- `gente.js`: panel «Personas y códigos» (Gerente y Jefe).
+- `gente.js`: panel «Personas y códigos» (Gerente y Jefe): códigos, personas registradas, rol, acceso y permisos extra.
+- `buzon/Codigo.gs`: Apps Script del Gmail de prueba. Cada minuto pasa a la app los correos sin leer que hablen de reuniones (solo asunto, texto y fecha; no guarda quién lo mandó).
 - `pruebas/`: Firebase falso (`firebase-*.js`) y pruebas con Playwright.
 
 ## Datos en Firestore
-Colecciones de primer nivel: `reuniones` y `necesidades` (una tarea por documento: comida, carros, viaje, logística, asistencia y acta), `usuarios` (perfil de cada cuenta propia: nombre, rol y si tiene acceso), `codigos` (código de cada rol de trabajo; lo leen Gerente y Jefe con cuenta propia), `codigosDireccion` (códigos de Gerente y Jefe, de un solo uso; solo el Gerente), `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `avisos`, `suscripciones` (teléfonos con avisos activados; Reiniciar no las borra) y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). Solo la Jefe carga, actualiza y reinicia los datos de prueba (así lo piden las reglas): si otra persona entra primero, la app le dice que entre una vez como Ana. La Jefe de prueba (Ana) tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
+Colecciones de primer nivel: `reuniones` y `necesidades` (una tarea por documento: comida, carros, viaje, logística, asistencia y acta), `usuarios` (perfil de cada cuenta propia: nombre, rol y si tiene acceso), `codigos` (código de cada rol de trabajo; lo leen Gerente y Jefe con cuenta propia), `codigosDireccion` (códigos de Gerente y Jefe, de un solo uso; solo el Gerente), `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `avisos`, `buzon` (correos del Gmail de prueba; los leen la Jefe y la Administrativa encargada), `suscripciones` (teléfonos con avisos activados; Reiniciar no las borra) y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). Solo la Jefe carga, actualiza y reinicia los datos de prueba (así lo piden las reglas): si otra persona entra primero, la app le dice que entre una vez como Ana. La Jefe de prueba (Ana) tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
 
 ## Permisos (los hace cumplir Firebase, no solo la pantalla)
 - Compras: alguien pide → la Jefe autoriza (si la pidió la Jefe, el Gerente) → Compras (Luis) la compra → Bodega (Sofía) la recibe. Nadie autoriza su propio pedido.
 - Cualquiera pide material y pide compras a su nombre. El Gerente autoriza o rechaza sin poder cambiar cantidad ni valor; Compras registra la compra sin tocar lo autorizado.
 - La bodega (Sofía) recibe, entrega, registra entradas, salidas y conteos; la cantidad nunca queda negativa. La Jefe puede hacer cualquier paso.
 - Cada quien marca como leídos solo sus avisos.
+
+## Correo real (Gmail de prueba)
+El correo llega de verdad: alguien manda un correo de reunión al Gmail de prueba y en menos de un minuto aparece en **Reuniones > Correos** de la Jefe; ella lo lee con el agente y reparte. Solo correos **inventados**: la demo es pública.
+
+Cómo va: Gmail de prueba → Apps Script (no guarda quién lo mandó y tapa correos y teléfonos del texto) (`buzon/Codigo.gs`, corre gratis en Google cada minuto) → entra a Firebase con la cuenta robot `buzon.demo@example.com` → colección `buzon` → la app. La cuenta robot solo puede crear correos en `buzon` (no tiene perfil ni rol).
+
+Pasos (una sola vez):
+1. Crear un Gmail nuevo solo para la demo.
+2. Firebase > Authentication > Users > **Add user** (agregar usuario): correo `buzon.demo@example.com` y una clave larga que inventes. Esa clave no se le pasa a nadie. Copia el **User UID** (identificador) que le sale.
+3. Firestore Database > Datos > **Start collection** (iniciar colección) `ajustes`, documento con ID `buzon` y un campo `uid` (texto) = el UID del paso 2. Así, aunque alguien se registre con ese correo, no puede meter correos: las reglas solo dejan a ese UID.
+4. Entrar a script.google.com con el Gmail de prueba > **New project** (proyecto nuevo) > pegar `buzon/Codigo.gs` > guardar.
+5. **Project Settings** (configuración del proyecto) > **Script properties** (propiedades del script) > `CLAVE_ROBOT` = la clave del paso 2, y `REMITENTES` = los correos desde donde vas a escribir, separados por coma (si queda vacío no pasa ningún correo).
+6. Escoger la función `instalar` > **Run** (ejecutar) > aceptar los permisos de Gmail. Desde ahí revisa el buzón cada minuto. Para apagarlo: `desinstalar`.
 
 ## Pruebas
 ```
