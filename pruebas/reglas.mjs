@@ -451,6 +451,14 @@ await prueba('pedidos de material: Bodega solo los entrega o los cierra y nunca 
   await assertSucceeds(updateDoc(doc(bodegaR, 'solicitudes', 'so-2'), { estado: 'rechazada', motivo: 'No hay' }));
   await assertFails(updateDoc(doc(bodegaR, 'solicitudes', 'so-3'), { estado: 'rechazada', motivo: 'Ya estaba entregada' })); });
 
+console.log('Revisión de seguridad, paso 7: los teléfonos con avisos ya no están en Firestore');
+await limpiar();
+await prueba('nadie lee, crea, cambia ni borra «suscripciones» (ahora las guarda el Worker de avisos)', async () => {
+  await sembrar(db => setDoc(doc(db, 'suscripciones', 'tel-1'), { rol: 'jefe', sub: { endpoint: 'https://fcm.googleapis.com/x', keys: { p256dh: 'a', auth: 'b' } } }));
+  for (const db of [prueba_('jefe'), prueba_('logistica'), await cuenta('susA', 'asistente'), await cuenta('susJ', 'jefe')]) {
+    await assertFails(getDoc(doc(db, 'suscripciones', 'tel-1'))); await assertFails(setDoc(doc(db, 'suscripciones', 'tel-2'), { rol: 'jefe' }));
+    await assertFails(updateDoc(doc(db, 'suscripciones', 'tel-1'), { rol: 'gerente' })); await assertFails(deleteDoc(doc(db, 'suscripciones', 'tel-1'))); await assertFails(getDocs(collection(db, 'suscripciones'))); } });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

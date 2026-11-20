@@ -544,11 +544,7 @@
   // Manda las notificaciones al teléfono (si hay teléfonos con avisos activados para ese rol). Nunca frena la app.
   function notificar(envios) {
     if (!window.Push || !envios.length) return;
-    const subs = A().S.datos.suscripciones || [];
-    envios.forEach(e => {
-      const destino = subs.filter(s => s.rol === e.para || (e.para === 'compras' && s.rol === 'asistente' && Array.isArray(s.extras) && s.extras.includes('compra')));
-      if (destino.length) Promise.resolve(window.Push.enviar(destino, { titulo: e.titulo, texto: e.texto, url: './#inventario', etiqueta: 'inventario' })).catch(() => {});
-    });
+    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#inventario', etiqueta: 'inventario' })).catch(() => {}));
   }
 
   /* ---------- acciones: compras ---------- */

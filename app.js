@@ -15,7 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], reuniones: [], necesidades: [], avisos: [], suscripciones: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [], ajustesApp: [], invitaciones: [] },
+    datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], reuniones: [], necesidades: [], avisos: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [], ajustesApp: [], invitaciones: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     suscritas: new Set(),  // colecciones a las que esta persona se suscribió (las demás no las puede leer y nunca «cargan»)
     oyentes: [],
@@ -226,7 +226,7 @@
     S.errBuzon = '';
     // Cada persona se suscribe solo a lo de los módulos que puede ver (las reglas de Firebase hacen lo mismo).
     const ve = m => permiso(m) !== 'no';
-    const cols = ['avisos', 'suscripciones', 'ajustesApp']
+    const cols = ['avisos', 'ajustesApp']
       .concat(ve('equipos') ? ['equipos', 'hojas', 'tareasEq'] : [], ve('inventario') ? ['compras', 'articulos', 'solicitudes'].concat(permiso('inventario') === 'pide' ? [] : ['movimientos']) : [],
         ve('vehiculos') ? ['vehiculos', 'novedades', 'entregas'] : [], ve('reuniones') ? ['reuniones', 'necesidades'] : [], panel);
     // Una cuenta real que solo pide material solo puede leer SUS pedidos y compras (las reglas lo exigen): se piden filtrados.
@@ -247,7 +247,7 @@
         S.llegaron.add(col);   // así la pantalla deja de mostrar «cargando» y dice qué pasó
         // La bandeja dice su error dentro de Correos (por ejemplo, si todavía no se pegaron las reglas nuevas).
         if (col === 'buzon') { S.errBuzon = nube.explicar(e); pintarTodo(); return; }
-        if (['suscripciones', 'usuarios', 'codigos', 'codigosDireccion', 'invitaciones', 'ajustesApp'].includes(col)) return;
+        if (['usuarios', 'codigos', 'codigosDireccion', 'invitaciones', 'ajustesApp'].includes(col)) return;
         S.erroresLectura = S.erroresLectura || {}; S.erroresLectura[col] = nube.explicar(e);
         error(errorVisible()); pintarTodo();
       }, donde(col)));
@@ -310,8 +310,7 @@
       } else if (que === 'apagar') {
         const r = await Push.desactivar(); toast(r.ok ? 'Avisos apagados en este teléfono' : r.motivo);
       } else if (que === 'probar') {
-        const mias = S.datos.suscripciones.filter(x => x.rol === S.persona.rol);
-        const r = await Push.enviar(mias, { titulo: 'Aviso de prueba', texto: `Así le llega un aviso a ${S.persona.nombre}.`, url: './', etiqueta: 'prueba' });
+        const r = await Push.enviar('yo', { titulo: 'Aviso de prueba', texto: `Así le llega un aviso a ${S.persona.nombre}.`, url: './', etiqueta: 'prueba' });
         toast(r.ok && r.enviados ? 'Listo: aviso de prueba enviado' : 'No se pudo mandar el aviso de prueba. Revisa la conexión del servidor de avisos.');
       }
     } finally { if (boton) boton.disabled = false; pintarAvisosTel(); pintarAvisoActivar(); }

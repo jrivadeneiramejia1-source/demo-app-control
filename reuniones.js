@@ -306,11 +306,7 @@
   }
   function notificar(envios) {
     if (!window.Push || !envios.length) return;
-    const subs = A().S.datos.suscripciones || [];
-    envios.forEach(e => {
-      const destino = subs.filter(s => s.rol === e.para);
-      if (destino.length) Promise.resolve(window.Push.enviar(destino, { titulo: e.titulo, texto: e.texto, url: './#reuniones', etiqueta: 'reuniones' })).catch(() => {});
-    });
+    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#reuniones', etiqueta: 'reuniones' })).catch(() => {}));
   }
 
   /* ---------- el agente ---------- */

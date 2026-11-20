@@ -339,11 +339,7 @@
   }
   function notificar(envios) {
     if (!window.Push || !envios.length) return;
-    const subs = A().S.datos.suscripciones || [];
-    envios.forEach(e => {
-      const destino = subs.filter(s => s.rol === e.para);
-      if (destino.length) Promise.resolve(window.Push.enviar(destino, { titulo: e.titulo, texto: e.texto, url: './#vehiculos', etiqueta: 'vehiculos' })).catch(() => {});
-    });
+    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#vehiculos', etiqueta: 'vehiculos' })).catch(() => {}));
   }
   // Fotos: cada input con data-foto se achica y se guarda en «fotos» (o en fotoNov para la novedad).
   async function alEscogerFoto(e) {

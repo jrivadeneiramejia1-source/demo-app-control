@@ -529,11 +529,10 @@ service cloud.firestore {
       allow delete: if esJefe();
     }
 
-    // Teléfonos con avisos activados (para mandar la notificación al teléfono de cada persona).
+    // Los teléfonos con avisos activados NO están en Firestore: los guarda el Worker de avisos (Cloudflare KV), que revisa el token
+    // de Firebase y saca el rol de la base. Así nadie con sesión puede leer, copiar ni borrar los teléfonos de los demás.
     match /suscripciones/{id} {
-      allow read: if esDemo();
-      allow create, update: if esDemo() && nuevo().rol == rol();
-      allow delete: if esDemo();
+      allow read, write: if false;
     }
   }
 }

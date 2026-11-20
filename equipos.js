@@ -287,11 +287,7 @@
   }
   function notificar(envios) {
     if (!window.Push || !envios.length) return;
-    const subs = A().S.datos.suscripciones || [];
-    envios.forEach(e => {
-      const destino = subs.filter(s => s.rol === e.para && (!e.soloActas || e.para !== 'soporte' || (Array.isArray(s.extras) && s.extras.includes('actas'))));
-      if (destino.length) Promise.resolve(window.Push.enviar(destino, { titulo: e.titulo, texto: e.texto, url: './#equipos', etiqueta: 'equipos' })).catch(() => {});
-    });
+    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#equipos', etiqueta: 'equipos' })).catch(() => {}));
   }
 
   /* ---------- firma en la pantalla ---------- */
