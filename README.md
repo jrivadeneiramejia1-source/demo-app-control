@@ -15,6 +15,7 @@ Cada pantalla trae una etiqueta azul **Versión pagada**: al tocarla dice qué c
 | 6. Reuniones y agente | Cuatro correos de ejemplo; el agente (Worker `agente-demo` con Gemini) los lee y la Jefe confirma y reparte: Compras, Transporte y Bodega informan lo que hay y la Jefe autoriza la comida y los carros (escoge el conductor); el Conductor confirma, Logística alista, el Profesional confirma si va y Administrativo registra el acta con foto. Resumen para Jefe y Gerente | Hecha (falta conectar Gemini) |
 | 7. Pulido | Modo presentación y guion | Pendiente |
 | 8. Permisos, invitaciones y seguridad (Fases A y S) | Personas y permisos solo de la Jefe, niveles por módulo y por persona, invitaciones por Excel, correo confirmado, entrar con Google, reglas de Firebase cerradas por módulo y probadas en el emulador (`npm run reglas`) | Hecha |
+| 10. Organigrama y logo de la empresa | Las 46 personas del organigrama con su cargo (lista agrupada por unidad y con buscador), 3 roles nuevos (Colaborador, Financiero, Consulta) y el logo de la empresa como ícono y en la entrada | Hecha |
 | 9. Inventario a fondo (Fase B) | Inventario por niveles, **Panorama de la Jefe**, compras con varias líneas y cotizaciones, **monto del Gerente** con autorización en dos pasos, el Gerente también puede pedir, alerta si pagan más de lo autorizado o llega menos, recibir compras de varios artículos, kárdex y mínimo sugerido, cada quien lee solo lo suyo | Hecha (faltan los préstamos de herramientas y los pedidos de material con varias líneas) |
 
 ## Cómo se entra
@@ -37,25 +38,31 @@ Alternativa sin Excel: la Jefe puede crear un **código por rol** (`LOG-7KQ4-M2X
 ### Niveles por persona
 Además de su rol, la Jefe le puede poner a cada persona, **por módulo** (Equipos, Inventario, Vehículos, Reuniones): *Como su rol*, *Sin acceso*, *Solo ver* o un nivel de trabajo de ese módulo (por ejemplo, Inventario: *Pide material*, *Hace las compras*, *Encargada de bodega*). Sirve para subir o bajar: un bodeguero que solo mira Equipos, o un conductor que también atiende la bodega. En Reuniones solo se sube o se baja a *Solo ver* (allí cada rol hace su tarea). Las reglas de Firebase lo cumplen: con *Solo ver* o *Sin acceso* ni siquiera se puede leer lo que no toca.
 
-| Área | Persona de prueba | Rol | Equipos | Inventario | Vehículos | Reuniones |
-|---|---|---|---|---|---|---|
-| Dirección | Ricardo Fuentes | Gerente | Solo ver | Ve todo a detalle y autoriza lo que pide la Jefe | Solo ver | Solo ver |
-| Dirección | Ana Pérez | Jefe | Ve y cambia todo | Autoriza las compras y puede hacer cualquier paso | Ve y cambia todo | Ve y cambia todo |
-| Equipos | Daniel Ortiz | Encargado de equipos | Encargado | Pide material | No | No |
-| Equipos | Valentina Ruiz | Soporte | Mantenimiento y entregas | Pide material | No | No |
-| Inventario | Luis Rodríguez | Compras | No | Hace las compras | No | Informa lo que hay |
-| Inventario | Sofía Herrera | Bodega | No | Encargada de bodega | Igual que Transporte | Informa lo que hay (comida, carros, logística) |
-| Vehículos | Marta Gómez | Transporte | No | Pide material | Revisa novedades, documentos, taller y salidas | Informa qué carros hay |
-| Vehículos | Carlos Pinto | Conductor | No | Pide material | Reporta novedades y registra salida y llegada | Confirma el viaje |
-| Reuniones | Pedro Castillo | Logística | No | Pide material | No | Logística |
-| Reuniones | Laura Medina | Profesional | No | Pide material | No | Asiste |
-| Reuniones | Natalia Vargas | Administrativo | No | Pide material | No | Registra actas y formatos |
+### Quién es quién en la demo (organigrama de la empresa)
+Las 46 personas de la demo son las del organigrama (versión 18, febrero de 2023), agrupadas por unidad y con un buscador. **Los nombres y cargos son los reales; los correos (`rol.nombre.apellido@example.com`) y todos los casos que se ven (compras, novedades, reuniones, equipos, cédulas) son inventados.** Todas entran con la misma clave pública `demo-control-2026`.
+
+| Rol en la app | Quiénes | Equipos | Inventario | Vehículos | Reuniones |
+|---|---|---|---|---|---|
+| Gerente | Oscar Muñoz, Santiago Valencia, Alejandro Giraldo (Proyectos) | Solo ver | Resumen a detalle; autoriza lo que pide la Jefe y las compras grandes | Solo ver | Solo ver |
+| Jefe | Carolina Castillo (Líder de Abastecimiento) | Todo | Panorama; autoriza compras y maneja personas | Todo | Todo |
+| Encargado de equipos | Fabián Barbosa (Auxiliar TI) | Mantenimiento y entregas | Pide | No | No |
+| Soporte | Ángel Ortiz (Asistente TI; permiso extra: revisa actas) | Recibe y revisa | Pide | No | No |
+| Compras | Mauricio Giraldo (Coord. Compras), Fredy Torres | No | Hace las compras | No | Informa |
+| Bodega | Andrés Beltrán (**supuesto**: el organigrama no trae bodega) | No | Encargado de bodega | Revisa novedades | Informa |
+| Transporte | Wilson Muñoz (Coord. Transporte) | No | Pide | Revisa novedades y documentos | Informa |
+| Conductor | Oscar Farfán | No | Pide | Reporta y registra salidas | Confirma el viaje |
+| Logística | Elkin Bruno, Julio Flórez (Logístico HSE) | No | Pide | No | Logística |
+| Profesional | 13 personas: SGI, Contratos, Control de Gestión, Licitaciones | No | Pide | No | Asiste |
+| Administrativo | Paola Martínez; Solanyi Surquira (permiso extra: encargada de reuniones) | No | Pide | No | Registra actas |
+| **Colaborador** (nuevo) | 9 personas: recepción, mensajería, servicios generales, Gestión Humana, Gerencia Administrativa, Asistente SGI | No | Pide | No | Solo ver |
+| **Financiero** (nuevo) | 7 personas: Gerente Financiera y Contabilidad | No | Ve todas las compras, facturas y movimientos, y también pide | No | Solo ver |
+| **Consulta** (nuevo) | Revisor Fiscal y Oficial de Cumplimiento (el organigrama no trae persona) | No | Solo ver | Solo ver | No |
 
 En Equipos, el **Encargado** hace el mantenimiento y entrega los equipos con el acta (nombre, firma y computador); **Soporte** recibe esos registros y está pendiente de las entregas.
 
 **Permisos extra.** Además del rol que da el código, el Gerente o la Jefe le marcan a cada persona lo que hace de más, en **Personas y códigos** (solo con cuentas propias):
 - Bodega: **También hace y recibe compras** (registra las compras autorizadas, como Compras).
-- Soporte: **También sigue las actas de entrega** (revisa cada acta: bien o con problema). Valentina, la Soporte de prueba, lo tiene para mostrarlo.
+- Soporte: **También sigue las actas de entrega** (revisa cada acta: bien o con problema). Ángel, el Soporte de prueba, lo tiene para mostrarlo.
 - Administrativo: **Encargada de reuniones** (ve todas las tareas de todas las reuniones y la bandeja de correos; lo que se autoriza sigue siendo de la Jefe).
 Firebase revisa los permisos extra en las reglas, no solo la pantalla.
 
@@ -83,7 +90,7 @@ Firebase revisa los permisos extra en las reglas, no solo la pantalla.
 ## Datos en Firestore
 Colecciones nuevas: `invitaciones` (una por correo, en minúscula: nombre, rol, niveles y permisos extra; la crea la Jefe y se gasta al entrar la persona) y `ajustesApp` (`compras` = `{ montoGerente }`, lo cambia solo el Gerente con cuenta propia; `seguridad` = `{ personasPrueba }`, lo cambia solo la Jefe con cuenta propia). En `usuarios`, además del rol, cada perfil puede llevar `permisos` (nivel por módulo que le puso la Jefe). En `compras` y `solicitudes` las cuentas propias dejan su `pideUid`.
 
-Colecciones de primer nivel: `reuniones` y `necesidades` (una tarea por documento: comida, carros, viaje, logística, asistencia y acta), `usuarios` (perfil de cada cuenta propia: nombre, rol y si tiene acceso), `codigos` (código de cada rol de trabajo; lo leen Gerente y Jefe con cuenta propia), `codigosDireccion` (códigos de Gerente y Jefe, de un solo uso; solo el Gerente), `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `hojas` (actas de entrega y devolución con sus firmas), `tareasEq` (agenda de mantenimientos y backups), `avisos`, `buzon` (correos del Gmail de prueba; los leen la Jefe y la Administrativa encargada), `suscripciones` (teléfonos con avisos activados; Reiniciar no las borra) y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). Solo la Jefe carga, actualiza y reinicia los datos de prueba (así lo piden las reglas): si otra persona entra primero, la app le dice que entre una vez como Ana. La Jefe de prueba (Ana) tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
+Colecciones de primer nivel: `reuniones` y `necesidades` (una tarea por documento: comida, carros, viaje, logística, asistencia y acta), `usuarios` (perfil de cada cuenta propia: nombre, rol y si tiene acceso), `codigos` (código de cada rol de trabajo; lo leen Gerente y Jefe con cuenta propia), `codigosDireccion` (códigos de Gerente y Jefe, de un solo uso; solo el Gerente), `equipos`, `compras`, `articulos`, `movimientos`, `solicitudes`, `vehiculos`, `reuniones`, `hojas` (actas de entrega y devolución con sus firmas), `tareasEq` (agenda de mantenimientos y backups), `avisos`, `buzon` (correos del Gmail de prueba; los leen la Jefe y la Administrativa encargada), `suscripciones` (teléfonos con avisos activados; Reiniciar no las borra) y `demo/estado` (marca y versión de los datos de ejemplo: si la versión guardada es vieja, la app vuelve a cargar los datos de ejemplo). Solo la Jefe carga, actualiza y reinicia los datos de prueba (así lo piden las reglas): si otra persona entra primero, la app le dice que entre una vez como Ana. La Jefe de prueba (Carolina Castillo) tiene en **Cambiar de persona** el botón **Reiniciar los datos de prueba** (usarlo antes de presentar).
 
 ## Permisos (los hace cumplir Firebase, no solo la pantalla)
 Las reglas (`firestore.rules`) no preguntan «¿qué rol tiene?» sino «¿qué **nivel** tiene en este módulo?» (el de su rol, o el que le puso la Jefe). Cada nivel solo lee lo que le toca: sin acceso no lee nada del módulo, y quien solo pide material no ve los movimientos de la bodega y, con cuenta propia, solo ve **sus** pedidos y compras.

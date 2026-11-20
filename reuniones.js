@@ -24,7 +24,7 @@
   const ahora = () => new Date().toISOString();
   const num = v => Number(v) || 0;
   const ITEMS_LOG = () => window.DatosDemo.ITEMS_LOG;
-  const CONDUCTORES = ['Carlos Pinto', 'Rafael Ospino', 'Hernán Brito'];
+  const CONDUCTORES = ['Oscar Farfán', 'Rafael Ospino', 'Hernán Brito'];
   const ACTIVA = ['programada', 'reprogramada'];
   const EST_RE = { programada: ['Programada', 's-listo', 'listo'], reprogramada: ['Reprogramada', 's-org', 'org'], cancelada: ['Cancelada', 's-peligro', 'peligro'], realizada: ['Realizada', 's-disco', 'disco'] };
   const TIPO = {
@@ -597,7 +597,7 @@
   }
   function informar(n) {
     const r = reunionPorId(n.reunionId), carro = n.tipo === 'carros';
-    const ph = carro ? 'Ej: la camioneta ABC 123 está libre ese día; Carlos puede manejar' : n.tipo === 'logistica' ? 'Ej: en bodega hay 30 sillas y el sonido está listo' : 'Ej: en bodega hay 12 refrigerios; faltan 18 por comprar';
+    const ph = carro ? 'Ej: la camioneta ABC 123 está libre ese día; Oscar puede manejar' : n.tipo === 'logistica' ? 'Ej: en bodega hay 30 sillas y el sonido está listo' : 'Ej: en bodega hay 12 refrigerios; faltan 18 por comprar';
     abrir({ titulo: `Informar: ${(TIPO[n.tipo] || [''])[0].toLowerCase()}`, sub: `${n.detalle}. ${r ? r.comunidad + ', ' + fechaTxt(r) : ''}. La Jefe decide con lo que informes.`,
       campos: htmlInformes(n) + `<div class="field"><label for="rcInf">Qué hay y qué falta</label><textarea id="rcInf" rows="3" maxlength="200" placeholder="${esH(ph)}"></textarea></div>`,
       primario: 'Enviar a la Jefe', icono: 'enviar', listo: 'Listo: la Jefe ya tiene lo que informaste.',

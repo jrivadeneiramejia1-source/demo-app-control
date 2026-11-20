@@ -1,5 +1,5 @@
 # Reglas para trabajar en este repo (es público)
-- **Solo datos inventados.** Nada de personas, clientes, comunidades ni correos reales. El plan gratis de Gemini puede usar lo que se le manda.
+- **Solo datos inventados**, con una excepción que Jeiler autorizó (20-nov-2026): esta demo SÍ lleva los **nombres y cargos del organigrama de GEOCOL y su logo**, para presentarla. Todo lo demás sigue inventado: correos (`@example.com`), cédulas, teléfonos, comunidades y todos los casos (compras, novedades, reuniones, equipos). Nada de datos personales reales más allá de nombre y cargo. La app real con datos de la empresa se hará aparte (copia privada, otro Firebase). El plan gratis de Gemini puede usar lo que se le manda.
 - **Nunca pedir ni guardar claves, tokens ni contraseñas.** La de Gemini la pega Jeiler directo en Cloudflare. La única clave en el código es la de las cuentas de prueba (`personas.js`), inventada y pública a propósito.
 - **No tocar las apps reales:** `apps-consulta-previa` solo se lee para copiar la base. Este repo usa su propio proyecto de Firebase (ID `fir-app-control-d8494`).
 - Nada se publica solo: se trabaja en la rama `desarrollo`; a `main` (la que publica GitHub Pages) solo pasa lo que Jeiler apruebe con un «sí».

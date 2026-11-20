@@ -30,6 +30,7 @@
     compra: sec('hacer', 'existencias', 'compras', 'solicitudes', 'movimientos', 'resumen'),
     pide: [['hacer', 'Lo mío']].concat(sec('existencias', 'solicitudes', 'compras')),
     ver: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'resumen'),
+    finanzas: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'resumen'),
     gerente: sec('resumen', 'compras', 'existencias', 'solicitudes')
   };
   const PROYECTOS = ['Proyecto Costa Norte', 'Proyecto Ruta Alta', 'Oficina'];
@@ -64,8 +65,9 @@
   // «Pagaron más de lo autorizado»: más del 10 % sobre el valor aprobado.
   const sobrecosto = c => (['comprado', 'recibido'].includes(c.estado) && num(c.valorAprox) > 0 && num(c.valorReal) > num(c.valorAprox) * 1.1 ? { pct: Math.round((num(c.valorReal) / num(c.valorAprox) - 1) * 100) } : null);
   const persona = () => A().S.persona;
-  // En la demo con personas de prueba se nombra a la persona (Sofía H.); con cuentas propias, el rol (Bodega), porque puede haber varias.
-  const nombreRol = rol => { const p = window.DEMO.porRol(rol), r = window.DEMO.rolDe(rol); return persona() && persona().prueba && p ? p.corto : (r ? r.rolTxt : rol); };
+  // En la demo con personas de prueba se nombra a la persona (Andrés B.); con cuentas propias, el rol (Bodega), porque puede haber varias.
+  // Con varias personas en un mismo rol (por ejemplo, 3 Gerentes) se dice el rol; si hay una sola, su nombre.
+  const nombreRol = rol => { const ps = window.DEMO.PERSONAS.filter(x => x.rol === rol), r = window.DEMO.rolDe(rol); return persona() && persona().prueba && ps.length === 1 ? ps[0].corto : (r ? r.rolTxt : rol); };
   const perm = () => A().permiso('inventario');
   const esJefe = () => perm() === 'jefe';
   const esGerente = () => perm() === 'gerente';
@@ -83,8 +85,8 @@
   const esMia = t => miFuncion() === t.rol || (t.rol === 'compras' && hagoCompras());
   const veTodo = () => perm() !== 'pide';                                       // quien solo pide ve solo lo suyo
   const veMovs = () => veTodo() && !esGerente();                                // el Gerente ve el resumen, no cada movimiento
-  const puedoPedirMaterial = () => ['pide', 'compra', 'bodega', 'jefe'].includes(perm());
-  const puedoPedirCompra = () => ['pide', 'compra', 'bodega', 'gerente', 'jefe'].includes(perm());
+  const puedoPedirMaterial = () => ['pide', 'finanzas', 'compra', 'bodega', 'jefe'].includes(perm());
+  const puedoPedirCompra = () => ['pide', 'finanzas', 'compra', 'bodega', 'gerente', 'jefe'].includes(perm());
   const misMarcas = () => ({ pideUid: window.nube.uid() });
   const ahora = () => new Date().toISOString();
   const delMes = f => String(f || '').slice(0, 7) === A().hoyISO().slice(0, 7);
@@ -825,7 +827,7 @@
   function marcarRevisada(c) {
     abrirAccion({
       titulo: 'Marcar como revisada', sub: `${c.que}: ${A().cop(c.valorReal || c.valorAprox)}, compró ${c.pide} sin autorización.`,
-      campos: campoTxt('acNota', 'Qué se habló (opcional)', '', 'Ej: hablé con Sofía, fue una urgencia', 160),
+      campos: campoTxt('acNota', 'Qué se habló (opcional)', '', 'Ej: hablé con Andrés, fue una urgencia', 160),
       primario: 'Marcar como revisada', icono: 'check', listo: 'Listo: compra revisada. Sigue contando en el resumen del mes.',
       ops: () => [['mezclar', 'compras', c.id, { revisada: true, historial: paso(c, 'Revisó la compra sin autorización' + (valor('acNota') ? ': ' + valor('acNota') : '')) }]]
     });

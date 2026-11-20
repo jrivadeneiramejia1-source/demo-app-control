@@ -7,9 +7,9 @@
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#082F40">
 <meta name="description" content="Demo de la app de control: equipos, inventario y compras, vehículos y reuniones, con datos de prueba">
 <meta name="robots" content="noindex">
-<link rel="manifest" href="manifest.webmanifest?v=4">
-<link rel="icon" type="image/png" href="iconos/control-192.png?v=4">
-<link rel="apple-touch-icon" href="iconos/control-180.png?v=4">
+<link rel="manifest" href="manifest.webmanifest?v=5">
+<link rel="icon" type="image/png" href="iconos/control-192.png?v=5">
+<link rel="apple-touch-icon" href="iconos/control-180.png?v=5">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Control">
@@ -18,7 +18,7 @@
 <link rel="preload" href="fuentes/bricolage.woff2" as="font" type="font/woff2" crossorigin>
 <script>try { var t = localStorage.getItem('cp_tema'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
 <link rel="stylesheet" href="comun.css?v=1">
-<link rel="stylesheet" href="demo.css?v=18">
+<link rel="stylesheet" href="demo.css?v=19">
 <link rel="stylesheet" href="caribe.css?v=2">
 </head>
 <body>
@@ -26,7 +26,7 @@
 <header class="top">
   <div class="top-in">
     <div class="brand">
-      <img class="marca" src="iconos/control-192.png?v=4" alt="" width="42" height="42">
+      <img class="marca" src="iconos/control-192.png?v=5" alt="" width="42" height="42">
       <div class="brand-t">
         <h1>Control</h1>
         <p id="subtitulo">Datos de prueba</p>
@@ -57,15 +57,17 @@
 
   <!-- ENTRADA -->
   <section class="view" id="vEntrada" aria-labelledby="tEntrada" hidden>
+    <img class="logo-empresa" src="iconos/logo-empresa.png?v=5" alt="Geocol Consultores S.A." width="220" height="201">
     <div class="entrada-cab">
       <h2 class="titulo-vista" id="tEntrada">¿Cómo entras?</h2>
     </div>
+    <p class="meta nota-demo" id="notaDemo">Demostración: los nombres y cargos son los del organigrama de la empresa; los casos que se ven (compras, novedades, reuniones, equipos) son inventados.</p>
     <div class="chips modo" id="entradaModo" role="group" aria-label="Forma de entrar">
       <button type="button" class="chip" data-modo="prueba" aria-pressed="true">Personas de prueba</button>
       <button type="button" class="chip" data-modo="cuenta" aria-pressed="false">Mi cuenta</button>
     </div>
     <div id="entradaPrueba">
-      <p class="meta">Una persona de prueba por cada rol. Entra con una y cambia de persona cuando quieras desde el botón de arriba.</p>
+      <p class="meta">Las personas del organigrama de la empresa, agrupadas por área. Entra con una y cambia de persona cuando quieras desde el botón de arriba.</p>
       <div class="list" id="entradaLista"></div>
     </div>
     <div id="entradaCuenta" hidden>
@@ -311,16 +313,16 @@
 <script src="iconos.js?v=3"></script>
 <script src="comun.js?v=1"></script>
 <script src="config.js?v=5"></script>
-<script src="personas.js?v=10"></script>
+<script src="personas.js?v=11"></script>
 <script src="datos-demo.js?v=9"></script>
 <script src="nube.js?v=10"></script>
 <script src="push.js?v=1"></script>
-<script src="inventario.js?v=10"></script>
+<script src="inventario.js?v=11"></script>
 <script src="correos-demo.js?v=1"></script>
 <script src="reuniones.js?v=9"></script>
 <script src="vehiculos.js?v=2"></script>
 <script src="equipos.js?v=1"></script>
-<script src="gente.js?v=4"></script>
-<script src="app.js?v=14"></script>
+<script src="gente.js?v=5"></script>
+<script src="app.js?v=15"></script>
 </body>
 </html>

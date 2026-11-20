@@ -5,10 +5,12 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebas
 import { readFileSync } from 'node:fs';
 import { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 
+// Una persona de prueba por rol (del organigrama de la empresa). El rol va al principio del correo.
 const CORREOS = {
-  gerente: 'ricardo.fuentes@example.com', jefe: 'ana.perez@example.com', equipos: 'daniel.ortiz@example.com', soporte: 'valentina.ruiz@example.com',
-  compras: 'luis.rodriguez@example.com', asistente: 'sofia.herrera@example.com', carros: 'marta.gomez@example.com', conductor: 'carlos.pinto@example.com',
-  logistica: 'pedro.castillo@example.com', profesional: 'laura.medina@example.com', administrativo: 'natalia.vargas@example.com'
+  gerente: 'gerente.oscar.munoz@example.com', jefe: 'jefe.carolina.castillo@example.com', equipos: 'equipos.fabian.barbosa@example.com', soporte: 'soporte.angel.ortiz@example.com',
+  compras: 'compras.mauricio.giraldo@example.com', asistente: 'asistente.andres.beltran@example.com', carros: 'carros.wilson.munoz@example.com', conductor: 'conductor.oscar.farfan@example.com',
+  logistica: 'logistica.elkin.bruno@example.com', profesional: 'profesional.margaret.pulido@example.com', administrativo: 'administrativo.paola.martinez@example.com',
+  colaborador: 'colaborador.yuliana.murcia@example.com', financiero: 'financiero.adriana.patino@example.com', consulta: 'consulta.revisor.fiscal@example.com'
 };
 const env = await initializeTestEnvironment({ projectId: 'demo-reglas', firestore: { rules: readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8') } });
 let ok = 0; const fallas = [];
@@ -28,7 +30,7 @@ async function cuenta(uid, rol, extra = {}) {
 }
 const anonimo = () => env.unauthenticatedContext().firestore();
 
-const compra = (o = {}) => Object.assign({ que: 'Botas', cantidad: 2, unidad: 'pares', categoria: 'EPP', valorAprox: 100000, paraQue: 'Campo', pide: 'Pedro Castillo', pideRol: 'logistica', autoriza: '',
+const compra = (o = {}) => Object.assign({ que: 'Botas', cantidad: 2, unidad: 'pares', categoria: 'EPP', valorAprox: 100000, paraQue: 'Campo', pide: 'Persona Uno', pideRol: 'logistica', autoriza: '',
   estado: 'pedido', proveedor: '', valorReal: 0, fechaPedido: '2026-11-20', fechaCompra: '', entregadoA: '', motivoRechazo: '', articuloId: '', factura: '', revisada: false, historial: [] }, o);
 
 console.log('Lectura');
@@ -49,7 +51,7 @@ console.log('Compras');
 await limpiar();
 await prueba('quien pide crea la compra a su nombre', () => assertSucceeds(setDoc(doc(prueba_('logistica'), 'compras', 'co-1'), compra())));
 await prueba('nadie pide a nombre de otro rol', () => assertFails(setDoc(doc(prueba_('logistica'), 'compras', 'co-2'), compra({ pideRol: 'jefe' }))));
-await prueba('quien pide no se la autoriza solo', () => assertFails(updateDoc(doc(prueba_('logistica'), 'compras', 'co-1'), { estado: 'autorizado', autoriza: 'Pedro Castillo' })));
+await prueba('quien pide no se la autoriza solo', () => assertFails(updateDoc(doc(prueba_('logistica'), 'compras', 'co-1'), { estado: 'autorizado', autoriza: 'Persona Uno' })));
 await prueba('Compras no autoriza (solo compra lo autorizado)', () => assertFails(updateDoc(doc(prueba_('compras'), 'compras', 'co-1'), { estado: 'autorizado', autoriza: 'Luis' })));
 await prueba('Compras no compra algo que nadie autorizó', () => assertFails(updateDoc(doc(prueba_('compras'), 'compras', 'co-1'), { estado: 'comprado', proveedor: 'X', valorReal: 100000, fechaCompra: '2026-11-20', factura: '', historial: [] })));
 await prueba('la Jefe autoriza la compra de otro', () => assertSucceeds(updateDoc(doc(prueba_('jefe'), 'compras', 'co-1'), { estado: 'autorizado', autoriza: 'Ana Pérez' })));
@@ -208,8 +210,19 @@ await prueba('los niveles de las reglas coinciden con personas.js', async () => 
   if (filas.length !== D.ROLES.length) throw new Error(`reglas tienen ${filas.length} roles y personas.js ${D.ROLES.length}`);
   for (const [, rol, e, i, v, r] of filas) { const x = D.rolDe(rol); if (!x) throw new Error('rol que no está en personas.js: ' + rol);
     for (const [m, val] of [['equipos', e], ['inventario', i], ['vehiculos', v], ['reuniones', r]]) if (x.permisos[m] !== val) throw new Error(`${rol}/${m}: reglas «${val}», personas.js «${x.permisos[m]}»`); }
-  const cuentasTxt = txt.slice(txt.indexOf('function cuentas()'), txt.indexOf('function ROLES()'));
-  for (const p of D.PERSONAS) if (!cuentasTxt.includes(`'${p.correo}': '${p.rol}'`)) throw new Error('persona de prueba que falta en las reglas: ' + p.correo); });
+  // Cada persona de prueba: su correo tiene la forma que aceptan las reglas, el rol del correo es el de la persona y no se repite.
+  const patron = new RegExp(txt.match(/matches\('(\^\(gerente[^']*)'\)/)[1]), vistos = new Set();
+  for (const p of D.PERSONAS) {
+    if (!patron.test(p.correo)) throw new Error('las reglas no aceptan el correo de ' + p.nombre + ': ' + p.correo);
+    if (p.correo.split('.')[0] !== p.rol) throw new Error('el rol del correo no coincide con el de ' + p.nombre);
+    if (vistos.has(p.correo)) throw new Error('correo repetido: ' + p.correo);
+    vistos.add(p.correo);
+  }
+  const rolesRegla = txt.match(/function ROLES\(\) \{ return \[([^\]]*)\]/)[1].split(',').map(x => x.replace(/[' ]/g, '')).sort().join();
+  if (rolesRegla !== D.ROLES.map(r => r.rol).sort().join()) throw new Error('ROLES() de las reglas no coincide con personas.js: ' + rolesRegla);
+  // Los permisos extra fijos de las personas de prueba están en las reglas (y solo esas dos personas los tienen).
+  for (const p of D.PERSONAS) for (const x of p.extras) if (!txt.includes(`'${p.correo}' ? ['${x}']`)) throw new Error('falta en las reglas el permiso extra «' + x + '» de ' + p.nombre);
+  if (D.PERSONAS.filter(p => p.extras.length).length !== 2) throw new Error('las reglas solo conocen 2 personas de prueba con permisos extra'); });
 
 
 console.log('Inventario: cada nivel lee solo lo suyo (B6)');
@@ -243,6 +256,34 @@ await prueba('una persona solo con «solo ver» en Inventario no pide material n
   const db = await cuenta('ver2', 'conductor', { permisos: { inventario: 'ver' } });
   await assertFails(setDoc(doc(db, 'compras', 'cp-v'), compra({ pideRol: 'conductor', pideUid: 'ver2' })));
   await assertFails(setDoc(doc(db, 'solicitudes', 'so-v'), { articulo: 'X', cantidad: 1, pideRol: 'conductor', estado: 'pendiente', pideUid: 'ver2' })); });
+
+
+console.log('Roles nuevos: Colaborador, Financiero y Consulta');
+await limpiar();
+await sembrar(async db => { await setDoc(doc(db, 'movimientos', 'mo-9'), { articulo: 'Guantes', cantidad: 2, tipo: 'salida' }); await setDoc(doc(db, 'compras', 'cp-z'), compra({ pide: 'Persona Uno' }));
+  await setDoc(doc(db, 'equipos', 'eq-9'), { serial: 'ZZZ', estado: 'bodega', historial: [] }); await setDoc(doc(db, 'vehiculos', 've-9'), { placa: 'AAA111', km: 10 }); await setDoc(doc(db, 'reuniones', 're-9'), { titulo: 'X' }); });
+await prueba('Financiero lee todas las compras y los movimientos, y no lee Equipos ni Vehículos', async () => { const db = prueba_('financiero');
+  await assertSucceeds(getDoc(doc(db, 'compras', 'cp-z'))); await assertSucceeds(getDoc(doc(db, 'movimientos', 'mo-9')));
+  await assertFails(getDoc(doc(db, 'equipos', 'eq-9'))); await assertFails(getDoc(doc(db, 'vehiculos', 've-9'))); });
+await prueba('Financiero también pide compras a su nombre, pero no las autoriza ni las compra', async () => { const db = prueba_('financiero');
+  await assertSucceeds(setDoc(doc(db, 'compras', 'cp-f1'), compra({ pideRol: 'financiero' })));
+  await assertFails(updateDoc(doc(db, 'compras', 'cp-z'), { estado: 'autorizado', autoriza: 'X' })); });
+await prueba('Consulta lee inventario y vehículos y no cambia nada ni lee Equipos', async () => { const db = prueba_('consulta');
+  await assertSucceeds(getDoc(doc(db, 'compras', 'cp-z'))); await assertSucceeds(getDoc(doc(db, 'vehiculos', 've-9'))); await assertFails(getDoc(doc(db, 'equipos', 'eq-9')));
+  await assertFails(setDoc(doc(db, 'compras', 'cp-c1'), compra({ pideRol: 'consulta' }))); await assertFails(setDoc(doc(db, 'articulos', 'ar-c'), { nombre: 'X', cantidad: 1 })); });
+await prueba('Colaborador pide, ve las reuniones solo para leer y no ve Equipos, Vehículos ni movimientos', async () => { const db = prueba_('colaborador');
+  await assertSucceeds(setDoc(doc(db, 'compras', 'cp-o1'), compra({ pideRol: 'colaborador' })));
+  await assertSucceeds(getDoc(doc(db, 'reuniones', 're-9'))); await assertFails(getDoc(doc(db, 'equipos', 'eq-9'))); await assertFails(getDoc(doc(db, 'vehiculos', 've-9')));
+  await assertFails(getDoc(doc(db, 'movimientos', 'mo-9'))); });
+await prueba('la Jefe le da a un Colaborador el nivel «finanzas» y ahora lee todas las compras', async () => {
+  const j = await cuenta('jefN', 'jefe'); await cuenta('colN', 'colaborador');
+  await assertSucceeds(updateDoc(doc(j, 'usuarios', 'colN'), { permisos: { inventario: 'finanzas' } }));
+  await assertSucceeds(getDocs(collection(env.authenticatedContext('colN', { email: 'colN@correo-inventado.test', email_verified: true }).firestore(), 'compras'))); });
+await prueba('solo vale el correo con el rol al principio y @example.com', async () => {
+  const como = c => env.authenticatedContext('x-' + c, { email: c, email_verified: false }).firestore();
+  await assertSucceeds(getDoc(doc(como('jefe.cualquiera.nombre@example.com'), 'compras', 'cp-z')));
+  for (const malo of ['jefe@example.com', 'otro.jefe.nombre@example.com', 'jefe.nombre@otro.com', 'Jefe.Nombre@example.com', 'dios.nombre@example.com', 'jefe.nombre@example.com.mx'])
+    await assertFails(getDoc(doc(como(malo), 'compras', 'cp-z'))); });
 
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);

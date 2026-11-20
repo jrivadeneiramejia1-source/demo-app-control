@@ -4,14 +4,14 @@ rules_version = '2';
 // (su perfil en usuarios/<uid> dice el rol y si el acceso está activo). Sin eso, nadie puede leer ni escribir nada.
 // El rol de una cuenta propia lo pone el código: la persona no lo puede escoger ni cambiar.
 // Cada persona solo puede hacer lo que le toca (lo cumple Firebase, no solo la pantalla):
-//   Gerente (Ricardo): ve todo; autoriza o rechaza las compras que pide la Jefe y las que valen el monto que él fija (ajustesApp/compras)
+//   Gerente: ve todo; autoriza o rechaza las compras que pide la Jefe y las que valen el monto que él fija (ajustesApp/compras)
 //   o más, después de la Jefe; si él pide una compra, nace autorizada. No maneja personas ni códigos.
-//   Jefe (Ana): carga y reinicia los datos de prueba, autoriza las compras (las grandes pasan después al Gerente), maneja personas,
+//   Jefe: carga y reinicia los datos de prueba, autoriza las compras (las grandes pasan después al Gerente), maneja personas,
 //   niveles e invitaciones (solo con cuenta propia, nunca a otra Jefe ni al Gerente) y puede hacer cualquier paso (menos autorizarse a sí misma).
 //   Nivel por módulo: lo que dice el rol, salvo que la Jefe le haya puesto otro a esa persona (usuarios/<uid>.permisos).
 //   Las cuentas propias necesitan el correo confirmado. Las personas de prueba se pueden apagar (ajustesApp/seguridad).
-//   Compras (Luis): registra la compra autorizada (proveedor, valor, factura) y las compras hechas sin autorización.
-//   Bodega (Sofía): entradas, salidas, conteos, entregas y recibe lo comprado.
+//   Compras: registra la compra autorizada (proveedor, valor, factura) y las compras hechas sin autorización.
+//   Bodega: entradas, salidas, conteos, entregas y recibe lo comprado.
 //   Reuniones: la Jefe confirma lo que entendió el agente y reparte; Compras, Transporte y Bodega informan lo que hay y la Jefe
 //   autoriza la comida y los carros (escoge el conductor);
 //   el Conductor confirma el viaje, Logística alista, el Profesional confirma si va y Administrativo registra el acta.
@@ -21,23 +21,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Correo de cada persona de prueba -> su rol. Debe coincidir con personas.js.
-    function cuentas() {
-      return {
-        'ricardo.fuentes@example.com': 'gerente',
-        'ana.perez@example.com': 'jefe',
-        'daniel.ortiz@example.com': 'equipos',
-        'valentina.ruiz@example.com': 'soporte',
-        'luis.rodriguez@example.com': 'compras',
-        'sofia.herrera@example.com': 'asistente',
-        'marta.gomez@example.com': 'carros',
-        'carlos.pinto@example.com': 'conductor',
-        'pedro.castillo@example.com': 'logistica',
-        'laura.medina@example.com': 'profesional',
-        'natalia.vargas@example.com': 'administrativo'
-      };
+    // Personas de prueba: su correo es «rol.nombre.apellido@example.com» (inventado) y el rol es lo primero. Así no hace falta una
+    // lista larga (que gasta el límite de expresiones de las reglas). Cualquiera con la clave pública entra con ellas: por eso la Jefe
+    // las puede apagar (ajustesApp/seguridad). Debe coincidir con personas.js (lo comprueba pruebas/reglas.mjs).
+    function ROLES() { return ['gerente', 'jefe', 'equipos', 'soporte', 'compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional', 'administrativo', 'colaborador', 'financiero', 'consulta']; }
+    function correoDePrueba() {
+      return request.auth.token.email is string
+        && request.auth.token.email.matches('^(gerente|jefe|equipos|soporte|compras|asistente|carros|conductor|logistica|profesional|administrativo|colaborador|financiero|consulta)[.][a-z.]+@example[.]com$');
     }
-    function ROLES() { return ['gerente', 'jefe', 'equipos', 'soporte', 'compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional', 'administrativo']; }
     // Interruptor: la Jefe (cuenta propia) puede apagar las personas de prueba (ajustesApp/seguridad.personasPrueba = false)
     // cuando la app pase a uso real, porque su clave es pública.
     function pruebasActivas() {
@@ -46,8 +37,7 @@ service cloud.firestore {
     }
     function esPrueba() {
       return request.auth != null
-        && request.auth.token.email is string
-        && request.auth.token.email in cuentas()
+        && correoDePrueba()
         && pruebasActivas();
     }
     function rutaPerfil() { return /databases/$(database)/documents/usuarios/$(request.auth.uid); }
@@ -55,7 +45,7 @@ service cloud.firestore {
     // Cuenta propia con el correo confirmado, perfil y acceso activo.
     function esCuenta() { return request.auth != null && !esPrueba() && request.auth.token.email_verified == true && exists(rutaPerfil()) && perfil().activo == true; }
     function esDemo() { return esPrueba() || esCuenta(); }
-    function rol() { return esPrueba() ? cuentas()[request.auth.token.email] : perfil().rol; }
+    function rol() { return esPrueba() ? request.auth.token.email.split('[.]')[0] : perfil().rol; }
     // Cuenta propia (no persona de prueba) con uno de estos roles.
     function esCuentaDe(roles) { return esCuenta() && perfil().rol in roles; }
     function esDireccion(r) { return r in ['gerente', 'jefe']; }
@@ -100,7 +90,10 @@ service cloud.firestore {
         'conductor': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'reporta', 'reuniones': 'asiste' },
         'logistica': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'logistica' },
         'profesional': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'asiste' },
-        'administrativo': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'actas' }
+        'administrativo': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'actas' },
+        'colaborador': { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'ver' },
+        'financiero': { 'equipos': 'no', 'inventario': 'finanzas', 'vehiculos': 'no', 'reuniones': 'ver' },
+        'consulta': { 'equipos': 'no', 'inventario': 'ver', 'vehiculos': 'ver', 'reuniones': 'no' }
       };
     }
     // Lo que la Jefe le marcó a una cuenta propia (permisos por módulo); las personas de prueba usan siempre el de su rol.
@@ -110,14 +103,16 @@ service cloud.firestore {
     function esJefe() { return esDemo() && rol() == 'jefe'; }
     function esGerente() { return esDemo() && rol() == 'gerente'; }
     // Permisos extra que el Gerente o la Jefe le marcan a una cuenta propia (y los fijos de las personas de prueba).
-    function extras() { return esCuenta() ? perfil().get('extras', []) : esPrueba() ? extrasPrueba().get(request.auth.token.email, []) : []; }
-    // Permisos extra de las personas de prueba (deben coincidir con personas.js): Valentina (Soporte) revisa las actas.
-    function extrasPrueba() { return { 'valentina.ruiz@example.com': ['actas'] }; }
+    function extras() { return esCuenta() ? perfil().get('extras', []) : esPrueba() ? extrasPrueba() : []; }
+    // Permisos extra de dos personas de prueba (deben coincidir con personas.js): Ángel (Soporte) revisa las actas y Solanyi es encargada de reuniones.
+    function extrasPrueba() {
+      return request.auth.token.email == 'soporte.angel.ortiz@example.com' ? ['actas'] : request.auth.token.email == 'administrativo.solanyi.surquira@example.com' ? ['encargada'] : [];
+    }
     function tieneExtra(x) { return x in extras(); }
     // Compras, la Jefe, o la persona de Bodega con el permiso extra «compra».
     function esCompras() { return esDemo() && (nivel('inventario') in ['compra', 'jefe'] || (nivel('inventario') == 'bodega' && tieneExtra('compra'))); }
     // Puede pedir material y compras a su nombre (con «solo ver» o «sin acceso» no).
-    function puedePedir() { return esDemo() && nivel('inventario') in ['pide', 'compra', 'bodega', 'gerente', 'jefe']; }
+    function puedePedir() { return esDemo() && nivel('inventario') in ['pide', 'finanzas', 'compra', 'bodega', 'gerente', 'jefe']; }
     function veInventario() { return esDemo() && nivel('inventario') != 'no'; }
     // Quien solo pide material (nivel «pide») no ve los movimientos de la bodega, y en una cuenta real solo ve SUS pedidos y compras
     // (los que llevan su pideUid). Las personas de prueba (demo) ven todo.
@@ -423,7 +418,7 @@ service cloud.firestore {
     function permisosOk(p) {
       return p is map && p.keys().hasOnly(['equipos', 'inventario', 'vehiculos', 'reuniones'])
         && p.get('equipos', 'ver') in ['no', 'ver', 'encargado', 'soporte']
-        && p.get('inventario', 'ver') in ['no', 'ver', 'pide', 'compra', 'bodega']
+        && p.get('inventario', 'ver') in ['no', 'ver', 'finanzas', 'pide', 'compra', 'bodega']
         && p.get('vehiculos', 'ver') in ['no', 'ver', 'reporta', 'autoriza']
         && p.get('reuniones', 'ver') in ['no', 'ver'];
     }

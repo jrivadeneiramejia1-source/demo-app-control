@@ -67,20 +67,31 @@
 
   /* ---------- entrada ---------- */
   function tarjetaPersona(p, actual) {
-    return `<button type="button" class="card persona-card" data-rol="${esH(p.rol)}" ${actual ? 'aria-current="true"' : ''}>
+    return `<button type="button" class="card persona-card" data-correo="${esH(p.correo)}" data-rol="${esH(p.rol)}" ${actual ? 'aria-current="true"' : ''}>
       <span class="avatar grande av-${esH(p.rol)}" aria-hidden="true">${esH(iniciales(p.nombre))}</span>
       <span class="pc-t"><b>${esH(p.nombre)}</b><span>${esH(p.rolTxt)}${p.cargo && p.cargo !== p.rolTxt ? ' · ' + esH(p.cargo) : ''}</span></span>
       <span class="pc-ir" aria-hidden="true">${actual ? ico('check') : ico('flecha')}</span>
     </button>`;
   }
-  // Personas de prueba agrupadas por área (Dirección, Equipos, Inventario, Vehículos, Reuniones).
-  const porArea = actual => window.DEMO.AREAS.map(a => {
-    const ps = window.DEMO.PERSONAS.filter(p => p.area === a);
-    return ps.length ? `<div class="section-label">${esH(a)}</div>${ps.map(p => tarjetaPersona(p, p.rol === actual)).join('')}` : '';
-  }).join('');
+  // Personas de la demo agrupadas por unidad del organigrama, con un buscador. La de la sesión actual deja su grupo abierto.
+  const sinTildes = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const porUnidad = (actual, abiertas) => `<div class="field"><label class="sr" for="fp-${abiertas ? 'e' : 'p'}">Buscar persona</label><input id="fp-${abiertas ? 'e' : 'p'}" class="filtro-personas" type="search" placeholder="Buscar por nombre o cargo" autocomplete="off"></div>` +
+    window.DEMO.UNIDADES.map(u => {
+      const ps = window.DEMO.PERSONAS.filter(p => p.unidad === u);
+      return ps.length ? `<details class="grupo-personas"${abiertas || ps.some(p => p.correo === actual) ? ' open' : ''}><summary>${esH(u)} <span class="n">${ps.length}</span></summary>${ps.map(p => tarjetaPersona(p, p.correo === actual)).join('')}</details>` : '';
+    }).join('');
+  // Al escribir en el buscador se esconden las personas que no coinciden y se abren los grupos que sí.
+  function filtrarPersonas(campo) {
+    const q = sinTildes(campo.value).trim(), cont = campo.closest('.field').parentElement;
+    cont.querySelectorAll('details.grupo-personas').forEach(d => {
+      let n = 0;
+      d.querySelectorAll('.persona-card').forEach(c => { const ok = !q || sinTildes(c.textContent).includes(q); c.hidden = !ok; if (ok) n++; });
+      d.hidden = n === 0; if (q && n) d.open = true;
+    });
+  }
   const hayPrueba = () => window.PERSONAS_PRUEBA !== false;
   function pintarEntrada() {
-    $('entradaLista').innerHTML = hayPrueba() ? porArea('') : '';
+    $('entradaLista').innerHTML = hayPrueba() ? porUnidad('', true) : '';
     if (!hayPrueba()) modoEntrada = 'cuenta';
     $('entradaModo').hidden = !hayPrueba();
     pintarModoEntrada();
@@ -148,14 +159,14 @@
     catch (e) { S.errCuenta = err.textContent = nube.explicar(e); err.hidden = false; }
     finally { b.disabled = false; }
   }
-  async function entrarComo(rol, boton) {
+  async function entrarComo(correo, boton) {
     if (S.entrando) return;
     S.entrando = true;
     const err = $('entradaErr'); err.hidden = true;
     document.querySelectorAll('.persona-card').forEach(b => { b.setAttribute('aria-busy', b === boton ? 'true' : 'false'); });
     try {
-      const p = await nube.entrar(rol);
-      if (S.persona && S.persona.rol === p.rol) cerrarHoja('shPersona');
+      const p = await nube.entrar(correo);
+      if (S.persona && S.persona.correo === p.correo) cerrarHoja('shPersona');
     } catch (e) {
       const msg = nube.explicar(e);
       if (!$('vEntrada').hidden) { err.textContent = msg; err.hidden = false; } else toast(msg);
@@ -255,7 +266,7 @@
   }
   function abrirPersona() {
     const p = S.persona; if (!p) return;
-    $('personaLista').innerHTML = porArea(p.prueba ? p.rol : '');
+    $('personaLista').innerHTML = porUnidad(p.prueba ? p.correo : '', false);
     $('cuentaPropia').hidden = !p.real;
     if (p.real) $('cuentaPropiaTxt').textContent = `${p.nombre} · ${p.correo} · ${p.rolTxt}. Si tocas una persona de prueba, sales de tu cuenta.`;
     // El panel solo sale con cuentas propias: las personas de prueba tienen la clave pública.
@@ -338,20 +349,20 @@
     $('inicioSub').textContent = p.cargo && p.cargo !== p.rolTxt ? `${p.cargo} · ${p.rolTxt}` : p.rolTxt;
     const n = pendientes();
     const todas = [
-      { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: ['gerente', 'jefe', 'asistente'] },
+      { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: ['gerente', 'jefe', 'asistente', 'consulta'] },
       { mod: 'inventario', k: 'i-ent', n: n.inv.porEntregar, lbl: 'Pedidos de material por entregar', icono: 'entrega', tono: 'listo', roles: ['jefe', 'asistente'] },
       { mod: 'inventario', k: 'i-aut', n: n.inv.porAutorizarMias, lbl: 'Compras que te toca autorizar', icono: 'carrito', tono: 'org', roles: ['gerente', 'jefe'] },
       { mod: 'inventario', k: 'i-com', n: n.inv.porComprar, lbl: 'Compras autorizadas por hacer', icono: 'carrito', tono: 'listo', roles: ['compras'] },
-      { mod: 'inventario', k: 'i-cur', n: n.inv.enCurso, lbl: 'Compras en curso', icono: 'carrito', tono: 'listo', roles: ['gerente'] },
-      { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['gerente', 'jefe', 'compras'] },
-      { mod: 'inventario', k: 'i-mis', n: n.inv.misPedidos, lbl: 'Tus pedidos de material en espera', icono: 'caja', tono: 'listo', roles: () => permiso('inventario') === 'pide' },
+      { mod: 'inventario', k: 'i-cur', n: n.inv.enCurso, lbl: 'Compras en curso', icono: 'carrito', tono: 'listo', roles: ['gerente', 'financiero', 'consulta'] },
+      { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['gerente', 'jefe', 'compras', 'financiero', 'consulta'] },
+      { mod: 'inventario', k: 'i-mis', n: n.inv.misPedidos, lbl: 'Tus pedidos de material en espera', icono: 'caja', tono: 'listo', roles: () => ['pide', 'finanzas'].includes(permiso('inventario')) },
       { mod: 'vehiculos', k: 'i-nov', n: n.novedades, lbl: 'Novedades de carros sin revisar', icono: 'carro', tono: 'org', roles: ['jefe', 'carros', 'asistente'] },
       { mod: 'vehiculos', k: 'i-via', n: n.veh.mias, lbl: 'Viajes por registrar', icono: 'llave', tono: 'listo', roles: ['conductor'] },
-      { mod: 'vehiculos', k: 'i-doc', n: n.docsPorVencer, lbl: 'SOAT o técnico-mecánica por vencer o vencidos', icono: 'calendario', tono: 'peligro', roles: ['gerente', 'jefe', 'carros', 'asistente'] },
+      { mod: 'vehiculos', k: 'i-doc', n: n.docsPorVencer, lbl: 'SOAT o técnico-mecánica por vencer o vencidos', icono: 'calendario', tono: 'peligro', roles: ['gerente', 'jefe', 'carros', 'asistente', 'consulta'] },
       { mod: 'reuniones', k: 'i-reu', n: n.reu.conPend, lbl: 'Reuniones con algo pendiente', icono: 'reunion', tono: 'org', roles: ['jefe'] },
       { mod: 'reuniones', k: 'i-act', n: n.reu.actas, lbl: 'Actas por registrar', icono: 'hojas', tono: 'peligro', roles: ['jefe', 'administrativo'] },
       { mod: 'reuniones', k: 'i-rmi', n: n.reu.mias, lbl: 'Tareas de reuniones para ti', icono: 'reunion', tono: 'listo', roles: ['compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional'] },
-      { mod: 'reuniones', k: 'i-prox', n: n.reu.proximas, lbl: 'Próximas reuniones', icono: 'calendario', tono: 'listo', roles: ['gerente', 'logistica', 'profesional', 'administrativo'] },
+      { mod: 'reuniones', k: 'i-prox', n: n.reu.proximas, lbl: 'Próximas reuniones', icono: 'calendario', tono: 'listo', roles: ['gerente', 'logistica', 'profesional', 'administrativo', 'colaborador', 'financiero'] },
       { mod: 'equipos', k: 'i-rec', n: n.recibidos, lbl: 'Equipos en Recibidos', icono: 'recibidos', tono: 'listo', roles: ['jefe', 'equipos'] },
       { mod: 'equipos', k: 'i-eac', n: n.eq.actas, lbl: 'Actas de equipos por revisar', icono: 'hojas', tono: 'org', roles: ['jefe', 'soporte', 'gerente'] },
       { mod: 'equipos', k: 'i-eta', n: n.eq.tareas, lbl: 'Mantenimientos y backups programados', icono: 'mantenimiento', tono: n.eq.atrasadas ? 'peligro' : 'listo', roles: ['equipos', 'soporte'] }
@@ -477,11 +488,12 @@
 
   /* ---------- eventos ---------- */
   function conectarEventos() {
-    $('entradaLista').addEventListener('click', e => { const b = e.target.closest('[data-rol]'); if (b) entrarComo(b.dataset.rol, b); });
+    $('entradaLista').addEventListener('click', e => { const b = e.target.closest('[data-correo]'); if (b) entrarComo(b.dataset.correo, b); });
+    document.addEventListener('input', e => { const f = e.target.closest && e.target.closest('.filtro-personas'); if (f) filtrarPersonas(f); });
     $('personaLista').addEventListener('click', e => {
-      const b = e.target.closest('[data-rol]'); if (!b) return;
-      if (S.persona && S.persona.prueba && b.dataset.rol === S.persona.rol) { cerrarHoja('shPersona'); return; }
-      entrarComo(b.dataset.rol, b);
+      const b = e.target.closest('[data-correo]'); if (!b) return;
+      if (S.persona && S.persona.prueba && b.dataset.correo === S.persona.correo) { cerrarHoja('shPersona'); return; }
+      entrarComo(b.dataset.correo, b);
     });
     $('btnPersona').onclick = abrirPersona;
     $('btnAvisos').onclick = abrirAvisos;

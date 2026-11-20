@@ -28,17 +28,28 @@
     transporte: 'carros', carros: 'carros', 'coordinador de transporte': 'carros', 'coordinadora de transporte': 'carros',
     conductor: 'conductor', conductora: 'conductor', logistica: 'logistica', 'auxiliar de logistica': 'logistica',
     profesional: 'profesional', 'profesional de campo': 'profesional',
-    administrativo: 'administrativo', administrativa: 'administrativo', 'auxiliar administrativo': 'administrativo', 'auxiliar administrativa': 'administrativo'
+    administrativo: 'administrativo', administrativa: 'administrativo', 'auxiliar administrativo': 'administrativo', 'auxiliar administrativa': 'administrativo',
+    // Cargos del organigrama de la empresa
+    'gerente de proyectos': 'gerente', 'lider abastecimiento': 'jefe', 'lider abastecimiento y coord seguimiento y control': 'jefe', 'coord seguimiento y control': 'jefe',
+    'asistente ti': 'soporte', 'auxiliar ti': 'equipos', 'coord compras': 'compras', 'auxiliar compras': 'compras', 'auxiliar compras mgc': 'compras', 'coord transporte': 'carros',
+    'profesional logistico hse': 'logistica', 'profesional logistico': 'logistica', 'asistente administrativa': 'administrativo', 'asistente seguimiento y control': 'administrativo',
+    'coordinador sgi': 'profesional', 'profesional sgi': 'profesional', 'prof control de gestion': 'profesional', 'profesional control de gestion': 'profesional',
+    'lider gestion de contratos': 'profesional', 'coord licitaciones': 'profesional', 'profesional licitaciones': 'profesional',
+    colaborador: 'colaborador', colaboradora: 'colaborador', recepcionista: 'colaborador', mensajero: 'colaborador', 'servicios generales': 'colaborador', 'asistente sgi': 'colaborador',
+    'coord gestion humana': 'colaborador', 'asist gestion humana': 'colaborador', 'aux gestion humana': 'colaborador', 'gerente administrativa': 'colaborador',
+    financiero: 'financiero', financiera: 'financiero', contador: 'financiero', contadora: 'financiero', 'asist contable': 'financiero', 'profesional contable': 'financiero',
+    'auxiliar contable': 'financiero', 'asist nomina': 'financiero', 'asist reembolsables': 'financiero', 'gerente financiera': 'financiero', 'gerente financiero': 'financiero',
+    consulta: 'consulta', 'revisor fiscal': 'consulta', 'oficial de cumplimiento': 'consulta', auditor: 'consulta', auditora: 'consulta'
   };
   const NIVEL_ALIAS = {
     '': '', 'como su rol': '', 'sin acceso': 'no', no: 'no', ninguno: 'no', 'solo ver': 'ver', ver: 'ver', encargado: 'encargado', soporte: 'soporte',
-    pide: 'pide', 'pide material': 'pide', compra: 'compra', compras: 'compra', 'hace las compras': 'compra', bodega: 'bodega', 'encargada de bodega': 'bodega', reporta: 'reporta', autoriza: 'autoriza'
+    pide: 'pide', 'pide material': 'pide', finanzas: 'finanzas', 've compras y facturas': 'finanzas', compra: 'compra', compras: 'compra', 'hace las compras': 'compra', bodega: 'bodega', 'encargada de bodega': 'bodega', reporta: 'reporta', autoriza: 'autoriza'
   };
   const EXTRA_ALIAS = { compra: 'compra', compras: 'compra', actas: 'actas', encargada: 'encargada', 'encargada de reuniones': 'encargada' };
   const COLUMNA = { nombre: 'nombre', nombres: 'nombre', 'nombre completo': 'nombre', correo: 'correo', email: 'correo', 'e-mail': 'correo', 'correo electronico': 'correo', rol: 'rol', cargo: 'rol',
     equipos: 'equipos', inventario: 'inventario', vehiculos: 'vehiculos', reuniones: 'reuniones', extras: 'extras', 'permisos extra': 'extras', 'permiso extra': 'extras' };
   const rolDeTexto = t => {
-    const n = norm(t); if (!n) return null;
+    const n = norm(t).replace(/\./g, ' ').replace(/\s+/g, ' ').trim(); if (!n) return null;
     if (ROL_ALIAS[n]) return ROL_ALIAS[n];
     const r = window.DEMO.ROLES.find(x => norm(x.rolTxt) === n || norm(x.cargo) === n);
     return r ? r.rol : null;
@@ -270,7 +281,7 @@
     if (g === 'pruebas') {
       const apagar = b.dataset.on === '0';
       const ok = await A().confirmar(apagar ? '¿Apagar las personas de prueba?' : '¿Volver a encender las personas de prueba?',
-        apagar ? 'Nadie podrá entrar con las cuentas de prueba (Ana, Ricardo y las demás) ni leer datos con ellas. Tú sigues entrando con tu cuenta.' : 'Cualquiera con la clave pública volverá a poder entrar y ver los datos. Hazlo solo para presentar la demo.',
+        apagar ? 'Nadie podrá entrar con las cuentas de prueba (Carolina, Oscar y las demás) ni leer datos con ellas. Tú sigues entrando con tu cuenta.' : 'Cualquiera con la clave pública volverá a poder entrar y ver los datos. Hazlo solo para presentar la demo.',
         apagar ? 'Apagarlas' : 'Encenderlas');
       if (ok) hacer(() => window.nube.guardar('ajustesApp', 'seguridad', { personasPrueba: !apagar }), apagar ? 'Listo: personas de prueba apagadas.' : 'Listo: personas de prueba encendidas.');
       return;

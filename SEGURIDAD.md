@@ -24,6 +24,9 @@ Revisión hecha el 20 de noviembre de 2026 sobre la rama `desarrollo`. Todo con 
 9. **Clave mínima de 6 caracteres:** ahora la app pide 10.
 10. **Quien solo pide material veía todo lo de los demás:** ahora, con cuenta propia, solo ve lo suyo, y no ve los movimientos de la bodega.
 
+## Nombres reales en una demo pública
+Por decisión de Jeiler (20-nov-2026), la demo pública lleva los **nombres y cargos de 44 personas del organigrama de la empresa** y su **logo** (marca registrada), para que en la presentación se vea quién es quién. No lleva correos, cédulas ni teléfonos reales (los correos son `@example.com` y los casos son inventados), y la entrada avisa qué es real y qué inventado. Cualquiera que abra la página puede ver esos nombres, porque la clave de las personas de prueba es pública. Si la empresa pide quitarlos: se cambian en `personas.js` (lista `DE_PRUEBA`) y se reemplaza `iconos/`. La app real con datos de la empresa va aparte (copia privada y otro Firebase).
+
 ## Qué NO está hecho o no se probó (dicho claro)
 - **App Check** (que solo la app pueda hablar con Firebase): no está en el código. Se activa en la consola (reCAPTCHA v3, gratis) y luego hay que sumar su librería a `nube.js`. Sin eso, quien tenga la configuración pública puede intentar hablar con Firebase directo; lo detienen las reglas, no App Check.
 - **OWASP ZAP** (ataque a la app en marcha) y **Gitleaks** no se corrieron (no se pudieron bajar desde el entorno).

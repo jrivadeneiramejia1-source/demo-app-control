@@ -40,8 +40,8 @@
       'unavailable': 'Sin conexión con la base de datos. Lo que hagas se guarda cuando vuelva la señal.',
       'not-found': 'Ese registro ya no existe. Puede que otra persona lo haya borrado.',
       'sin-sdk': 'Firebase no alcanzó a cargar. Revisa la conexión a internet y toca Reintentar arriba.',
-      'falta-sembrar': 'Todavía no hay datos de prueba. Entra una vez como Ana Pérez (Jefe) para cargarlos.',
-      'datos-viejos': 'Hay una versión nueva de los datos de prueba. Entra una vez como Ana Pérez (Jefe) para actualizarlos.'
+      'falta-sembrar': 'Todavía no hay datos de prueba. Entra una vez con la Jefe de prueba (Carolina Castillo) para cargarlos.',
+      'datos-viejos': 'Hay una versión nueva de los datos de prueba. Entra una vez con la Jefe de prueba (Carolina Castillo) para actualizarlos.'
     };
     return t[c] || ('Algo salió mal con Firebase' + (c ? ' (' + c + ')' : '') + '. Vuelve a intentar.');
   }
@@ -171,9 +171,10 @@
   }
 
   /** Entra con la cuenta de prueba de ese rol. Si la cuenta todavía no existe en Firebase, la crea (solo la primera vez). */
-  async function entrar(rol) {
-    const p = window.DEMO.porRol(rol);
-    if (!p) throw new Error('Rol desconocido');
+  async function entrar(quien) {
+    // quien: el correo de la persona de prueba (también sirve el rol: entra la primera de ese rol).
+    const p = window.DEMO.porCorreo(quien) || window.DEMO.porRol(quien);
+    if (!p) throw new Error('Persona desconocida');
     if (!auth) { const e = new Error('Firebase no cargó'); e.code = 'sin-sdk'; throw e; }
     if (auth.currentUser && auth.currentUser.email === p.correo) return p;
     // No se cierra la sesión antes: entrar con otra cuenta la reemplaza directo y así la pantalla de entrada no parpadea.

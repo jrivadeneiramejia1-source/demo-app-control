@@ -2,9 +2,9 @@
    El acta es igual a la hoja «Entrega de equipos y herramientas»: fecha, nombre, cédula, proyecto y código de proyecto;
    la tabla de equipos (serial, cantidad, observaciones) y la de «Otros»; la firma de quien recibe con su cédula;
    y abajo la fecha de devolución con su firma, en la misma acta.
-   Encargado de equipos (Daniel): registra equipos, hace las actas (la persona firma en la pantalla), recibe las
+   Encargado de equipos (Fabián): registra equipos, hace las actas (la persona firma en la pantalla), recibe las
      devoluciones, hace el mantenimiento y el backup de lo que llega a Recibidos y cumple la agenda.
-   Soporte (Valentina): le llegan las actas; con el permiso extra «actas» las revisa (bien o con problema).
+   Soporte (Ángel): le llegan las actas; con el permiso extra «actas» las revisa (bien o con problema).
      También le programa mantenimientos y backups al Encargado.
    La Jefe puede hacer todo menos revisar sus propias actas; el Gerente ve todo a detalle sin botones.
    El acta se puede imprimir o guardar en PDF. */

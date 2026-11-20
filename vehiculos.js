@@ -29,8 +29,8 @@
   const COMBUSTIBLE = [['vacio', 'Vacío'], ['1/4', '1/4'], ['1/2', '1/2'], ['3/4', '3/4'], ['lleno', 'Lleno']];
   const LADOS = [['frente', 'Frente'], ['atras', 'Atrás'], ['izquierda', 'Lado izquierdo'], ['derecha', 'Lado derecho'], ['llantas', 'Llantas']];
   const REVISION = [['luces', 'Luces'], ['llantas', 'Llantas'], ['documentos', 'Documentos'], ['herramienta', 'Herramienta y kit']];
-  const CONDUCTORES = ['Carlos Pinto', 'Rafael Ospino', 'Hernán Brito'];
-  const QUIEN_ENTREGA = ['Marta Gómez', 'Sofía Herrera'];
+  const CONDUCTORES = ['Oscar Farfán', 'Rafael Ospino', 'Hernán Brito'];
+  const QUIEN_ENTREGA = ['Wilson Muñoz', 'Andrés Beltrán'];
   let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], fotos = {}, fotoNov = '', periodo = 'mes';
 
   /* ---------- datos derivados ---------- */
