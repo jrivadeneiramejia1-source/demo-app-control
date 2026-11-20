@@ -205,7 +205,13 @@ try {
   log('el Gerente ve los pedidos de material de todos', await hasta(t.page, () => /Jorge Ibarra/.test(document.getElementById('invContenido').textContent) && !document.querySelector('#invContenido [data-accion="entregar"]')));
 
   await t.page.click('.tab[data-vista="vehiculos"]');
-  log('Vehículos del Gerente: Resumen, Carros y Novedades, con el costo del mes', await hasta(t.page, () => [...document.querySelectorAll('#vehSecciones [data-sec]')].map(b => b.dataset.sec).join(',') === 'resumen,carros,novedades' && /Costo de novedades este mes/.test(document.getElementById('vehContenido').textContent)), await texto(t.page, '#vehContenido'));
+  log('Vehículos del Gerente: Resumen, Reportes, Carros y Novedades, con el costo del mes', await hasta(t.page, () => [...document.querySelectorAll('#vehSecciones [data-sec]')].map(b => b.dataset.sec).join(',') === 'resumen,reportes,carros,novedades' && /Costo de novedades este mes/.test(document.getElementById('vehContenido').textContent)), await texto(t.page, '#vehContenido'));
+  await t.page.click('#vehSecciones [data-sec="reportes"]');
+  await t.page.click('#vehContenido [data-periodo="todo"]');
+  log('Reportes del Gerente: por carro (4), por conductor y salidas con km recorridos', await hasta(t.page, () => { const x = document.getElementById('vehContenido').textContent; return document.querySelectorAll('#vehContenido .card[data-accion="ver"]').length === 4 && /Por conductor/.test(x) && /Carlos Pinto/.test(x) && /Salidas y llegadas \(2\)/.test(x) && /100 km en/.test(x) && /todavía no llega/.test(x); }), await texto(t.page, '#vehContenido'));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '06b-reportes-gerente.png'), fullPage: true });
+  const [excelVeh] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#vehContenido [data-accion="excelveh"]')]);
+  log('el Gerente descarga el Excel de vehículos', !!excelVeh && /^Vehiculos demo .*\.xlsx$/.test(excelVeh.suggestedFilename()), excelVeh ? excelVeh.suggestedFilename() : 'sin descarga');
   await t.page.click('#vehSecciones [data-sec="novedades"]');
   log('el Gerente ve las novedades con su foto pero no puede revisarlas ni reportar', await hasta(t.page, () => document.querySelectorAll('#vehContenido .nov-foto').length === 3 && !document.querySelector('#vehContenido [data-accion="revisar"], #vehContenido [data-accion="novedad"]')));
   await t.page.click('.tab[data-vista="inventario"]');
@@ -334,7 +340,7 @@ try {
   await t.page.click('#vePrimario');
   log('sin foto no deja reportar la novedad', await errVeh(/Falta la foto/));
   await t.page.setInputFiles('#vnFoto', IMG); await hasta(t.page, () => !document.getElementById('vnFotoVer').hidden);
-  log('con la foto, la novedad queda sin revisar, en 0 pesos y con aviso para Jefe, Transporte y Bodega', await guardarVeh() && await (async () => { const d = await dat(); const n = Object.values(d.novedades).find(x => x.descripcion === LLANTA); return !!n && n.reportaRol === 'conductor' && n.costo === 0 && !n.revisada && /^data:image\/jpeg;base64,/.test(n.foto) && n.foto.length < 400000 && ['jefe', 'carros', 'asistente'].every(r => Object.values(d.avisos).some(a => a.para === r && /Novedad/.test(a.titulo))); })());
+  log('con la foto, la novedad queda sin revisar, en 0 pesos y con aviso para Jefe, Transporte, Bodega y Gerente', await guardarVeh() && await (async () => { const d = await dat(); const n = Object.values(d.novedades).find(x => x.descripcion === LLANTA); return !!n && n.reportaRol === 'conductor' && n.costo === 0 && !n.revisada && /^data:image\/jpeg;base64,/.test(n.foto) && n.foto.length < 400000 && ['jefe', 'carros', 'asistente', 'gerente'].every(r => Object.values(d.avisos).some(a => a.para === r && /Novedad/.test(a.titulo))); })());
   await t.page.click('#vehContenido [data-accion="salida"][data-viaje="ne-025"]'); await abiertaVeh();
   log('la salida del viaje es con Rafael (el conductor que escogió la Jefe)', /Comunidad Ejemplo Norte/.test(await texto(t.page, '#veSub')) && !(await t.page.$('#vsCond')));
   await t.page.fill('#vsKm', '21300'); await t.page.click('#vePrimario');
