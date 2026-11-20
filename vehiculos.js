@@ -31,7 +31,7 @@
   const REVISION = [['luces', 'Luces'], ['llantas', 'Llantas'], ['documentos', 'Documentos'], ['herramienta', 'Herramienta y kit']];
   const CONDUCTORES = ['Carlos Pinto', 'Rafael Ospino', 'Hernán Brito'];
   const QUIEN_ENTREGA = ['Marta Gómez', 'Sofía Herrera'];
-  let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], fotos = {}, fotoNov = '';
+  let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], fotos = {}, fotoNov = '', periodo = 'mes';
 
   /* ---------- datos derivados ---------- */
   const vehPorId = id => D().vehiculos.find(v => v.id === id) || null;
@@ -95,9 +95,9 @@
 
   /* ---------- pintar ---------- */
   function secciones() {
-    if (esGerente()) return [['resumen', 'Resumen'], ['carros', 'Carros'], ['novedades', 'Novedades']];
+    if (esGerente()) return [['resumen', 'Resumen'], ['reportes', 'Reportes'], ['carros', 'Carros'], ['novedades', 'Novedades']];
     const s = [['hacer', 'Lo que me toca'], ['carros', 'Carros'], ['novedades', 'Novedades']];
-    if (esAdmin()) s.push(['resumen', 'Resumen']);
+    if (esAdmin()) s.push(['resumen', 'Resumen'], ['reportes', 'Reportes']);
     return s;
   }
   function pintar() {
@@ -118,7 +118,7 @@
     $('vehSecciones').innerHTML = secciones().map(([k, t]) => `<button type="button" class="chip" data-sec="${k}" aria-pressed="${seccion === k}">${esH(t)}${k === 'hacer' && n.mias ? ` <span class="n">${n.mias}</span>` : ''}</button>`).join('');
     const c = $('vehContenido');
     if (['vehiculos', 'novedades', 'entregas'].some(App.cargando)) { c.innerHTML = UI.esqueleto(3); return; }
-    c.innerHTML = ({ hacer: htmlHacer, carros: () => htmlCarros(f), novedades: () => htmlNovedades(f), resumen: htmlResumen })[seccion]();
+    c.innerHTML = ({ hacer: htmlHacer, carros: () => htmlCarros(f), novedades: () => htmlNovedades(f), resumen: htmlResumen, reportes: htmlReportes })[seccion]();
     window.llenarIconos(c);
     avisarVencimientos();
   }
@@ -208,6 +208,82 @@
     h += `<div class="section-label">Novedades del mes por tipo</div><div class="card">${porTipo.length ? `<div class="barras">${porTipo.map(([t, v]) => `<div class="bf"><span class="bf-n">${esH(t)}</span><span class="bf-b"><i style="width:${Math.max(4, Math.round(v / max * 100))}%"></i></span><span class="bf-v">${v}</span></div>`).join('')}</div>` : '<p class="meta">Sin novedades este mes.</p>'}</div>`;
     h += `<div class="section-label">Carros para las próximas reuniones (${proximos.length})</div>` + (proximos.length ? `<div class="list">${proximos.map(n => `<div class="card"><b><span class="placa">${esH(n.placa)}</span> → ${esH(n.comunidad)}</b><span class="meta">${esH(App.fechaCorta(n.fechaReunion))} · ${esH(n.conductor)}</span></div>`).join('')}</div>` : '<p class="meta">Ninguna reunión tiene carro asignado todavía.</p>');
     return h;
+  }
+
+  /* --- Reportes (Gerente, Jefe, Transporte y Bodega) --- */
+  const PERIODOS = [['mes', 'Este mes'], ['3m', 'Últimos 3 meses'], ['todo', 'Todo']];
+  function desde() {
+    const h = new Date(A().hoyISO() + 'T00:00:00');
+    if (periodo === 'mes') return A().hoyISO().slice(0, 8) + '01';
+    if (periodo === '3m') { h.setMonth(h.getMonth() - 3); return h.toISOString().slice(0, 10); }
+    return '';
+  }
+  const enPeriodo = f => !desde() || String(f || '').slice(0, 10) >= desde();
+  /** Cada viaje: una salida con su llegada (si ya llegó), con los km recorridos y las horas fuera. */
+  function viajesHechos() {
+    const out = [];
+    D().vehiculos.forEach(v => {
+      const es = D().entregas.filter(e => e.vehiculoId === v.id).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+      es.forEach((e, k) => {
+        if (e.tipo !== 'salida') return;
+        const sig = es.slice(k + 1).find(x => x.tipo === 'llegada' || x.tipo === 'salida');
+        const lleg = sig && sig.tipo === 'llegada' ? sig : null;
+        const r = reunionPorId(e.reunionId || (lleg && lleg.reunionId));
+        out.push({ v, salida: e, llegada: lleg, km: lleg ? Math.max(0, num(lleg.km) - num(e.km)) : 0,
+          horas: lleg ? Math.max(0, Math.round((new Date(lleg.fecha) - new Date(e.fecha)) / 360000) / 10) : 0,
+          problemas: [e, lleg].filter(Boolean).some(x => !Object.values(x.revision || {}).every(Boolean)), reunion: r ? r.comunidad : '' });
+      });
+    });
+    return out.sort((a, b) => String(b.salida.fecha).localeCompare(String(a.salida.fecha)));
+  }
+  function datosReporte() {
+    const vs = viajesHechos().filter(x => enPeriodo(x.salida.fecha)), ns = D().novedades.filter(n => enPeriodo(n.fecha));
+    const porCarro = D().vehiculos.slice().sort((a, b) => String(a.placa).localeCompare(String(b.placa))).map(v => {
+      const mv = vs.filter(x => x.v.id === v.id), mn = ns.filter(n => n.vehiculoId === v.id);
+      return { v, salidas: mv.length, km: mv.reduce((s, x) => s + x.km, 0), problemas: mv.filter(x => x.problemas).length, novedades: mn.length, costo: mn.reduce((s, n) => s + num(n.costo), 0), sinRevisar: mn.filter(n => !n.revisada).length };
+    });
+    const nombres = Array.from(new Set(vs.map(x => x.salida.conductor).concat(ns.filter(n => n.reportaRol === 'conductor').map(n => n.reporta)).filter(Boolean))).sort();
+    const porConductor = nombres.map(c => {
+      const mv = vs.filter(x => x.salida.conductor === c);
+      return { c, salidas: mv.length, km: mv.reduce((s, x) => s + x.km, 0), problemas: mv.filter(x => x.problemas).length, novedades: ns.filter(n => n.reporta === c).length };
+    });
+    return { vs, ns, porCarro, porConductor };
+  }
+  function htmlReportes() {
+    const App = A(), r = datosReporte(), kmTotal = r.vs.reduce((s, x) => s + x.km, 0), costo = r.ns.reduce((s, n) => s + num(n.costo), 0);
+    let h = `<div class="chips sub" role="group" aria-label="Periodo">${PERIODOS.map(([k, t]) => `<button type="button" class="chip" data-periodo="${k}" aria-pressed="${periodo === k}">${esH(t)}</button>`).join('')}</div>`;
+    h += `<div class="resumen-grid">
+      <div class="card"><span class="meta">Salidas</span><span class="rm-n">${r.vs.length}</span><span class="meta">${r.vs.filter(x => !x.llegada).length} sin llegada todavía</span></div>
+      <div class="card"><span class="meta">Kilómetros recorridos</span><span class="rm-n">${esH(kmTotal.toLocaleString('es-CO'))}</span><span class="meta">${r.vs.filter(x => x.problemas).length} salidas con problemas en la revisión</span></div>
+      <div class="card"><span class="meta">Novedades</span><span class="rm-n">${r.ns.length}</span><span class="meta">${esH(App.cop(costo))} en costos · ${r.ns.filter(n => !n.revisada).length} sin revisar</span></div>
+    </div>`;
+    h += `<div class="barra-botones">${boton('excelveh', 'Descargar Excel', 'excel', '', 'small')}</div>`;
+    h += `<div class="section-label">Por carro</div><div class="list">${r.porCarro.map(x => `<button type="button" class="card" data-accion="ver" data-id="${esH(x.v.id)}">
+      <span class="card-head"><span class="card-title"><span class="placa">${esH(x.v.placa)}</span> ${esH(x.v.marca)} ${esH(x.v.modelo)}</span>${App.pill((EST[x.v.estado] || ['Sin estado'])[0], (EST[x.v.estado] || ['', 'none'])[1])}</span>
+      <span class="facts"><span>${x.salidas} ${x.salidas === 1 ? 'salida' : 'salidas'}</span><span>${esH(km(x.km))} recorridos</span><span>${x.novedades} ${x.novedades === 1 ? 'novedad' : 'novedades'}${x.costo ? ' · ' + esH(App.cop(x.costo)) : ''}</span></span>
+      <span class="docs">${docPill('SOAT', x.v.soat)}${docPill('Técnico-mecánica', x.v.tecno)}${x.problemas ? App.pill(`${x.problemas} con problemas en la revisión`, 's-peligro', 'aviso') : ''}${x.sinRevisar ? App.pill(`${x.sinRevisar} sin revisar`, 's-org', 'aviso') : ''}</span>
+    </button>`).join('')}</div>`;
+    h += `<div class="section-label">Por conductor</div>` + (r.porConductor.length ? `<div class="list">${r.porConductor.map(x => `<div class="card"><span class="card-head"><span class="card-title">${esH(x.c)}</span>${x.problemas ? App.pill(`${x.problemas} con problemas`, 's-peligro', 'aviso') : ''}</span>
+      <span class="facts"><span>${x.salidas} ${x.salidas === 1 ? 'salida' : 'salidas'}</span><span>${esH(km(x.km))} recorridos</span><span>${x.novedades} ${x.novedades === 1 ? 'novedad reportada' : 'novedades reportadas'}</span></span></div>`).join('')}</div>` : '<p class="meta">Sin salidas en este periodo.</p>');
+    h += `<div class="section-label">Salidas y llegadas (${r.vs.length})</div>` + (r.vs.length ? `<ul class="necesidades-l">${r.vs.slice(0, 40).map(x => `<li><span class="nf-cab"><span class="nf-t"><b><span class="placa">${esH(x.v.placa)}</span> ${esH(x.salida.conductor)}${x.reunion ? ' → ' + esH(x.reunion) : ''}</b>
+      <span class="meta">Salió ${esH(App.hace(x.salida.fecha))} (${esH(km(x.salida.km))}, combustible ${esH(x.salida.combustible)})${x.llegada ? ` · llegó con ${esH(km(x.llegada.km))}, combustible ${esH(x.llegada.combustible)} · ${esH(km(x.km))} en ${esH(String(x.horas).replace('.', ','))} h` : ' · todavía no llega'}</span>
+      ${[x.salida.observaciones, x.llegada && x.llegada.observaciones].filter(Boolean).map(o => `<span class="meta">${esH(o)}</span>`).join('')}
+      <span class="docs">${x.problemas ? App.pill('Revisión con problemas', 's-peligro', 'aviso') : App.pill('Revisión bien', 's-disco', 'check')}</span></span></span></li>`).join('')}</ul>` : '<p class="meta">Sin salidas en este periodo.</p>');
+    return h;
+  }
+  async function excelVehiculos(b) {
+    b.disabled = true;
+    try {
+      const X = await window.Inventario.cargarXlsx(), f = window.Inventario.fechaLocal, r = datosReporte(), libro = X.utils.book_new();
+      const hoja = (nombre, filas) => X.utils.book_append_sheet(libro, X.utils.json_to_sheet(filas.length ? filas : [{ Nota: 'Sin datos' }]), nombre);
+      hoja('Carros', r.porCarro.map(x => ({ Placa: x.v.placa, Carro: `${x.v.marca} ${x.v.modelo} ${x.v.anio}`, Estado: (EST[x.v.estado] || [x.v.estado])[0], Conductor: x.v.conductor, Kilometraje: num(x.v.km), Salidas: x.salidas, 'Km recorridos': x.km, 'Con problemas': x.problemas, Novedades: x.novedades, 'Costo novedades': x.costo, 'SOAT vence': x.v.soat, 'Técnico-mecánica vence': x.v.tecno })));
+      hoja('Salidas y llegadas', r.vs.map(x => ({ Placa: x.v.placa, Conductor: x.salida.conductor, Reunión: x.reunion, Salió: f(x.salida.fecha, true), 'Km salida': num(x.salida.km), 'Combustible salida': x.salida.combustible, Entregó: x.salida.con, Llegó: x.llegada ? f(x.llegada.fecha, true) : 'Todavía no', 'Km llegada': x.llegada ? num(x.llegada.km) : '', 'Combustible llegada': x.llegada ? x.llegada.combustible : '', Recibió: x.llegada ? x.llegada.con : '', 'Km recorridos': x.km, Horas: x.horas, Revisión: x.problemas ? 'Con problemas' : 'Bien', Observaciones: [x.salida.observaciones, x.llegada && x.llegada.observaciones].filter(Boolean).join(' · ') })));
+      hoja('Novedades', r.ns.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).map(n => ({ Fecha: f(n.fecha, true), Placa: n.placa, Tipo: TIPO_NOV[n.tipo] || n.tipo, Qué: n.descripcion, Km: num(n.km), Reportó: n.reporta, Costo: num(n.costo), Revisada: n.revisada ? 'Sí' : 'No', 'Revisó': n.revisadaPor, Nota: n.nota })));
+      hoja('Por conductor', r.porConductor.map(x => ({ Conductor: x.c, Salidas: x.salidas, 'Km recorridos': x.km, 'Con problemas': x.problemas, 'Novedades reportadas': x.novedades })));
+      X.writeFile(libro, `Vehiculos demo ${A().hoyISO()}.xlsx`);
+      A().toast('Listo: Excel descargado');
+    } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
+    finally { b.disabled = false; }
   }
 
   /* ---------- hoja de acción ---------- */
@@ -304,7 +380,7 @@
         const tipo = valor('vnTipo');
         return [['set', 'novedades', window.nube.idNuevo('no'), { vehiculoId: veh.id, placa: veh.placa, tipo, fecha: ahora(), km: kmv, descripcion: desc, foto: fotoNov,
           reporta: persona().nombre, reportaRol: miRol(), costo, revisada: false, revisadaPor: '', revisadaEn: '', nota: '' }]]
-          .concat(['jefe', 'carros', 'asistente'].map(rol => aviso(rol, 'Novedad en un carro', `${persona().nombre} reportó ${(TIPO_NOV[tipo] || 'una novedad').toLowerCase()} en el ${veh.placa}: ${desc.slice(0, 100)}`)));
+          .concat(['jefe', 'carros', 'asistente', 'gerente'].map(rol => aviso(rol, 'Novedad en un carro', `${persona().nombre} reportó ${(TIPO_NOV[tipo] || 'una novedad').toLowerCase()} en el ${veh.placa}: ${desc.slice(0, 100)}`)));
       } });
   }
   function revisar(n) {
@@ -382,7 +458,7 @@
           ['mezclar', 'vehiculos', v.id, { estado: salida ? 'en-uso' : 'disponible', km: kmv, conductor: salida ? cond : '', ultimaEntrega: entId, historial: paso(v, `${salida ? 'Salió con' : 'Llegó con'} ${cond} (${km(kmv)})${viaje ? ' · viaje a la ' + viaje.comunidad : ''}`) }]];
         const txt = `${v.placa} ${salida ? 'salió' : 'llegó'} con ${cond} (${km(kmv)}, combustible ${valor('vsComb')}).${malos.length ? ' Problemas: ' + malos.join(', ') + '.' : ''}`;
         ['carros', 'asistente'].forEach(rol => ops.push(aviso(rol, salida ? 'Salió un carro' : 'Llegó un carro', txt)));
-        if (malos.length) ops.push(aviso('jefe', 'Un carro tiene problemas', `${txt} ${obs}`));
+        if (malos.length) ['jefe', 'gerente'].forEach(rol => ops.push(aviso(rol, 'Un carro tiene problemas', `${txt} ${obs}`)));
         return ops;
       } });
   }
@@ -424,7 +500,10 @@
     A().pintarTodo();
   });
   function alTocar(e) {
+    const p = e.target.closest('[data-periodo]');
+    if (p) { periodo = p.dataset.periodo; A().pintarTodo(); return; }
     const b = e.target.closest('[data-accion]'); if (!b) return;
+    if (b.dataset.accion === 'excelveh') { excelVehiculos(b); return; }
     const id = b.dataset.id, v = vehPorId(id), n = D().novedades.find(x => x.id === id);
     const desde = $('veCampos').contains(b) && accion ? accion.volverA : '';
     const mapa = {
