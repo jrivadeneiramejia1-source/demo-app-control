@@ -46,13 +46,13 @@ function escenario({ props, hilos, firestore }) {
   const { ctx, llamadas } = escenario({ props: { CLAVE_ROBOT: 'clave-robot-prueba', REMITENTES: 'YO@ejemplo.test, otra@ejemplo.test' }, hilos: [[m1, m2, m3]],
     firestore: (url, o) => { guardados.push({ url, cuerpo: JSON.parse(o.payload), auth: o.headers.Authorization }); return 200; } });
   ctx.revisarBuzon();
-  log('busca solo correos sin leer que hablen de reuniones', llamadas[0][0] === 'buscar' && /is:unread/.test(llamadas[0][1]) && /reuni/.test(llamadas[0][1]));
+  log('busca solo correos sin leer, de los REMITENTES, que hablen de reuniones', llamadas[0][0] === 'buscar' && /is:unread/.test(llamadas[0][1]) && /reuni/.test(llamadas[0][1]) && /from:\(yo@ejemplo\.test OR otra@ejemplo\.test\)/.test(llamadas[0][1]), llamadas[0][1]);
   log('entra una sola vez con la cuenta robot y guarda con su token', llamadas.filter(x => x[0] === 'fetch' && x[1].includes('signInWithPassword')).length === 1 && guardados.length === 1 && guardados[0].auth === 'Bearer tok-robot');
   const g = guardados[0] || { url: '', cuerpo: { fields: {} } };
   log('guarda en buzon/<id del correo> del proyecto de la demo', /projects\/fir-app-control-d8494\/databases\/\(default\)\/documents\/buzon\?documentId=18c3fa01$/.test(g.url), g.url);
   log('guarda solo asunto, texto y fecha (no quién lo mandó)', Object.keys(g.cuerpo.fields).sort().join(',') === 'asunto,fecha,texto' && !JSON.stringify(g.cuerpo).includes('yo@ejemplo.test') && !JSON.stringify(g.cuerpo).includes('Jeiler'));
   log('le quita la firma al texto', /2 camionetas/.test(g.cuerpo.fields.texto.stringValue) && !/firma|300 000/.test(g.cuerpo.fields.texto.stringValue), g.cuerpo.fields.texto.stringValue);
-  log('marca como leído lo que subió y lo de remitentes no permitidos (sin subirlo)', !m1.isUnread() && !m2.isUnread() && guardados.every(x => !x.url.endsWith('18c3fa02')));
+  log('marca como leído lo que subió y NO toca los correos de otras personas', !m1.isUnread() && m2.isUnread() && guardados.every(x => !x.url.endsWith('18c3fa02')));
 }
 // 2. Si ya estaba en la app (409) cuenta como guardado; si Firebase lo rechaza, queda sin leer para intentar otra vez.
 {
