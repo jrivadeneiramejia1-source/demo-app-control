@@ -7,9 +7,9 @@
 <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#082F40">
 <meta name="description" content="Demo de la app de control: equipos, inventario y compras, vehículos y reuniones, con datos de prueba">
 <meta name="robots" content="noindex">
-<link rel="manifest" href="manifest.webmanifest?v=4">
-<link rel="icon" type="image/png" href="iconos/control-192.png?v=4">
-<link rel="apple-touch-icon" href="iconos/control-180.png?v=4">
+<link rel="manifest" href="manifest.webmanifest?v=5">
+<link rel="icon" type="image/png" href="iconos/control-192.png?v=5">
+<link rel="apple-touch-icon" href="iconos/control-180.png?v=5">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Control">
@@ -18,7 +18,7 @@
 <link rel="preload" href="fuentes/bricolage.woff2" as="font" type="font/woff2" crossorigin>
 <script>try { var t = localStorage.getItem('cp_tema'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}</script>
 <link rel="stylesheet" href="comun.css?v=1">
-<link rel="stylesheet" href="demo.css?v=16">
+<link rel="stylesheet" href="demo.css?v=20">
 <link rel="stylesheet" href="caribe.css?v=2">
 </head>
 <body>
@@ -26,7 +26,7 @@
 <header class="top">
   <div class="top-in">
     <div class="brand">
-      <img class="marca" src="iconos/control-192.png?v=4" alt="" width="42" height="42">
+      <img class="marca" src="iconos/control-192.png?v=5" alt="" width="42" height="42">
       <div class="brand-t">
         <h1>Control</h1>
         <p id="subtitulo">Datos de prueba</p>
@@ -57,30 +57,37 @@
 
   <!-- ENTRADA -->
   <section class="view" id="vEntrada" aria-labelledby="tEntrada" hidden>
+    <img class="logo-empresa" src="iconos/logo-empresa.png?v=5" alt="Geocol Consultores S.A." width="220" height="201">
     <div class="entrada-cab">
       <h2 class="titulo-vista" id="tEntrada">¿Cómo entras?</h2>
     </div>
+    <p class="meta nota-demo" id="notaDemo">Demostración: los nombres y cargos son los del organigrama de la empresa; los casos que se ven (compras, novedades, reuniones, equipos) son inventados.</p>
     <div class="chips modo" id="entradaModo" role="group" aria-label="Forma de entrar">
       <button type="button" class="chip" data-modo="prueba" aria-pressed="true">Personas de prueba</button>
       <button type="button" class="chip" data-modo="cuenta" aria-pressed="false">Mi cuenta</button>
     </div>
     <div id="entradaPrueba">
-      <p class="meta">Una persona de prueba por cada rol. Entra con una y cambia de persona cuando quieras desde el botón de arriba.</p>
+      <p class="meta">Las personas del organigrama de la empresa, agrupadas por área. Entra con una y cambia de persona cuando quieras desde el botón de arriba.</p>
       <div class="list" id="entradaLista"></div>
     </div>
     <div id="entradaCuenta" hidden>
+      <button class="btn big" type="button" id="ctGoogle"><span data-ico="persona"></span>Continuar con Google</button>
+      <p class="meta ct-o">o con tu correo y tu clave</p>
       <form class="card cuenta-form" id="ctForm" novalidate>
         <b id="ctTitulo">Entrar con tu cuenta</b>
-        <div class="field" id="ctNombreF" hidden><label for="ctNombre">Tu nombre completo</label><input id="ctNombre" type="text" maxlength="60" autocomplete="name"></div>
         <div class="field"><label for="ctCorreo">Correo</label><input id="ctCorreo" type="email" maxlength="80" autocomplete="email" inputmode="email"></div>
-        <div class="field"><label for="ctClave">Clave</label><input id="ctClave" type="password" maxlength="60" autocomplete="current-password"></div>
-        <div class="field" id="ctCodigoF" hidden><label for="ctCodigo">Código de tu rol</label><input id="ctCodigo" type="text" maxlength="16" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Ejemplo: LOG-7KQ4-M2XP" aria-describedby="ctCodigoAy"><span class="meta" id="ctCodigoAy">Te lo da tu jefe. El código decide qué puedes ver y hacer: entras con el rol del código, no con el que escojas.</span></div>
+        <div class="field"><label for="ctClave">Clave</label><input id="ctClave" type="password" maxlength="60" autocomplete="current-password" aria-describedby="ctClaveAy"><span class="meta" id="ctClaveAy" hidden>Mínimo 10 caracteres. Inventa una que solo tú sepas.</span></div>
+        <details class="ct-codigo" id="ctCodigoD" hidden><summary>Tengo un código de rol (en vez de invitación)</summary>
+        <div class="field" id="ctNombreF"><label for="ctNombre">Tu nombre completo</label><input id="ctNombre" type="text" maxlength="60" autocomplete="name"></div>
+        <div class="field" id="ctCodigoF"><label for="ctCodigo">Código de tu rol</label><input id="ctCodigo" type="text" maxlength="16" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Ejemplo: LOG-7KQ4-M2XP" aria-describedby="ctCodigoAy"><span class="meta" id="ctCodigoAy">Te lo da tu jefe. El código decide qué puedes ver y hacer: entras con el rol del código, no con el que escojas.</span></div>
+        </details>
         <div class="err" id="ctErr" role="alert" hidden></div>
         <button class="btn primary big" type="submit" id="ctBoton">Entrar</button>
-        <button class="btn ghost" type="button" id="ctCambiar">No tengo cuenta: crearla con mi código</button>
+        <button class="btn ghost" type="button" id="ctCambiar">Es mi primera vez: crear mi cuenta</button>
+        <button class="btn ghost" type="button" id="ctOlvide">Olvidé mi clave</button>
       </form>
     </div>
-    <button class="pagada" type="button" data-pagada="entrada"><span data-ico="pagada"></span>Versión pagada: solo cuentas propias con el código de cada rol, sin personas de prueba</button>
+    <button class="pagada" type="button" data-pagada="entrada"><span data-ico="pagada"></span>Versión pagada: solo cuentas de la empresa (invitadas por la Jefe), sin personas de prueba</button>
     <div class="err" id="entradaErr" role="alert" hidden></div>
   </section>
 
@@ -88,6 +95,11 @@
   <section class="view" id="vCuenta" aria-labelledby="tCuenta" hidden>
     <h2 class="titulo-vista" id="tCuenta">Falta el código de tu rol</h2>
     <p class="meta" id="cuentaTxt"></p>
+    <div class="card cuenta-form" id="cuentaConfirmar" hidden>
+      <button class="btn primary big" type="button" id="cuYa"><span data-ico="check"></span>Ya toqué el enlace</button>
+      <button class="btn ghost" type="button" id="cuReenviar">Reenviar el correo</button>
+      <div class="err" id="cuConfErr" role="alert" hidden></div>
+    </div>
     <form class="card cuenta-form" id="cuentaForm" novalidate>
       <div class="field"><label for="cuNombre">Tu nombre completo</label><input id="cuNombre" type="text" maxlength="60" autocomplete="name"></div>
       <div class="field"><label for="cuCodigo">Código de tu rol</label><input id="cuCodigo" type="text" maxlength="16" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="Ejemplo: LOG-7KQ4-M2XP"></div>
@@ -176,9 +188,9 @@
     <p class="sub">Toca otra persona para ver la app como la ve ella. Sirve para mostrar los permisos en vivo.</p>
     <div class="card ajustes" id="cuentaPropia" hidden><b>Tu cuenta</b><span class="meta" id="cuentaPropiaTxt"></span></div>
     <div class="card ajustes" id="ajustesGente" hidden>
-      <b>Personas y códigos</b>
+      <b>Personas y permisos</b>
       <span class="meta">Crea el código de cada rol, mira quién se registró y cámbiale el rol o pausa su acceso.</span>
-      <button class="btn" type="button" id="btnGente"><span data-ico="llave"></span>Personas y códigos</button>
+      <button class="btn" type="button" id="btnGente"><span data-ico="llave"></span>Personas y permisos</button>
     </div>
     <div class="list" id="personaLista"></div>
     <div class="section-label">Permisos de <span id="permNombre"></span></div>
@@ -204,8 +216,8 @@
 <div class="backdrop" id="shGente" hidden>
   <div class="sheet" aria-labelledby="shGenteT">
     <div class="grab" aria-hidden="true"></div>
-    <h2 id="shGenteT">Personas y códigos</h2>
-    <p class="sub">Cada rol tiene su código. Quien se registra con un código entra con ese rol, aunque diga ser otra cosa (lo revisa Firebase). Si un código se riega, cámbialo: el viejo deja de servir y las personas ya registradas siguen igual.</p>
+    <h2 id="shGenteT">Personas y permisos</h2>
+    <p class="sub">Aquí invitas a las personas con un Excel, decides qué puede ver y hacer cada una en cada módulo, y manejas los códigos de rol. Todo lo revisa Firebase, no solo la pantalla. Los nombres y correos solo se guardan en Firebase.</p>
     <div id="genteCuerpo"></div>
     <div class="sheet-actions"><div class="row"><button class="btn" type="button" data-cerrar>Cerrar</button></div></div>
   </div>
@@ -301,16 +313,16 @@
 <script src="iconos.js?v=3"></script>
 <script src="comun.js?v=1"></script>
 <script src="config.js?v=5"></script>
-<script src="personas.js?v=9"></script>
-<script src="datos-demo.js?v=9"></script>
-<script src="nube.js?v=9"></script>
-<script src="push.js?v=1"></script>
-<script src="inventario.js?v=9"></script>
+<script src="personas.js?v=12"></script>
+<script src="datos-demo.js?v=10"></script>
+<script src="nube.js?v=11"></script>
+<script src="push.js?v=2"></script>
+<script src="inventario.js?v=12"></script>
 <script src="correos-demo.js?v=1"></script>
-<script src="reuniones.js?v=9"></script>
-<script src="vehiculos.js?v=2"></script>
-<script src="equipos.js?v=1"></script>
-<script src="gente.js?v=3"></script>
-<script src="app.js?v=13"></script>
+<script src="reuniones.js?v=10"></script>
+<script src="vehiculos.js?v=3"></script>
+<script src="equipos.js?v=2"></script>
+<script src="gente.js?v=6"></script>
+<script src="app.js?v=16"></script>
 </body>
 </html>

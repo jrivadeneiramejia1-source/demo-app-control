@@ -4,10 +4,15 @@ rules_version = '2';
 // (su perfil en usuarios/<uid> dice el rol y si el acceso está activo). Sin eso, nadie puede leer ni escribir nada.
 // El rol de una cuenta propia lo pone el código: la persona no lo puede escoger ni cambiar.
 // Cada persona solo puede hacer lo que le toca (lo cumple Firebase, no solo la pantalla):
-//   Gerente (Ricardo): ve todo; solo autoriza o rechaza las compras que pide la Jefe.
-//   Jefe (Ana): carga y reinicia los datos de prueba, autoriza las compras y puede hacer cualquier paso (menos autorizarse a sí misma).
-//   Compras (Luis): registra la compra autorizada (proveedor, valor, factura) y las compras hechas sin autorización.
-//   Bodega (Sofía): entradas, salidas, conteos, entregas y recibe lo comprado.
+//   Gerente: ve todo; autoriza o rechaza las compras que pide la Jefe y las que valen el monto que él fija (ajustesApp/compras)
+//   o más, después de la Jefe; si él pide una compra, nace autorizada. No maneja personas ni códigos.
+//   Jefe: carga y reinicia los datos de prueba, autoriza las compras (las grandes pasan después al Gerente), maneja personas,
+//   niveles e invitaciones (solo con cuenta propia; nunca invita ni toca a otra Jefe ni a un Gerente: esos se crean con un código
+//   que se pone a mano en la consola de Firebase) y puede hacer cualquier paso (menos autorizarse a sí misma).
+//   Nivel por módulo: lo que dice el rol, salvo que la Jefe le haya puesto otro a esa persona (usuarios/<uid>.permisos).
+//   Las cuentas propias necesitan el correo confirmado. Las personas de prueba se pueden apagar (ajustesApp/seguridad).
+//   Compras: registra la compra autorizada (proveedor, valor, factura) y las compras hechas sin autorización.
+//   Bodega: entradas, salidas, conteos, entregas y recibe lo comprado.
 //   Reuniones: la Jefe confirma lo que entendió el agente y reparte; Compras, Transporte y Bodega informan lo que hay y la Jefe
 //   autoriza la comida y los carros (escoge el conductor);
 //   el Conductor confirma el viaje, Logística alista, el Profesional confirma si va y Administrativo registra el acta.
@@ -17,34 +22,31 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Correo de cada persona de prueba -> su rol. Debe coincidir con personas.js.
-    function cuentas() {
-      return {
-        'ricardo.fuentes@example.com': 'gerente',
-        'ana.perez@example.com': 'jefe',
-        'daniel.ortiz@example.com': 'equipos',
-        'valentina.ruiz@example.com': 'soporte',
-        'luis.rodriguez@example.com': 'compras',
-        'sofia.herrera@example.com': 'asistente',
-        'marta.gomez@example.com': 'carros',
-        'carlos.pinto@example.com': 'conductor',
-        'pedro.castillo@example.com': 'logistica',
-        'laura.medina@example.com': 'profesional',
-        'natalia.vargas@example.com': 'administrativo'
-      };
+    // Personas de prueba: su correo es «rol.nombre.apellido@example.com» (inventado) y el rol es lo primero. Así no hace falta una
+    // lista larga (que gasta el límite de expresiones de las reglas). Cualquiera con la clave pública entra con ellas: por eso la Jefe
+    // las puede apagar (ajustesApp/seguridad). Debe coincidir con personas.js (lo comprueba pruebas/reglas.mjs).
+    function ROLES() { return ['gerente', 'jefe', 'equipos', 'soporte', 'compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional', 'administrativo', 'colaborador', 'financiero', 'consulta']; }
+    function correoDePrueba() {
+      return request.auth.token.email is string
+        && request.auth.token.email.matches('^(gerente|jefe|equipos|soporte|compras|asistente|carros|conductor|logistica|profesional|administrativo|colaborador|financiero|consulta)[.][a-z.]+@example[.]com$');
     }
-    function ROLES() { return ['gerente', 'jefe', 'equipos', 'soporte', 'compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional', 'administrativo']; }
+    // Interruptor: la Jefe (cuenta propia) puede apagar las personas de prueba (ajustesApp/seguridad.personasPrueba = false)
+    // cuando la app pase a uso real, porque su clave es pública.
+    function pruebasActivas() {
+      return !exists(/databases/$(database)/documents/ajustesApp/seguridad)
+        || get(/databases/$(database)/documents/ajustesApp/seguridad).data.get('personasPrueba', true) == true;
+    }
     function esPrueba() {
       return request.auth != null
-        && request.auth.token.email is string
-        && request.auth.token.email in cuentas();
+        && correoDePrueba()
+        && pruebasActivas();
     }
     function rutaPerfil() { return /databases/$(database)/documents/usuarios/$(request.auth.uid); }
     function perfil() { return get(rutaPerfil()).data; }
-    // Cuenta propia con perfil y acceso activo.
-    function esCuenta() { return request.auth != null && !esPrueba() && exists(rutaPerfil()) && perfil().activo == true; }
+    // Cuenta propia con el correo confirmado, perfil y acceso activo.
+    function esCuenta() { return request.auth != null && !esPrueba() && request.auth.token.email_verified == true && exists(rutaPerfil()) && perfil().activo == true; }
     function esDemo() { return esPrueba() || esCuenta(); }
-    function rol() { return esPrueba() ? cuentas()[request.auth.token.email] : perfil().rol; }
+    function rol() { return esPrueba() ? request.auth.token.email.split('[.]')[0] : perfil().rol; }
     // Cuenta propia (no persona de prueba) con uno de estos roles.
     function esCuentaDe(roles) { return esCuenta() && perfil().rol in roles; }
     function esDireccion(r) { return r in ['gerente', 'jefe']; }
@@ -62,8 +64,8 @@ service cloud.firestore {
     function esFecha(f) { return f is string && f.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
     // El historial solo crece: una línea nueva al final y las viejas iguales.
     function historialSigue() {
-      return nuevo().historial is list && nuevo().historial.size() == antes().get('historial', []).size() + 1
-        && nuevo().historial[0:antes().get('historial', []).size()] == antes().get('historial', []);
+      let h = antes().get('historial', []);
+      return nuevo().historial is list && nuevo().historial.size() == h.size() + 1 && (h.size() == 0 || nuevo().historial[0:h.size()] == h);
     }
     // ¿Ya llegó ese día (AAAA-MM-DD) en Colombia (UTC-5)? Desde las 00:00 hora de Colombia.
     function yaFue(f) {
@@ -76,23 +78,76 @@ service cloud.firestore {
         : tipo == 'logistica' ? ['pendiente', 'listo']
         : tipo == 'acta' ? ['listo'] : [];
     }
-    // Cambio que le toca decidir al Gerente: una compra que pidió la Jefe pasa a autorizada o rechazada, o sale de ahí.
-    function decideGerente() {
-      return antes().get('pideRol', '') == 'jefe' && nuevo().get('estado', '') != antes().get('estado', '')
-        && (antes().get('estado', '') in ['pedido', 'rechazado'] || nuevo().get('estado', '') in ['autorizado', 'rechazado']);
+    // Nivel base de cada rol en cada módulo (debe coincidir con personas.js; lo comprueba pruebas/reglas.mjs).
+    // (Una cadena de «si» en vez de un mapa grande: así cada consulta gasta pocas de las 1000 expresiones que permite Firebase.)
+    function baseDe(r) {
+      return r == 'gerente' ? { 'equipos': 'ver', 'inventario': 'gerente', 'vehiculos': 'ver', 'reuniones': 'ver' }
+        : r == 'jefe' ? { 'equipos': 'jefe', 'inventario': 'jefe', 'vehiculos': 'jefe', 'reuniones': 'jefe' }
+        : r == 'equipos' ? { 'equipos': 'encargado', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'no' }
+        : r == 'soporte' ? { 'equipos': 'soporte', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'no' }
+        : r == 'compras' ? { 'equipos': 'no', 'inventario': 'compra', 'vehiculos': 'no', 'reuniones': 'informa' }
+        : r == 'asistente' ? { 'equipos': 'no', 'inventario': 'bodega', 'vehiculos': 'autoriza', 'reuniones': 'informa' }
+        : r == 'carros' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'autoriza', 'reuniones': 'informa' }
+        : r == 'conductor' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'reporta', 'reuniones': 'asiste' }
+        : r == 'logistica' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'logistica' }
+        : r == 'profesional' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'asiste' }
+        : r == 'administrativo' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'actas' }
+        : r == 'colaborador' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'ver' }
+        : r == 'financiero' ? { 'equipos': 'no', 'inventario': 'finanzas', 'vehiculos': 'no', 'reuniones': 'ver' }
+        : r == 'consulta' ? { 'equipos': 'no', 'inventario': 'ver', 'vehiculos': 'ver', 'reuniones': 'no' }
+        : {};
+    }
+    // Lo que la Jefe le marcó a una cuenta propia (permisos por módulo); las personas de prueba usan siempre el de su rol.
+    function nivel(m) {
+      return esCuenta() ? perfil().get('permisos', {}).get(m, baseDe(perfil().rol)[m]) : baseDe(rol())[m];
     }
     function esJefe() { return esDemo() && rol() == 'jefe'; }
     function esGerente() { return esDemo() && rol() == 'gerente'; }
     // Permisos extra que el Gerente o la Jefe le marcan a una cuenta propia (y los fijos de las personas de prueba).
-    function extras() { return esCuenta() ? perfil().get('extras', []) : esPrueba() ? extrasPrueba().get(request.auth.token.email, []) : []; }
-    // Permisos extra de las personas de prueba (deben coincidir con personas.js): Valentina (Soporte) revisa las actas.
-    function extrasPrueba() { return { 'valentina.ruiz@example.com': ['actas'] }; }
-    function tieneExtra(x) { return x in extras(); }
+    function extras() { return esCuenta() ? perfil().get('extras', []) : esPrueba() ? extrasPrueba() : []; }
+    // Permisos extra de dos personas de prueba (deben coincidir con personas.js): Ángel (Soporte) revisa las actas y Solanyi es encargada de reuniones.
+    function extrasPrueba() {
+      return request.auth.token.email == 'soporte.angel.ortiz@example.com' ? ['actas'] : request.auth.token.email == 'administrativo.solanyi.surquira@example.com' ? ['encargada'] : [];
+    }
+    // Cada permiso extra solo vale para su rol (igual que personas.js): «compra» en Bodega, «actas» en Soporte y «encargada» en Administrativo.
+    function tieneExtra(x) { return x in extras() && rol() == (x == 'compra' ? 'asistente' : x == 'actas' ? 'soporte' : 'administrativo'); }
     // Compras, la Jefe, o la persona de Bodega con el permiso extra «compra».
-    function esCompras() { return esDemo() && (rol() == 'compras' || rol() == 'jefe' || (rol() == 'asistente' && tieneExtra('compra'))); }
+    function esCompras() {
+      let n = nivel('inventario');
+      return esDemo() && (n in ['compra', 'jefe'] || (n == 'bodega' && tieneExtra('compra')));
+    }
+    // Puede pedir material y compras a su nombre (con «solo ver» o «sin acceso» no).
+    function puedePedir() { return esDemo() && nivel('inventario') in ['pide', 'finanzas', 'compra', 'bodega', 'gerente', 'jefe']; }
+    function veInventario() { return esDemo() && nivel('inventario') != 'no'; }
+    // Quien solo pide material (nivel «pide») no ve los movimientos de la bodega, y en una cuenta real solo ve SUS pedidos y compras
+    // (los que llevan su pideUid). Las personas de prueba (demo) ven todo.
+    function veMovimientos() { return veInventario() && nivel('inventario') != 'pide'; }
+    function veLoSuyo() { return veInventario() && (nivel('inventario') != 'pide' || esPrueba() || antes().get('pideUid', '') == request.auth.uid); }
+    // Lo que la persona pone al pedir: marca de su propia cuenta, máximo 5 líneas y 3 cotizaciones.
+    // Cada línea de la compra trae su valor total; el valor de la compra no puede ser menor que la suma (máximo 5 líneas).
+    function valorLinea(i) { return nuevo().get('lineas', []).size() > i ? nuevo().lineas[i].valor : 0; }
+    function sumaLineas() { return valorLinea(0) + valorLinea(1) + valorLinea(2) + valorLinea(3) + valorLinea(4); }
+    // Cada cotización es una foto JPEG pequeña (como las que arma la app), no cualquier texto.
+    function cotOk(i) {
+      let c = nuevo().get('cotizaciones', []);
+      return c.size() <= i || (c[i] is string && c[i].size() < 200000 && c[i].matches('^data:image/jpeg;base64,.*'));
+    }
+    function pedidoOk() {
+      return nuevo().get('pideUid', request.auth.uid) == request.auth.uid
+        && nuevo().get('pideCorreo', '') == request.auth.token.email && nuevo().get('creadoEn', null) == request.time
+        && nuevo().valorAprox is number && nuevo().valorAprox >= 0
+        && nuevo().get('lineas', []) is list && nuevo().get('lineas', []).size() <= 5
+        && nuevo().valorAprox >= sumaLineas()
+        && nuevo().get('cotizaciones', []) is list && nuevo().get('cotizaciones', []).size() <= 3
+        && cotOk(0) && cotOk(1) && cotOk(2);
+    }
+    function veVehiculos() { return esDemo() && nivel('vehiculos') != 'no'; }
+    function veReuniones() { return esDemo() && nivel('reuniones') != 'no'; }
+    // En Reuniones, «solo ver» y «sin acceso» no actúan.
+    function actuaReu() { return esDemo() && !(nivel('reuniones') in ['no', 'ver']); }
     // Administrativa con el permiso extra «encargada»: ve todo lo de las reuniones y la bandeja de correos.
     function esEncargada() { return esDemo() && rol() == 'administrativo' && tieneExtra('encargada'); }
-    function esBodega() { return esDemo() && (rol() == 'asistente' || rol() == 'jefe'); }
+    function esBodega() { return esDemo() && nivel('inventario') in ['bodega', 'jefe']; }
     function nuevo() { return request.resource.data; }
     function antes() { return resource.data; }
     function soloCambia(campos) { return nuevo().diff(antes()).affectedKeys().hasOnly(campos); }
@@ -105,9 +160,9 @@ service cloud.firestore {
 
     // Módulos que en esta fase solo se ven: los escribe la Jefe al cargar los datos de prueba.
     // ---------- EQUIPOS (Equipos y Entregas juntas, con el acta virtual) ----------
-    function veEquipos() { return esDemo() && rol() in ['gerente', 'jefe', 'equipos', 'soporte']; }
-    function esEncargadoEq() { return esDemo() && rol() in ['equipos', 'jefe']; }
-    function revisaActas() { return esJefe() || (esDemo() && rol() == 'soporte' && tieneExtra('actas')); }
+    function veEquipos() { return esDemo() && nivel('equipos') != 'no'; }
+    function esEncargadoEq() { return esDemo() && nivel('equipos') in ['encargado', 'jefe']; }
+    function revisaActas() { return esJefe() || (esDemo() && nivel('equipos') == 'soporte' && tieneExtra('actas')); }
     function firmaOk(f) { return f is string && f.size() < 80000 && f.matches('^data:image/png;base64,.*'); }
     // El historial del equipo solo crece: una línea nueva al final y las viejas iguales.
     function historialEqSigue() {
@@ -117,7 +172,7 @@ service cloud.firestore {
     function rutaHoja(h) { return /databases/$(database)/documents/hojas/$(h); }
     function ultimoPaso() { return nuevo().historial[nuevo().historial.size() - 1]; }
     match /equipos/{id} {
-      allow read: if esDemo();
+      allow read: if veEquipos();
       allow delete: if esJefe();
       allow create: if (esJefe() && esPrueba()) || (esEncargadoEq() && id.matches('^eq-[a-z0-9]{4,30}$')
         && nuevo().estado == 'bodega' && nuevo().serial is string && nuevo().serial.size() <= 30 && nuevo().historial.size() == 1);
@@ -163,7 +218,7 @@ service cloud.firestore {
     match /tareasEq/{id} {
       allow read: if veEquipos();
       allow delete: if esJefe();
-      allow create: if (esJefe() && esPrueba()) || (esDemo() && rol() in ['soporte', 'jefe'] && nuevo().pidioRol == rol()
+      allow create: if (esJefe() && esPrueba()) || (esDemo() && nivel('equipos') in ['soporte', 'jefe'] && nuevo().pidioRol == rol()
         && nuevo().estado == 'pendiente' && nuevo().tipo in ['mantenimiento', 'backup', 'revision']);
       allow update: if (esJefe() && esPrueba()) || (esEncargadoEq() && antes().estado == 'pendiente' && nuevo().estado == 'hecha'
         && soloCambia(['estado', 'hechaPor', 'hechaEn', 'resultado']));
@@ -172,14 +227,14 @@ service cloud.firestore {
     // Vehículos: hoja de vida de cada carro. Transporte y Bodega asignan, actualizan documentos y estado;
     // el Conductor solo cambia estado (salida/llegada), kilometraje (nunca hacia atrás) y conductor, con una línea de historial.
     match /vehiculos/{id} {
-      allow read: if esDemo();
+      allow read: if veVehiculos();
       allow create, delete: if esJefe();
       allow update: if esJefe()
-        || (esDemo() && rol() in ['carros', 'asistente'] && soloCambia(['conductor', 'soat', 'tecno', 'estado', 'km', 'historial', 'ultimaEntrega'])
+        || (esDemo() && nivel('vehiculos') == 'autoriza' && soloCambia(['conductor', 'soat', 'tecno', 'estado', 'km', 'historial', 'ultimaEntrega'])
             && nuevo().km is number && nuevo().km >= antes().km && nuevo().estado in ['disponible', 'en-uso', 'en-taller']
             && esFecha(nuevo().soat) && esFecha(nuevo().tecno) && historialSigue())
         // El Conductor solo pasa el carro de disponible a en uso (o al revés) junto con la salida o llegada que registra en ese mismo momento.
-        || (esDemo() && rol() == 'conductor' && soloCambia(['estado', 'km', 'conductor', 'historial', 'ultimaEntrega'])
+        || (esDemo() && nivel('vehiculos') == 'reporta' && soloCambia(['estado', 'km', 'conductor', 'historial', 'ultimaEntrega'])
             && antes().estado in ['disponible', 'en-uso'] && nuevo().estado in ['disponible', 'en-uso'] && nuevo().estado != antes().estado
             && nuevo().km is number && nuevo().km >= antes().km && nuevo().km <= antes().km + 3000 && historialSigue()
             && nuevo().ultimaEntrega is string && !exists(rutaEnt(nuevo().ultimaEntrega))
@@ -190,16 +245,16 @@ service cloud.firestore {
 
     // Novedades de un carro: siempre con foto, sin revisar al nacer. Las revisan Transporte, Bodega o la Jefe.
     match /novedades/{id} {
-      allow read: if esDemo();
+      allow read: if veVehiculos();
       // La Jefe de prueba las crea al cargar los datos de ejemplo.
-      allow create: if (esJefe() && esPrueba()) || (esDemo() && rol() in ['conductor', 'carros', 'asistente', 'jefe']
+      allow create: if (esJefe() && esPrueba()) || (esDemo() && nivel('vehiculos') in ['reporta', 'autoriza', 'jefe']
         && nuevo().keys().hasOnly(['vehiculoId', 'placa', 'tipo', 'fecha', 'km', 'descripcion', 'foto', 'reporta', 'reportaRol', 'costo', 'revisada', 'revisadaPor', 'revisadaEn', 'nota'])
         && nuevo().reportaRol == rol() && nuevo().revisada == false
         && nuevo().tipo in ['llanta', 'choque', 'rayon', 'mantenimiento', 'otro']
         && nuevo().foto is string && nuevo().foto.size() < 400000 && nuevo().foto.matches('^data:image/jpeg;base64,.*')
-        && nuevo().costo is number && (nuevo().costo == 0 || rol() != 'conductor'));
+        && nuevo().costo is number && (nuevo().costo == 0 || nivel('vehiculos') != 'reporta'));
       // La Jefe de prueba la reescribe al cargar o reiniciar los datos de ejemplo.
-      allow update: if (esJefe() && esPrueba()) || (esJefe() || (esDemo() && rol() in ['carros', 'asistente']))
+      allow update: if (esJefe() && esPrueba()) || (esJefe() || (esDemo() && nivel('vehiculos') == 'autoriza'))
         && soloCambia(['costo', 'revisada', 'revisadaPor', 'revisadaEn', 'nota']) && nuevo().costo is number && nuevo().costo >= 0
         && antes().revisada == false && nuevo().revisada == true && nuevo().get('nota', '').size() <= 160;
       allow delete: if esJefe();
@@ -207,8 +262,8 @@ service cloud.firestore {
 
     // Salidas y llegadas de los carros: con las 5 fotos (cada una pequeña) y la revisión. No se cambian después.
     match /entregas/{id} {
-      allow read: if esDemo();
-      allow create: if (esJefe() && esPrueba()) || (esDemo() && rol() in ['conductor', 'carros', 'asistente', 'jefe']
+      allow read: if veVehiculos();
+      allow create: if (esJefe() && esPrueba()) || (esDemo() && nivel('vehiculos') in ['reporta', 'autoriza', 'jefe']
         && nuevo().porRol == rol() && nuevo().tipo in ['salida', 'llegada']
         && nuevo().fotos.keys().hasOnly(['frente', 'atras', 'izquierda', 'derecha', 'llantas'])
         && nuevo().fotos.keys().hasAll(['frente', 'atras', 'izquierda', 'derecha', 'llantas'])
@@ -248,12 +303,12 @@ service cloud.firestore {
     }
 
     match /reuniones/{id} {
-      allow read: if esDemo();
+      allow read: if veReuniones();
       allow create, delete: if esJefe();
       // Administrativo: solo en la misma escritura que guarda el acta de ESA reunión, el día de la reunión o después,
       // y agregando una sola línea al historial.
       allow update: if esJefe()
-        || (esDemo() && rol() == 'administrativo' && antes().estado in ['programada', 'reprogramada']
+        || (actuaReu() && rol() == 'administrativo' && antes().estado in ['programada', 'reprogramada']
             && nuevo().estado == 'realizada' && soloCambia(['estado', 'historial', 'actaId']) && yaFue(antes().fecha)
             && nuevo().historial.size() == antes().get('historial', []).size() + 1
             && get(rutaNec(nuevo().actaId)).data.estado == 'pendiente'
@@ -263,150 +318,241 @@ service cloud.firestore {
     }
 
     // Lo que le toca a cada rol en una reunión (una tarea por documento). Cada quien cambia solo la suya,
-    // sin tocar de qué reunión es, qué es ni a quién le toca.
-    match /necesidades/{id} {
-      allow read: if esDemo();
-      // Las crea la Jefe (también el viaje del conductor, al autorizar los carros).
-      allow create: if esJefe();
-      // Cada quien decide SU tarea una vez (mientras está pendiente). El acta, el día de la reunión o después.
-      allow update: if esJefe()
-        || (esDemo() && antes().responsableRol == rol() && antes().estado == 'pendiente'
+    // sin tocar de qué reunión es, qué es ni a quién le toca. La asistencia y el viaje son POR PERSONA: llevan su correo
+    // (responsableCorreo) y solo esa persona los decide; las tareas viejas sin correo las decide cualquiera de ese rol.
+    function actualizaNec(id) {
+      let r = rol();
+      return (antes().responsableRol == r && antes().estado == 'pendiente'
+            && antes().get('responsableCorreo', request.auth.token.email) == request.auth.token.email
             && soloCambia(['estado', 'por', 'en', 'motivo', 'conductor', 'items', 'acta'])
             && nuevo().estado in estadosDe(antes().tipo)
             && (antes().tipo != 'acta' || yaFue(antes().fechaReunion)))
         // Compras, Transporte y Bodega agregan lo que hay (un informe a la vez, sin tocar los de los demás) para que la Jefe decida.
-        || (esDemo() && rol() in informanEn(antes().tipo) && antes().estado == 'pendiente' && soloCambia(['informes'])
+        || (r in informanEn(antes().tipo) && antes().estado == 'pendiente' && soloCambia(['informes'])
             && nuevo().informes is list && nuevo().informes.size() == antes().get('informes', []).size() + 1 && nuevo().informes.size() <= 20
             && nuevo().informes == antes().get('informes', []).concat([nuevo().informes[nuevo().informes.size() - 1]])
-            && nuevo().informes[nuevo().informes.size() - 1].rol == rol()
+            && nuevo().informes[nuevo().informes.size() - 1].rol == r
             && nuevo().informes[nuevo().informes.size() - 1].texto is string
             && nuevo().informes[nuevo().informes.size() - 1].texto.size() <= 200)
         // El conductor que no puede devuelve los carros para que la Jefe escoja otro.
-        //   Tiene que decir cuál de sus viajes deja (y ese viaje queda en «no-va» en la misma escritura).
-        || (esDemo() && rol() == 'conductor' && antes().tipo == 'carros' && antes().estado == 'autorizado'
+        //   Tiene que decir cuál de sus viajes deja (y ese viaje queda en «no-va» en la misma escritura, que solo puede hacer su dueño).
+        || (r == 'conductor' && antes().tipo == 'carros' && antes().estado == 'autorizado'
             && nuevo().estado == 'pendiente' && nuevo().conductor == '' && soloCambia(['estado', 'conductor', 'motivo', 'devuelto'])
             && nuevo().devuelto is string && get(rutaNec(nuevo().devuelto)).data.tipo == 'viaje'
             && get(rutaNec(nuevo().devuelto)).data.estado in ['pendiente', 'listo']
             && getAfter(rutaNec(nuevo().devuelto)).data.carrosId == id
             && getAfter(rutaNec(nuevo().devuelto)).data.estado == 'no-va');
+    }
+    match /necesidades/{id} {
+      allow read: if veReuniones();
+      // Las crea la Jefe (también el viaje del conductor, al autorizar los carros).
+      allow create: if esJefe();
+      // Cada quien decide SU tarea una vez (mientras está pendiente). El acta, el día de la reunión o después.
+      // (Quién es la persona y su rol se miran una sola vez, en actualizaNec(): así no se pasa del límite de expresiones.)
+      allow update: if esJefe() || (actuaReu() && actualizaNec(id));
       allow delete: if esJefe();
     }
 
-    // Bodega: artículos y movimientos.
+    // Bodega: artículos y movimientos. Cada cambio de cantidad deja su movimiento en la MISMA escritura: el artículo apunta a su
+    // movimiento nuevo (ultimoMov), que no existía antes, es de ese artículo y trae la diferencia exacta (entrada y ajuste suman su
+    // cantidad; salida resta). Así no se cambia el stock sin dejar rastro. La Jefe de prueba carga y reinicia los datos de ejemplo.
+    function rutaMov(m) { return /databases/$(database)/documents/movimientos/$(m); }
+    function movOk(artId, cantAntes) {
+      return nuevo().get('ultimoMov', null) is string && !exists(rutaMov(nuevo().ultimoMov))
+        && getAfter(rutaMov(nuevo().ultimoMov)).data.articuloId == artId
+        && nuevo().cantidad - cantAntes == (getAfter(rutaMov(nuevo().ultimoMov)).data.tipo == 'salida' ? 0 - getAfter(rutaMov(nuevo().ultimoMov)).data.cantidad : getAfter(rutaMov(nuevo().ultimoMov)).data.cantidad);
+    }
     match /articulos/{id} {
-      allow read: if esDemo();
+      allow read: if veInventario();
       // La cantidad nunca queda negativa (si dos personas sacan al tiempo lo último, la segunda recibe un error).
-      allow create, update: if esBodega() && nuevo().cantidad is number && nuevo().cantidad >= 0;
+      allow create: if (esJefe() && esPrueba())
+        || (esBodega() && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == 0 || movOk(id, 0)));
+      allow update: if (esJefe() && esPrueba())
+        || (esBodega() && soloCambia(['cantidad', 'ultimoMov', 'nombre', 'categoria', 'unidad', 'minimo', 'maximo', 'ubicacion', 'costo', 'proveedor'])
+            && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == antes().cantidad || movOk(id, antes().cantidad)));
       allow delete: if esJefe();
     }
     match /movimientos/{id} {
-      allow read: if esDemo();
-      allow create: if esJefe() || (esBodega() && nuevo().por is string && nuevo().porRol == rol());
-      allow update, delete: if esJefe();
+      allow read: if veMovimientos();
+      allow create: if esJefe()
+        || (esBodega() && nuevo().por is string && nuevo().porRol == rol() && nuevo().tipo in ['entrada', 'salida', 'ajuste'] && nuevo().cantidad is number);
+      allow update, delete: if esPrueba() && rol() == 'jefe';
     }
 
-    // Pedidos de material: cada quien pide a su nombre; la bodega los entrega o los cierra.
+    // Pedidos de material: cada quien pide a su nombre; la bodega los entrega o los cierra (solo toca el estado, quién entregó y el motivo).
     match /solicitudes/{id} {
-      allow read: if esDemo();
-      allow create: if esDemo() && (nuevo().pideRol == rol() || esJefe()) && (nuevo().estado == 'pendiente' || esJefe());
-      allow update: if esBodega();
+      allow read: if veLoSuyo();
+      allow create: if puedePedir() && (nuevo().pideRol == rol() || esJefe()) && (nuevo().estado == 'pendiente' || esJefe())
+        && nuevo().get('pideUid', request.auth.uid) == request.auth.uid;
+      allow update: if (esJefe() && esPrueba())
+        || (antes().estado == 'pendiente' && nuevo().estado in ['entregada', 'rechazada'] && soloCambia(['estado', 'entregadaPor', 'fechaEntrega', 'motivo']) && esBodega());
       allow delete: if esJefe();
     }
 
     // Compras. Pasos: pedido -> autorizado (o rechazado) -> comprado -> recibido.
+    //   Quién autoriza: lo que pide la Jefe lo decide siempre el Gerente. Lo que pide cualquier otra persona lo autoriza la Jefe;
+    //   si vale el monto del Gerente (ajustesApp/compras.montoGerente, por defecto 1.000.000) o más, queda «por-gerente»
+    //   y el Gerente lo autoriza después. Lo que pide un Gerente lo decide OTRO Gerente (nadie decide lo suyo).
+    //   Respaldo: si la Jefe no responde en 2 días, el Gerente puede autorizar o rechazar lo que pidió otra persona.
+    //   Cada compra guarda el correo de quien la pidió y la hora del servidor (pideCorreo, creadoEn): no se pueden inventar.
+    //   Cada paso revisa primero el estado (lo barato) para no pasarse del límite de expresiones de las reglas.
+    function rutaMonto() { return /databases/$(database)/documents/ajustesApp/compras; }
+    function montoGerente() { return exists(rutaMonto()) ? get(rutaMonto()).data.get('montoGerente', 1000000) : 1000000; }
+    // Quien decide deja su correo (el del token): el nombre que escribe no se puede usar para hacerse pasar por otra persona.
+    function decideCampos() { return soloCambia(['estado', 'autoriza', 'autorizaCorreo', 'autorizaJefe', 'motivoRechazo', 'historial']) && nuevo().autorizaCorreo == request.auth.token.email && historialSigue(); }
+    // Quién decide un pedido que todavía no tiene respuesta (antes().estado == 'pedido').
+    function decidePedido() {
+      return antes().get('pideRol', '') == 'jefe' ? esGerente() && nuevo().estado in ['autorizado', 'rechazado']
+        : antes().get('pideRol', '') == 'gerente' ? esGerente() && antes().get('pideCorreo', '') != request.auth.token.email && nuevo().estado in ['autorizado', 'rechazado']
+        : (esJefe() && (nuevo().estado == 'rechazado' || nuevo().estado == (antes().valorAprox >= montoGerente() ? 'por-gerente' : 'autorizado')))
+          || (esGerente() && nuevo().estado in ['autorizado', 'rechazado'] && request.time > antes().get('creadoEn', request.time) + duration.value(2, 'd'));
+    }
     match /compras/{id} {
-      allow read: if esDemo();
-      // Pedir: a su propio nombre y en estado "pedido". Compras también registra compras hechas sin autorización.
-      // La Jefe de prueba crea cualquier compra porque carga y reinicia los datos de ejemplo.
+      allow read: if veLoSuyo();
+      // Pedir: a su propio nombre y en estado "pedido" (también el Gerente: otro Gerente la decide). Compras también registra
+      // compras hechas sin autorización (nacen sin revisar). La Jefe de prueba crea cualquier compra porque carga y reinicia los datos de ejemplo.
       allow create: if (esJefe() && esPrueba())
-        || (esDemo() && nuevo().pideRol == rol() && nuevo().estado == 'pedido')
-        || (esCompras() && nuevo().estado == 'sin-autorizar');
-      allow update: if
-        // La Jefe de prueba puede todo (reinicia los datos). Una Jefe con cuenta propia también, menos cambiar quién pidió
-        // y menos decidir una compra que pidió ella (esa la decide el Gerente).
-        (esJefe() && (esPrueba() || (!decideGerente() && nuevo().get('pideRol', '') == antes().get('pideRol', ''))))
-        // El Gerente autoriza o rechaza solo lo que pidió la Jefe, sin cambiar cantidad ni valor.
-        || (esGerente() && antes().estado == 'pedido' && antes().get('pideRol', '') == 'jefe'
-            && nuevo().estado in ['autorizado', 'rechazado']
-            && soloCambia(['estado', 'autoriza', 'motivoRechazo', 'historial']))
+        || (nuevo().estado == 'pedido' && nuevo().pideRol == rol() && puedePedir() && pedidoOk())
+        || (nuevo().estado == 'sin-autorizar' && nuevo().revisada == false && esCompras() && pedidoOk());
+      allow update:
+        // La Jefe de prueba puede todo (reinicia los datos de ejemplo).
+        if (esPrueba() && rol() == 'jefe')
+        // Decidir un pedido (rechazar, autorizar o pasarlo al Gerente según quién lo pidió y el monto).
+        || (antes().estado == 'pedido' && nuevo().estado in ['autorizado', 'por-gerente', 'rechazado'] && decideCampos() && decidePedido())
+        // El Gerente decide lo que la Jefe le pasó por el monto.
+        || (antes().estado == 'por-gerente' && nuevo().estado in ['autorizado', 'rechazado'] && decideCampos() && nuevo().get('autorizaJefe', '') == antes().get('autorizaJefe', '') && esGerente())
         // Comprar (autorizada -> comprada): Compras, sin tocar lo autorizado.
-        || (esCompras() && antes().estado == 'autorizado' && nuevo().estado == 'comprado'
-            && soloCambia(['estado', 'proveedor', 'valorReal', 'fechaCompra', 'factura', 'historial']))
+        || (antes().estado == 'autorizado' && nuevo().estado == 'comprado' && soloCambia(['estado', 'proveedor', 'valorReal', 'fechaCompra', 'factura', 'historial']) && historialSigue() && esCompras())
         // Recibir (comprada -> recibida): la bodega.
-        || (esBodega() && antes().estado == 'comprado' && nuevo().estado == 'recibido'
-            && soloCambia(['estado', 'entregadoA', 'historial']));
-      allow delete: if esJefe();
+        || (antes().estado == 'comprado' && nuevo().estado == 'recibido' && soloCambia(['estado', 'entregadoA', 'historial']) && historialSigue() && esBodega())
+        // La Jefe marca como revisada una compra hecha sin autorización.
+        || (antes().estado == 'sin-autorizar' && antes().revisada == false && nuevo().revisada == true && soloCambia(['revisada', 'revisadaPorCorreo', 'historial']) && nuevo().revisadaPorCorreo == request.auth.token.email && historialSigue() && esJefe());
+      // Las compras no se borran (son el rastro de lo que se gastó); solo la Jefe de prueba, al reiniciar los datos de ejemplo.
+      allow delete: if esPrueba() && rol() == 'jefe';
     }
 
-    // Perfiles de las cuentas propias.
-    match /usuarios/{uid} {
-      // Cada quien lee el suyo; el Gerente y el Jefe con cuenta propia ven todos (panel «Personas y códigos»).
-      // Las personas de prueba (clave pública) no ven ni manejan cuentas propias.
-      allow get: if request.auth != null && request.auth.uid == uid;
-      allow list: if esCuentaDe(['gerente', 'jefe']);
-      // Crear el perfil: solo el dueño, con un código que exista, esté activo y sea del mismo rol.
-      // Los códigos de Gerente y Jefe son de un solo uso: se borran en la misma escritura.
-      allow create: if request.auth != null && request.auth.uid == uid && !esPrueba()
-        && nuevo().keys().hasOnly(['nombre', 'correo', 'rol', 'codigo', 'activo', 'en'])
-        && nuevo().rol in ROLES() && nuevo().activo == true
+    // Ajustes de la app (distintos de «ajustes», que solo se escriben a mano en la consola).
+    //   compras.montoGerente: desde ese valor, el Gerente también autoriza. Solo lo cambia el Gerente (cuenta propia), así la Jefe no puede subirlo.
+    //   seguridad.personasPrueba: la Jefe (cuenta propia) lo pone en false para apagar las personas de prueba (clave pública).
+    match /ajustesApp/{id} {
+      allow read: if esDemo();
+      allow write: if (id == 'compras' && esCuentaDe(['gerente']) && nuevo().keys().hasOnly(['montoGerente'])
+          && nuevo().montoGerente is int && nuevo().montoGerente >= 0 && nuevo().montoGerente <= 1000000000)
+        || (id == 'seguridad' && esCuentaDe(['jefe']) && nuevo().keys().hasOnly(['personasPrueba']) && nuevo().personasPrueba is bool);
+    }
+
+    // Invitaciones: la Jefe sube la lista (nombre, correo, rol y permisos) y cada persona entra con su correo confirmado.
+    // El documento se llama como el correo (en minúscula). Sirven una sola vez: al crear su perfil la persona borra su invitación.
+    function rutaInv(correo) { return /databases/$(database)/documents/invitaciones/$(correo); }
+    match /invitaciones/{correo} {
+      allow read: if esCuentaDe(['jefe'])
+        || (request.auth != null && request.auth.token.email_verified == true && request.auth.token.email == correo);
+      allow create, update: if esCuentaDe(['jefe']) && correo.matches('^[^@/ ]+@[^@/ ]+[.][^@/ ]+$') && correo == correo.lower()
+        && nuevo().keys().hasOnly(['nombre', 'rol', 'permisos', 'extras', 'por', 'en'])
         && nuevo().nombre is string && nuevo().nombre.size() >= 3 && nuevo().nombre.size() <= 60
-        && nuevo().correo == request.auth.token.email
-        && nuevo().codigo is string
+        && nuevo().rol in ROLES() && !esDireccion(nuevo().rol) && permisosOk(nuevo().get('permisos', {}))
+        && nuevo().get('extras', []) is list && nuevo().get('extras', []).size() <= 5
+        && nuevo().get('extras', []).hasOnly(['compra', 'actas', 'encargada'])
+        && nuevo().por is string && nuevo().en is string;
+      allow delete: if esCuentaDe(['jefe'])
+        || (request.auth != null && request.auth.token.email == correo && !exists(rutaPerfil()) && existsAfter(rutaPerfil()));
+    }
+
+    // Niveles por módulo que la Jefe puede dar (nunca «jefe» ni «gerente»). Reuniones: solo «sin acceso» o «solo ver»
+    // (en Reuniones cada rol hace su tarea, por eso allí solo se sube o se baja a ver).
+    function permisosOk(p) {
+      return p is map && p.keys().hasOnly(['equipos', 'inventario', 'vehiculos', 'reuniones'])
+        && p.get('equipos', 'ver') in ['no', 'ver', 'encargado', 'soporte']
+        && p.get('inventario', 'ver') in ['no', 'ver', 'finanzas', 'pide', 'compra', 'bodega']
+        && p.get('vehiculos', 'ver') in ['no', 'ver', 'reporta', 'autoriza']
+        && p.get('reuniones', 'ver') in ['no', 'ver'];
+    }
+    function porCodigo() {
+      return request.auth.token.email_verified == true && nuevo().keys().hasOnly(['nombre', 'correo', 'rol', 'codigo', 'activo', 'en'])
+        && nuevo().codigo is string && nuevo().codigo != 'invitacion'
         && exists(rutaCodigo(nuevo().codigo, nuevo().rol))
         && get(rutaCodigo(nuevo().codigo, nuevo().rol)).data.activo == true
         && get(rutaCodigo(nuevo().codigo, nuevo().rol)).data.rol == nuevo().rol
         && (!esDireccion(nuevo().rol) || !existsAfter(rutaCodigo(nuevo().codigo, nuevo().rol)));
-      // Cambiar rol, pausar o marcar permisos extra: el Gerente a cualquiera; el Jefe a todos menos Gerentes y Jefes. Nadie a sí mismo.
-      allow update: if esCuentaDe(['gerente', 'jefe']) && request.auth.uid != uid
-        && soloCambia(['rol', 'activo', 'extras'])
+    }
+    function porInvitacion() {
+      return nuevo().codigo == 'invitacion' && request.auth.token.email_verified == true
+        && nuevo().keys().hasOnly(['nombre', 'correo', 'rol', 'codigo', 'activo', 'en', 'permisos', 'extras'])
+        && exists(rutaInv(request.auth.token.email))
+        && get(rutaInv(request.auth.token.email)).data.rol == nuevo().rol
+        && get(rutaInv(request.auth.token.email)).data.nombre == nuevo().nombre
+        && get(rutaInv(request.auth.token.email)).data.get('permisos', {}) == nuevo().get('permisos', {})
+        && get(rutaInv(request.auth.token.email)).data.get('extras', []) == nuevo().get('extras', [])
+        && !existsAfter(rutaInv(request.auth.token.email));
+    }
+    match /usuarios/{uid} {
+      // Cada quien lee el suyo; solo la Jefe con cuenta propia ve a todos (panel «Personas y permisos»).
+      // Las personas de prueba (clave pública) no ven ni manejan cuentas propias.
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if esCuentaDe(['jefe']);
+      // Crear el perfil: solo el dueño, y de dos formas: con un código que exista, esté activo y sea del mismo rol, o con la
+      // invitación que la Jefe hizo a su correo (ya confirmado). Los códigos de Gerente y Jefe, y las invitaciones, son de un solo uso.
+      allow create: if request.auth != null && request.auth.uid == uid && !esPrueba()
+        && nuevo().rol in ROLES() && nuevo().activo == true
+        && nuevo().nombre is string && nuevo().nombre.size() >= 3 && nuevo().nombre.size() <= 60
+        && nuevo().correo == request.auth.token.email
+        && (porInvitacion() || porCodigo());
+      // Cambiar rol, pausar, marcar permisos extra o dar niveles por módulo: solo la Jefe, y solo a quienes no son Gerente ni Jefe
+      // (a ellos solo se les cambia algo desde la consola de Firebase). Nadie a sí mismo.
+      allow update: if esCuentaDe(['jefe']) && request.auth.uid != uid
+        && !esDireccion(antes().rol) && !esDireccion(nuevo().rol)
+        && soloCambia(['rol', 'activo', 'extras', 'permisos'])
         && nuevo().rol in ROLES() && nuevo().activo is bool
         && nuevo().get('extras', []) is list && nuevo().get('extras', []).size() <= 5
         && nuevo().get('extras', []).hasOnly(['compra', 'actas', 'encargada'])
-        && (perfil().rol == 'gerente' || (!esDireccion(antes().rol) && !esDireccion(nuevo().rol)));
-      allow delete: if esCuentaDe(['gerente']);
+        && permisosOk(nuevo().get('permisos', {}));
+      allow delete: if false;
     }
 
-    // Códigos de los roles de trabajo (no Gerente ni Jefe). Solo los ven el Gerente y el Jefe con cuenta propia.
+    // Códigos de los roles de trabajo (no Gerente ni Jefe). Solo los ve la Jefe con cuenta propia.
     match /codigos/{codigo} {
-      allow read: if esCuentaDe(['gerente', 'jefe']);
-      allow create: if esCuentaDe(['gerente', 'jefe'])
+      allow read: if esCuentaDe(['jefe']);
+      allow create: if esCuentaDe(['jefe'])
         && nuevo().keys().hasOnly(['rol', 'activo', 'por', 'en'])
         && nuevo().rol in ROLES() && !esDireccion(nuevo().rol) && nuevo().activo == true
         && codigo.size() >= 12;
       allow update: if false;
       // resource == null: ya lo había borrado otra persona (dos cambiando el código a la vez).
-      allow delete: if esCuentaDe(['gerente', 'jefe']);
+      allow delete: if esCuentaDe(['jefe']);
     }
 
-    // Códigos de Gerente y Jefe: solo los ve y crea el Gerente, y sirven una sola vez.
+    // Códigos de Gerente y Jefe: solo se crean a mano en la consola de Firebase (la app no puede crearlos, así una cuenta
+    // robada de la Jefe no se llena de Gerentes). La Jefe los ve, y cada uno sirve una sola vez.
     match /codigosDireccion/{codigo} {
-      allow read: if esCuentaDe(['gerente']);
-      allow create: if esCuentaDe(['gerente'])
-        && nuevo().keys().hasOnly(['rol', 'activo', 'por', 'en'])
-        && esDireccion(nuevo().rol) && nuevo().activo == true
-        && codigo.size() >= 12;
+      allow read: if esCuentaDe(['jefe']);
+      allow create: if false;
       allow update: if false;
       // Lo borra el Gerente, o quien lo está usando para crear su perfil en esa misma escritura.
-      allow delete: if esCuentaDe(['gerente'])
+      allow delete: if esCuentaDe(['jefe'])
         || (request.auth != null && !exists(rutaPerfil()) && getAfter(rutaPerfil()).data.codigo == codigo);
     }
 
-    // Avisos de la campana: cualquiera los crea; cada quien solo cambia SU marca de leído (con su id de cuenta).
-    // La Jefe puede reescribirlos (al cargar o reiniciar los datos de prueba se reemplazan los avisos de ejemplo).
+    // Avisos de la campana: cualquiera los crea, pero con SU cuenta (deUid), solo con los campos de siempre, textos de largo razonable,
+    // para un rol que existe y sin nacer leídos. Así nadie escribe un aviso a nombre de otra persona ni los llena de basura.
+    // Cada quien solo cambia SU marca de leído (con su id de cuenta).
+    // La Jefe de prueba puede reescribirlos (al cargar o reiniciar los datos de prueba se reemplazan los avisos de ejemplo).
     match /avisos/{id} {
       allow read: if esDemo();
-      allow create: if esDemo();
+      allow create: if (esJefe() && esPrueba())
+        || (esDemo() && nuevo().keys().hasOnly(['para', 'titulo', 'texto', 'en', 'modulo', 'leido', 'deUid'])
+            && nuevo().deUid == request.auth.uid && nuevo().para in ROLES()
+            && nuevo().titulo is string && nuevo().titulo.size() <= 150 && nuevo().texto is string && nuevo().texto.size() <= 800
+            && nuevo().en is string && nuevo().modulo in ['equipos', 'inventario', 'vehiculos', 'reuniones'] && nuevo().leido == {});
       allow update: if esJefe()
         || (esDemo() && soloCambia(['leido'])
             && nuevo().leido.diff(antes().get('leido', {})).affectedKeys().hasOnly([request.auth.uid]));
       allow delete: if esJefe();
     }
 
-    // Teléfonos con avisos activados (para mandar la notificación al teléfono de cada persona).
+    // Los teléfonos con avisos activados NO están en Firestore: los guarda el Worker de avisos (Cloudflare KV), que revisa el token
+    // de Firebase y saca el rol de la base. Así nadie con sesión puede leer, copiar ni borrar los teléfonos de los demás.
     match /suscripciones/{id} {
-      allow read: if esDemo();
-      allow create, update: if esDemo() && nuevo().rol == rol();
-      allow delete: if esDemo();
+      allow read, write: if false;
     }
   }
 }

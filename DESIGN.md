@@ -76,7 +76,7 @@ y cada tipo de equipo tiene su placa de color con icono.
 
 ## Demo de la app de control (agregado)
 - Mismo sistema que Equipos y Entregas: se copió `comun.css` sin cambios; lo propio está en `demo.css`.
-- **Marca:** el ícono de la app (cuatro casillas sobre azul mar, una con visto bueno) en el encabezado, en la pestaña del navegador y en el acceso directo del teléfono.
+- **Marca:** el emblema del logo de la empresa (círculo de franjas celeste, verde, amarillo y café, sobre blanco) en el encabezado, en la pestaña del navegador y en el acceso directo del teléfono; el logo completo, en una tarjeta blanca, arriba de la entrada. El logo original era de 260 px: se agrandó y se limpió a sus colores planos para que se vea nítido. Sigue el azul mar del encabezado (el azul del logo combina con él).
 - **Persona:** botón redondo con las iniciales en el encabezado; en la demo todos los avatares van en el mismo azul (ver «Estilo de la demo»). En pantallas de 400 px o menos solo se ven las iniciales.
 - **Versión pagada:** franja azul con borde punteado y el ícono `pagada` (chispa). Siempre al final de la vista, nunca tapa una acción.
 - **Peligro en el tablero:** `t-peligro` (rojo) solo para lo que es un problema: compra sin autorizar, documento vencido o por vencer.
@@ -86,4 +86,4 @@ y cada tipo de equipo tiene su placa de color con icono.
 
 
 ## Estilo de la demo (caribe.css)
-Para presentar a toda la empresa, no solo a sistemas: un solo color de marca (azul mar `#0B4058` a `#156E8E`) y profundidad con sombras en capas (relieve) en vez de muchos colores. Los colores de estado (rojo, naranja, azul, verde) solo marcan estados. Todos los avatares van en el mismo azul. Letra Nunito. Ícono: cuatro casillas sobre azul mar, una con visto bueno.
+Para presentar a toda la empresa, no solo a sistemas: un solo color de marca (azul mar `#0B4058` a `#156E8E`) y profundidad con sombras en capas (relieve) en vez de muchos colores. Los colores de estado (rojo, naranja, azul, verde) solo marcan estados. Todos los avatares van en el mismo azul. Letra Nunito. Ícono: el emblema de la empresa sobre blanco (en el ícono adaptable de Android lleva más margen).

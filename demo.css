@@ -241,6 +241,7 @@ button.card .card-title { text-align: left; }
 .marca-fila input { width: 22px; height: 22px; accent-color: var(--accent); flex: none; }
 .necesidades-l { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .necesidades-l li { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.asistencia-res { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
 .necesidades-l .nf-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
 .leyendo { min-height: 120px; }
 #reCampos .pill { white-space: normal; text-align: left; max-width: 100%; height: auto; min-height: 26px; line-height: 1.25; padding-top: 4px; padding-bottom: 4px; }
@@ -308,6 +309,33 @@ button.card .card-title { text-align: left; }
 .acta-dev span { padding: 4px 8px; min-height: 1.4em; }
 .acta-nota { font-size: .72rem; margin: 2px 0 0; }
 .acta-pie { font-size: .64rem; color: #4a5a66; margin-top: 10px; border-top: 1px solid #c3ced7; padding-top: 4px; }
+/* Entrada con Google, código opcional y panel de permisos por persona */
+#ctGoogle { width: 100%; justify-content: center; }
+.ct-o { text-align: center; margin: 10px 0 8px; }
+.ct-codigo { border: 1px dashed var(--line, rgba(0,0,0,.2)); border-radius: 12px; padding: 0 12px; margin: 4px 0 8px; }
+.ct-codigo > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; font-size: .92rem; }
+.ct-codigo[open] > summary { border-bottom: 1px solid var(--line, rgba(0,0,0,.12)); margin-bottom: 8px; }
+.perm-grid { display: grid; gap: 4px 12px; }
+@media (min-width: 560px) { .perm-grid { grid-template-columns: 1fr 1fr; } }
+.err-txt { color: var(--danger, #B0281F); }
+/* Compras con varias líneas, cotizaciones y kárdex */
+.lineas-tabla { width: 100%; border-collapse: collapse; font-size: .86rem; margin: 6px 0 10px; }
+.lineas-tabla th, .lineas-tabla td { text-align: left; vertical-align: top; padding: 6px 6px; border-bottom: 1px solid var(--line, rgba(0,0,0,.12)); }
+.lineas-tabla th { font-size: .74rem; color: var(--muted, #56615B); font-weight: 700; }
+.lineas-tabla td:nth-child(n+2), .lineas-tabla th:nth-child(n+2) { white-space: nowrap; }
+.lineas-tabla td .meta { display: block; font-weight: 400; }
+.lineas-tabla tfoot td { border-bottom: 0; }
+.linea-extra { border: 1px dashed var(--line, rgba(0,0,0,.2)); border-radius: 12px; padding: 8px 12px 10px; margin: 8px 0; }
+.cot-mini { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.cot-mini img { width: 84px; height: 84px; object-fit: cover; border-radius: 10px; border: 1px solid var(--line, rgba(0,0,0,.15)); }
+/* Lista de personas agrupada por unidad del organigrama */
+.grupo-personas { margin: 6px 0; }
+.grupo-personas > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 8px; font-weight: 760; padding: 0 4px; }
+.grupo-personas > summary .n { background: var(--bg-sunk, rgba(0,0,0,.08)); border-radius: 999px; padding: 0 9px; font-size: .8rem; font-weight: 700; }
+.grupo-personas[hidden], .persona-card[hidden] { display: none; }
+.filtro-personas { width: 100%; }
+/* Logo de la empresa en la entrada: dentro de una tarjeta blanca para que se vea igual en tema claro y oscuro */
+.logo-empresa { display: block; margin: 4px auto 10px; max-width: 220px; width: 60%; height: auto; background: #fff; border-radius: 18px; padding: 10px 14px; box-shadow: 0 6px 18px rgba(8, 47, 64, .16); }
 #impresion { display: none; }
 @media print {
   body.imprimiendo > *:not(#impresion) { display: none !important; }

@@ -44,6 +44,9 @@ function operacion(fn) {
 const copia = (x) => structuredClone(x);
 const esPlano = (x) => Object.prototype.toString.call(x) === '[object Object]';
 
+// serverTimestamp(): la hora del servidor (aquí, la de este navegador, como texto).
+export function serverTimestamp() { return new Date().toISOString(); }
+
 // increment(n): como el de Firebase, suma n al número guardado (o lo pone en n si no había número).
 export function increment(n) { return { __incremento: Number(n) }; }
 const esIncremento = (x) => esPlano(x) && Object.keys(x).length === 1 && typeof x.__incremento === 'number';
@@ -100,10 +103,14 @@ function snapDoc(ref, datosGuardados) {
   };
 }
 
+// query(colRef, where(campo, '==', valor)): solo el filtro de igualdad (lo único que usa la app).
+export function where(campo, op, valor) { return { campo, op, valor }; }
+export function query(colRef, ...filtros) { return Object.assign({}, colRef, { filtros }); }
 function snapColeccion(colRef, datos) {
   const col = datos[colRef.id] || {};
+  const pasa = (d) => (colRef.filtros || []).every((f) => f.op === '==' && d[f.campo] === f.valor);
   // Firestore ordena por id de documento.
-  const docs = Object.keys(col).sort().map((id) => snapDoc(doc(colRef, id), col[id]));
+  const docs = Object.keys(col).sort().filter((id) => pasa(col[id])).map((id) => snapDoc(doc(colRef, id), col[id]));
   return {
     docs,
     size: docs.length,
@@ -126,6 +133,12 @@ export function getDocs(colRef) {
 // Copia de la regla de firestore.rules para crear un perfil: el código debe existir, estar activo y ser del mismo rol.
 function revisarPerfilNuevo(datos, ref, data) {
   if (ref.parent.id !== 'usuarios' || (datos.usuarios && datos.usuarios[ref.id])) return;
+  // Con invitación: la de su correo tiene que existir y decir el mismo nombre y rol (lo demás lo revisan las reglas reales).
+  if (data && data.codigo === 'invitacion') {
+    const inv = (datos.invitaciones || {})[String(data.correo || '').toLowerCase()];
+    if (!inv || inv.rol !== data.rol || inv.nombre !== data.nombre || data.activo !== true) throw crearError('permission-denied', 'Missing or insufficient permissions.');
+    return;
+  }
   const col = data && ['gerente', 'jefe'].includes(data.rol) ? 'codigosDireccion' : 'codigos';
   const c = (datos[col] || {})[data && data.codigo];
   if (!c || c.activo !== true || c.rol !== data.rol || data.activo !== true) throw crearError('permission-denied', 'Missing or insufficient permissions.');

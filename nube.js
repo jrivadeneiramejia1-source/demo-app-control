@@ -28,15 +28,20 @@
       'auth/invalid-credential': 'El correo o la clave no coinciden. Revísalos y vuelve a intentar.',
       'auth/invalid-email': 'Ese correo no está bien escrito.',
       'auth/missing-password': 'Escribe la clave.',
-      'auth/weak-password': 'La clave debe tener al menos 6 caracteres.',
+      'auth/weak-password': 'La clave es muy débil. Usa 10 caracteres o más.',
+      'auth/popup-closed-by-user': 'Cerraste la ventana de Google antes de terminar. Toca el botón otra vez.',
+      'auth/cancelled-popup-request': 'Ya hay una ventana de Google abierta. Termina ahí o ciérrala y vuelve a intentar.',
+      'auth/popup-blocked': 'El navegador bloqueó la ventana de Google. Permítela y vuelve a intentar.',
+      'auth/account-exists-with-different-credential': 'Ese correo ya tiene cuenta con otra forma de entrar. Entra con tu correo y tu clave.',
+      'auth/unauthorized-domain': 'En Firebase falta autorizar esta dirección de la app (Authentication > Settings > Authorized domains).',
       'auth/email-already-in-use': 'Ese correo ya tiene cuenta. Toca «Entrar» y escribe tu clave.',
       'codigo-malo': 'Ese código no sirve. Pídele a tu jefe el código de tu rol y escríbelo tal cual (ejemplo: LOG-7KQ4-M2XP).',
       'permission-denied': 'Firebase no dejó hacer este cambio. Puede que otra persona ya lo cambió (revisa la lista otra vez) o que falte pegar las reglas de firestore.rules en Firestore Database, pestaña Reglas.',
       'unavailable': 'Sin conexión con la base de datos. Lo que hagas se guarda cuando vuelva la señal.',
       'not-found': 'Ese registro ya no existe. Puede que otra persona lo haya borrado.',
       'sin-sdk': 'Firebase no alcanzó a cargar. Revisa la conexión a internet y toca Reintentar arriba.',
-      'falta-sembrar': 'Todavía no hay datos de prueba. Entra una vez como Ana Pérez (Jefe) para cargarlos.',
-      'datos-viejos': 'Hay una versión nueva de los datos de prueba. Entra una vez como Ana Pérez (Jefe) para actualizarlos.'
+      'falta-sembrar': 'Todavía no hay datos de prueba. Entra una vez con la Jefe de prueba (Carolina Castillo) para cargarlos.',
+      'datos-viejos': 'Hay una versión nueva de los datos de prueba. Entra una vez con la Jefe de prueba (Carolina Castillo) para actualizarlos.'
     };
     return t[c] || ('Algo salió mal con Firebase' + (c ? ' (' + c + ')' : '') + '. Vuelve a intentar.');
   }
@@ -49,30 +54,90 @@
     const app = App.initializeApp(window.FIREBASE_CONFIG);
     auth = A.getAuth(app);
     db = F.getFirestore(app);
-    A.onAuthStateChanged(auth, u => {
-      if (oyentePerfil) { oyentePerfil(); oyentePerfil = null; }
-      if (!u) { alCambiarSesion(null); return; }
-      const prueba = window.DEMO.porCorreo(u.email);
-      if (prueba) { alCambiarSesion(prueba); return; }
-      // Cuenta real: el rol sale de su perfil (usuarios/<uid>), que solo se crea con un código válido.
-      // Se escucha en vivo: si el Jefe le cambia el rol o le quita el acceso, la app cambia al instante.
-      let ultimo = '';
-      oyentePerfil = F.onSnapshot(F.doc(db, 'usuarios', u.uid), { includeMetadataChanges: true }, s => {
-        // Mientras Firebase no confirme el perfil recién escrito (código por revisar), no se entra.
-        if (s.metadata && s.metadata.hasPendingWrites) return;
-        const d = s.exists() ? s.data() : null;
-        const p = !d ? { sinPerfil: true, correo: u.email }
-          : d.activo !== true ? { sinAcceso: true, correo: u.email, nombre: d.nombre }
-          : (window.DEMO.armar(d.rol, d.nombre, u.email, '', { real: true, uid: u.uid, extras: d.extras }) || { sinPerfil: true, correo: u.email });
-        const firma = JSON.stringify([p.rol, p.nombre, !!p.sinPerfil, !!p.sinAcceso, p.extras || []]);
-        if (firma !== ultimo) { ultimo = firma; alCambiarSesion(p); }
-      }, e => alCambiarSesion({ sinPerfil: true, correo: u.email, error: e && e.code === 'permission-denied' ? '' : explicar(e) }));
-    });
+    auth.languageCode = 'es';
+    A.getRedirectResult(auth).catch(() => {});   // si volvió de Google por redirección, termina el ingreso
+    alCambiarSesionFn = alCambiarSesion;
+    A.onAuthStateChanged(auth, u => abrirSesion(u));
   }
-  let oyentePerfil = null;
+  let alCambiarSesionFn = null, oyentePerfil = null;
+  const yaProbeInvitacion = new Set();
+  const conClave = u => (u.providerData || []).length > 0 && u.providerData.every(x => x.providerId === 'password');
+
+  /** Decide qué ve la persona al abrir sesión: prueba, correo sin confirmar, perfil (con su rol y permisos) o «sin perfil». */
+  function abrirSesion(u) {
+    const alCambiarSesion = alCambiarSesionFn;
+    if (oyentePerfil) { oyentePerfil(); oyentePerfil = null; }
+    if (!u) { alCambiarSesion(null); return; }
+    const prueba = window.DEMO.porCorreo(u.email);
+    if (prueba) { alCambiarSesion(prueba); return; }
+    // Cuenta real con correo y clave: tiene que confirmar el correo (el enlace que le llega). Con Google ya viene confirmado.
+    if (!u.emailVerified && conClave(u)) { alCambiarSesion({ sinConfirmar: true, correo: u.email }); return; }
+    // Cuenta real: el rol y los permisos salen de su perfil (usuarios/<uid>), que solo se crea con un código válido o con la
+    // invitación que la Jefe hizo a su correo. Se escucha en vivo: si la Jefe le cambia el rol o le quita el acceso, la app cambia al instante.
+    let ultimo = '';
+    oyentePerfil = FS.onSnapshot(FS.doc(db, 'usuarios', u.uid), { includeMetadataChanges: true }, s => {
+      // Mientras Firebase no confirme el perfil recién escrito (código por revisar), no se entra.
+      if (s.metadata && s.metadata.hasPendingWrites) return;
+      const d = s.exists() ? s.data() : null;
+      if (!d && !yaProbeInvitacion.has(u.uid)) {
+        // Primera vez: se busca la invitación de su correo. Si hay, se crea el perfil y este mismo oyente lo recibe.
+        yaProbeInvitacion.add(u.uid);
+        reclamarInvitacion(u).then(ok => { if (!ok) { ultimo = ''; alCambiarSesion({ sinPerfil: true, correo: u.email, sinInvitacion: true }); } });
+        return;
+      }
+      const p = !d ? { sinPerfil: true, correo: u.email, sinInvitacion: true }
+        : d.activo !== true ? { sinAcceso: true, correo: u.email, nombre: d.nombre }
+        : (window.DEMO.armar(d.rol, d.nombre, u.email, '', { real: true, uid: u.uid, extras: d.extras, permisos: d.permisos }) || { sinPerfil: true, correo: u.email });
+      const firma = JSON.stringify([p.rol, p.nombre, !!p.sinPerfil, !!p.sinAcceso, p.extras || [], p.ajustes || {}]);
+      if (firma !== ultimo) { ultimo = firma; alCambiarSesion(p); }
+    }, e => alCambiarSesion({ sinPerfil: true, correo: u.email, error: e && e.code === 'permission-denied' ? '' : explicar(e) }));
+  }
+
+  /** Crea el perfil con lo que dice la invitación (nombre, rol y permisos) y la gasta (una sola vez). Devuelve false si no hay invitación. */
+  async function reclamarInvitacion(u) {
+    const correo = String(u.email || '').toLowerCase(), ref = FS.doc(db, 'invitaciones', correo);
+    try {
+      const s = await FS.getDoc(ref);
+      if (!s.exists()) return false;
+      const d = s.data(), b = FS.writeBatch(db);
+      b.set(FS.doc(db, 'usuarios', u.uid), { nombre: d.nombre, correo: u.email, rol: d.rol, codigo: 'invitacion', activo: true, en: new Date().toISOString(),
+        permisos: d.permisos && typeof d.permisos === 'object' ? d.permisos : {}, extras: Array.isArray(d.extras) ? d.extras : [] });
+      b.delete(ref);
+      await b.commit();
+      return true;
+    } catch (e) { return false; }
+  }
+
+  /** Confirmar el correo: reenviar el enlace y revisar si ya lo tocó. */
+  async function reenviarConfirmacion() {
+    if (!auth || !auth.currentUser) { const e = new Error('sin sesión'); e.code = 'sin-sdk'; throw e; }
+    await A.sendEmailVerification(auth.currentUser);
+  }
+  async function yaConfirme() {
+    const u = auth && auth.currentUser; if (!u) return false;
+    await u.reload();
+    if (!u.emailVerified) return false;
+    await u.getIdToken(true);   // el permiso nuevo (correo confirmado) viaja en el token: hay que renovarlo
+    abrirSesion(auth.currentUser);
+    return true;
+  }
+  /** «Olvidé mi clave»: Firebase manda un correo con el enlace para poner una nueva. */
+  async function recuperarClave(correo) {
+    if (!auth) { const e = new Error('Firebase no cargó'); e.code = 'sin-sdk'; throw e; }
+    await A.sendPasswordResetEmail(auth, String(correo || '').trim());
+  }
+  /** Entrar con Google (el correo ya viene confirmado). Si el navegador no deja la ventana, se usa la redirección. */
+  async function entrarGoogle() {
+    if (!auth) { const e = new Error('Firebase no cargó'); e.code = 'sin-sdk'; throw e; }
+    const prov = new A.GoogleAuthProvider(); prov.setCustomParameters({ prompt: 'select_account' });
+    try { await A.signInWithPopup(auth, prov); }
+    catch (e) { if (e && ['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment'].includes(e.code)) { await A.signInWithRedirect(auth, prov); return; } throw e; }
+  }
 
   /* ---------- cuentas reales (con el código del rol) ---------- */
   const uid = () => (auth && auth.currentUser ? auth.currentUser.uid : '');
+  /** Correo de la sesión (el mismo que las reglas leen en el token). */
+  const correo = () => (auth && auth.currentUser && auth.currentUser.email ? auth.currentUser.email : '');
   /** Token de la sesión (lo revisa el Worker del agente para saber que es alguien de la app). */
   const token = () => (auth && auth.currentUser ? auth.currentUser.getIdToken() : Promise.reject(new Error('sin sesión')));
   const limpiarCodigo = c => String(c || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^([A-Z]{3})([A-Z0-9]{4})([A-Z0-9]{4})$/, '$1-$2-$3');
@@ -83,7 +148,8 @@
   async function crearCuenta(correo, clave) {
     if (!auth) { const e = new Error('Firebase no cargó'); e.code = 'sin-sdk'; throw e; }
     if (window.DEMO.porCorreo(correo)) { const e = new Error('prueba'); e.code = 'auth/email-already-in-use'; throw e; }
-    await A.createUserWithEmailAndPassword(auth, String(correo || '').trim(), clave);
+    const c = await A.createUserWithEmailAndPassword(auth, String(correo || '').trim(), clave);
+    try { await A.sendEmailVerification(c.user); } catch (e) { /* si falla, en la pantalla de confirmar está el botón para reenviarlo */ }
   }
   /** Guarda el perfil con el rol del código. Firebase revisa que el código exista, esté activo y sea de ese rol. */
   async function usarCodigo(nombre, codigo) {
@@ -107,9 +173,10 @@
   }
 
   /** Entra con la cuenta de prueba de ese rol. Si la cuenta todavía no existe en Firebase, la crea (solo la primera vez). */
-  async function entrar(rol) {
-    const p = window.DEMO.porRol(rol);
-    if (!p) throw new Error('Rol desconocido');
+  async function entrar(quien) {
+    // quien: el correo de la persona de prueba (también sirve el rol: entra la primera de ese rol).
+    const p = window.DEMO.porCorreo(quien) || window.DEMO.porRol(quien);
+    if (!p) throw new Error('Persona desconocida');
     if (!auth) { const e = new Error('Firebase no cargó'); e.code = 'sin-sdk'; throw e; }
     if (auth.currentUser && auth.currentUser.email === p.correo) return p;
     // No se cierra la sesión antes: entrar con otra cuenta la reemplaza directo y así la pantalla de entrada no parpadea.
@@ -134,9 +201,21 @@
 
   const salir = () => (auth ? A.signOut(auth) : Promise.resolve());
 
-  /** Escucha una colección en vivo. fn recibe un arreglo de { id, ...datos }. Devuelve la función para dejar de escuchar. */
-  function escuchar(col, fn, fnError) {
-    return FS.onSnapshot(FS.collection(db, col),
+  /** La Jefe sube la lista de personas: una invitación por correo (el documento se llama como el correo, en minúscula). */
+  async function invitar(lista, por) {
+    const ahora = new Date().toISOString();
+    for (let i = 0; i < lista.length; i += 450) {
+      const b = FS.writeBatch(db);
+      lista.slice(i, i + 450).forEach(x => b.set(FS.doc(db, 'invitaciones', x.correo), { nombre: x.nombre, rol: x.rol, permisos: x.permisos || {}, extras: x.extras || [], por: String(por || ''), en: ahora }));
+      await b.commit();
+    }
+  }
+
+  /** Escucha una colección en vivo. fn recibe un arreglo de { id, ...datos }. Devuelve la función para dejar de escuchar.
+      donde = [campo, valor]: solo los documentos con ese valor (las reglas lo exigen a quien solo puede leer lo suyo). */
+  function escuchar(col, fn, fnError, donde) {
+    const ref = donde ? FS.query(FS.collection(db, col), FS.where(donde[0], '==', donde[1])) : FS.collection(db, col);
+    return FS.onSnapshot(ref,
       s => fn(s.docs.map(d => Object.assign({ id: d.id }, d.data()))),
       e => { if (fnError) fnError(e); });
   }
@@ -179,6 +258,8 @@
   const idNuevo = pref => `${pref}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   /** Suma o resta a un número guardado sin pisar lo que otra persona haya cambiado al mismo tiempo. */
   const incremento = n => FS.increment(n);
+  /** La hora del servidor de Firebase (no se puede inventar desde el teléfono). */
+  const ahoraServidor = () => FS.serverTimestamp();
   /** Varias escrituras que se guardan todas juntas o ninguna. ops: [['set'|'mezclar'|'update'|'borrar', col, id, datos]]. */
   async function lote(ops) {
     const b = FS.writeBatch(db);
@@ -190,5 +271,5 @@
   }
 
   window.nube = Object.freeze({ configLista, explicar, iniciar, entrar, salir, escuchar, guardar, mezclar, borrar, sembrar, idNuevo, incremento, lote, COLECCIONES,
-    uid, token, entrarCuenta, crearCuenta, usarCodigo, codigoNuevo, limpiarCodigo });
+    uid, correo, ahoraServidor, token, entrarCuenta, crearCuenta, usarCodigo, codigoNuevo, limpiarCodigo, entrarGoogle, reenviarConfirmacion, yaConfirme, invitar, recuperarClave });
 })();

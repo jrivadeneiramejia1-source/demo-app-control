@@ -6,12 +6,16 @@
   "type": "module",
   "scripts": {
     "lint": "eslint .",
-    "pruebas": "node pruebas/falso-prueba.mjs && node pruebas/worker.mjs && node pruebas/agente.mjs && node pruebas/buzon.mjs && node pruebas/push.mjs && node pruebas/prueba.mjs"
+    "pruebas": "npm run reglas && node pruebas/falso-prueba.mjs && node pruebas/worker.mjs && node pruebas/agente.mjs && node pruebas/buzon.mjs && node pruebas/push.mjs && node pruebas/prueba.mjs",
+    "reglas": "firebase emulators:exec --only firestore --project demo-reglas \"node pruebas/reglas.mjs\""
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
+    "@firebase/rules-unit-testing": "5.0.2",
     "axe-core": "4.14.0",
     "eslint": "10.12.0",
+    "firebase": "12.19.0",
+    "firebase-tools": "15.37.0",
     "globals": "17.13.0",
     "playwright": "1.64.1"
   }

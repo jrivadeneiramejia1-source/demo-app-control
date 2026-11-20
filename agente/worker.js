@@ -16,7 +16,7 @@
 
 const PROYECTO_POR_DEFECTO = 'fir-app-control-d8494';
 const MODELOS = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-2.5-flash'];
-const JEFE_DE_PRUEBA = 'ana.perez@example.com';
+const JEFE_DE_PRUEBA = 'jefe.carolina.castillo@example.com';
 const MAX_POR_MINUTO = 8, MAX_POR_DIA = 150;
 const ORIGENES_FIJOS = ['https://jrivadeneiramejia1-source.github.io'];
 const ORIGEN_LOCAL = /^http:\/\/(127\.0\.0\.1|localhost):\d{1,5}$/;

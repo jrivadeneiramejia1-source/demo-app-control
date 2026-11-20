@@ -29,8 +29,8 @@
   const COMBUSTIBLE = [['vacio', 'Vacío'], ['1/4', '1/4'], ['1/2', '1/2'], ['3/4', '3/4'], ['lleno', 'Lleno']];
   const LADOS = [['frente', 'Frente'], ['atras', 'Atrás'], ['izquierda', 'Lado izquierdo'], ['derecha', 'Lado derecho'], ['llantas', 'Llantas']];
   const REVISION = [['luces', 'Luces'], ['llantas', 'Llantas'], ['documentos', 'Documentos'], ['herramienta', 'Herramienta y kit']];
-  const CONDUCTORES = ['Carlos Pinto', 'Rafael Ospino', 'Hernán Brito'];
-  const QUIEN_ENTREGA = ['Marta Gómez', 'Sofía Herrera'];
+  const CONDUCTORES = ['Oscar Farfán', 'Rafael Ospino', 'Hernán Brito'];
+  const QUIEN_ENTREGA = ['Wilson Muñoz', 'Andrés Beltrán'];
   let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], fotos = {}, fotoNov = '', periodo = 'mes';
 
   /* ---------- datos derivados ---------- */
@@ -87,7 +87,7 @@
       const id = `doc-${v.id}-${k}-${v[k]}`.replace(/[^A-Za-z0-9-]/g, '');
       if (D().avisos.some(a => a.id === id)) return;
       const txt = d < 0 ? `La ${nombre} del ${v.placa} venció hace ${-d} días. Ese carro no debe salir.` : `La ${nombre} del ${v.placa} vence en ${d} días.`;
-      ['jefe', 'carros', 'asistente'].forEach(rol => ops.push(['set', 'avisos', `${id}-${rol}`, { para: rol, titulo: d < 0 ? `${nombre} vencido` : `${nombre} por vencer`, texto: txt, en: ahora(), modulo: 'vehiculos', leido: {} }]));
+      ['jefe', 'carros', 'asistente'].forEach(rol => ops.push(['set', 'avisos', `${id}-${rol}`, { para: rol, titulo: d < 0 ? `${nombre} vencido` : `${nombre} por vencer`, texto: txt, en: ahora(), modulo: 'vehiculos', leido: {}, deUid: window.nube.uid() }]));
     }));
     const nuevos = ops.filter(o => !D().avisos.some(a => a.id === o[2]));
     if (nuevos.length) window.nube.lote(nuevos).catch(() => {});
@@ -310,7 +310,7 @@
   function aviso(para, titulo, txt) {
     if (!para || para === miRol()) return null;
     pushPendientes.push({ para, titulo, texto: txt });
-    return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'vehiculos', leido: {} }];
+    return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'vehiculos', leido: {}, deUid: window.nube.uid() }];
   }
   const historial = v => (Array.isArray(v.historial) ? v.historial : []).filter(x => x && typeof x === 'object');
   const paso = (v, texto) => historial(v).concat([{ fecha: ahora(), texto, por: persona().nombre }]);
@@ -339,11 +339,7 @@
   }
   function notificar(envios) {
     if (!window.Push || !envios.length) return;
-    const subs = A().S.datos.suscripciones || [];
-    envios.forEach(e => {
-      const destino = subs.filter(s => s.rol === e.para);
-      if (destino.length) Promise.resolve(window.Push.enviar(destino, { titulo: e.titulo, texto: e.texto, url: './#vehiculos', etiqueta: 'vehiculos' })).catch(() => {});
-    });
+    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#vehiculos', etiqueta: 'vehiculos' })).catch(() => {}));
   }
   // Fotos: cada input con data-foto se achica y se guarda en «fotos» (o en fotoNov para la novedad).
   async function alEscogerFoto(e) {

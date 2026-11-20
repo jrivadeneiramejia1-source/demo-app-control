@@ -18,7 +18,7 @@ let numero = 0;
 function token(cambios = {}, llave = privateKey, kid = 'k1') {
   const ahora = Math.floor(Date.now() / 1000);
   // Por defecto es la Jefe de prueba, con un uid distinto cada vez (para no gastar el límite por cuenta).
-  cambios = Object.assign({ email: 'ana.perez@example.com', sub: 'uid-ana-' + (++numero) }, cambios);
+  cambios = Object.assign({ email: 'jefe.carolina.castillo@example.com', sub: 'uid-ana-' + (++numero) }, cambios);
   const cab = b64u(JSON.stringify({ alg: 'RS256', kid, typ: 'JWT' }));
   const cuerpo = b64u(JSON.stringify(Object.assign({ aud: PROY, iss: 'https://securetoken.google.com/' + PROY, sub: 'uid-prueba', iat: ahora - 10, exp: ahora + 3600 }, cambios)));
   const firma = crypto.sign('sha256', Buffer.from(cab + '.' + cuerpo), llave).toString('base64url');
