@@ -193,6 +193,11 @@ llamadas = [];
 ({ j } = await avisar('asistente'));
 t('«asistente» le llega a las dos Bodegas', j.destinatarios === 2 && llamadas.some(l => l.url === telBod2.sub.endpoint) && llamadas.some(l => l.url === telBodega.sub.endpoint));
 llamadas = [];
+({ j } = await avisar('compras', undefined, { exige: 'compra' }));
+t('«exige» manda solo a quien tiene ese permiso extra (Bodega con «compra» sí; Compras sin extras no)', j.destinatarios === 1 && llamadas[0].url === telBodega.sub.endpoint, JSON.stringify(j));
+({ j } = await avisar('compras', undefined, { exige: 'permiso-inventado' }));
+t('un «exige» inventado se ignora', j.destinatarios === 2);
+llamadas = [];
 ({ j } = await avisar('yo', quien.bodega2()));
 t('«yo» solo le llega a los teléfonos de quien lo pide', j.destinatarios === 1 && llamadas[0].url === telBod2.sub.endpoint);
 

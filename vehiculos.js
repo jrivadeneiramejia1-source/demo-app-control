@@ -87,7 +87,7 @@
       const id = `doc-${v.id}-${k}-${v[k]}`.replace(/[^A-Za-z0-9-]/g, '');
       if (D().avisos.some(a => a.id === id)) return;
       const txt = d < 0 ? `La ${nombre} del ${v.placa} venció hace ${-d} días. Ese carro no debe salir.` : `La ${nombre} del ${v.placa} vence en ${d} días.`;
-      ['jefe', 'carros', 'asistente'].forEach(rol => ops.push(['set', 'avisos', `${id}-${rol}`, { para: rol, titulo: d < 0 ? `${nombre} vencido` : `${nombre} por vencer`, texto: txt, en: ahora(), modulo: 'vehiculos', leido: {} }]));
+      ['jefe', 'carros', 'asistente'].forEach(rol => ops.push(['set', 'avisos', `${id}-${rol}`, { para: rol, titulo: d < 0 ? `${nombre} vencido` : `${nombre} por vencer`, texto: txt, en: ahora(), modulo: 'vehiculos', leido: {}, deUid: window.nube.uid() }]));
     }));
     const nuevos = ops.filter(o => !D().avisos.some(a => a.id === o[2]));
     if (nuevos.length) window.nube.lote(nuevos).catch(() => {});
@@ -310,7 +310,7 @@
   function aviso(para, titulo, txt) {
     if (!para || para === miRol()) return null;
     pushPendientes.push({ para, titulo, texto: txt });
-    return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'vehiculos', leido: {} }];
+    return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'vehiculos', leido: {}, deUid: window.nube.uid() }];
   }
   const historial = v => (Array.isArray(v.historial) ? v.historial : []).filter(x => x && typeof x === 'object');
   const paso = (v, texto) => historial(v).concat([{ fecha: ahora(), texto, por: persona().nombre }]);

@@ -257,7 +257,7 @@
   function aviso(para, titulo, txt, soloActas) {
     if (!para || para === miRol()) return null;
     pushPendientes.push({ para, titulo, texto: txt, soloActas: !!soloActas });
-    return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'equipos', leido: {} }];
+    return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'equipos', leido: {}, deUid: window.nube.uid() }];
   }
   /** ¿Cambió alguno de estos equipos mientras la hoja estaba abierta? (otra persona actuó) */
   const cambiaron = ids => ids.some(id => { const e = eqPorId(id), b = (accion.base || {})[id]; return !e || !b || e.estado !== b.estado || historial(e).length !== historial(b).length; });
@@ -287,7 +287,7 @@
   }
   function notificar(envios) {
     if (!window.Push || !envios.length) return;
-    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#equipos', etiqueta: 'equipos' })).catch(() => {}));
+    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#equipos', etiqueta: 'equipos', exige: e.soloActas && e.para === 'soporte' ? 'actas' : undefined })).catch(() => {}));
   }
 
   /* ---------- firma en la pantalla ---------- */

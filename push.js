@@ -134,13 +134,13 @@
   }
 
   /** Manda un aviso a los teléfonos de un rol (para: 'jefe', 'compras'… o 'yo' = los de quien tiene la sesión). El Worker busca los teléfonos.
-      aviso: { titulo, texto, url, etiqueta }. Nunca lanza error. */
+      aviso: { titulo, texto, url, etiqueta, exige } (exige: solo a quien tenga ese permiso extra). Nunca lanza error. */
   async function enviar(para, aviso) {
     try {
       if (!cfg().url) return { ok: false, enviados: 0, motivo: 'sin-configurar' };
       if (typeof para !== 'string' || !para) return { ok: true, enviados: 0, motivo: '' };
       const a = aviso || {};
-      const { j } = await llamar('/avisar', 'POST', { para, titulo: a.titulo, texto: a.texto, url: a.url, etiqueta: a.etiqueta });
+      const { j } = await llamar('/avisar', 'POST', { para, titulo: a.titulo, texto: a.texto, url: a.url, etiqueta: a.etiqueta, exige: a.exige });
       const enviados = Number(j.enviados) || 0;
       return { ok: enviados > 0 || !Number(j.fallidos), enviados, vencidos: Number(j.vencidos) || 0, fallidos: Number(j.fallidos) || 0, motivo: '' };
     } catch (e) { return { ok: false, enviados: 0, motivo: (e && (e.motivo || e.message)) || 'error' }; }

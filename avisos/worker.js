@@ -6,7 +6,8 @@
    Rutas (todas con «Authorization: Bearer <token>» menos GET /):
      POST   /suscribir   { sub: { endpoint, keys }, navegador }    guarda el teléfono de quien lo pide (hasta 5 por cuenta)
      DELETE /suscribir   { endpoint }                             borra ese teléfono
-     POST   /avisar      { para, titulo, texto, url, etiqueta }   le avisa a los teléfonos de un rol («yo» = los de quien pide)
+     POST   /avisar      { para, titulo, texto, url, etiqueta, exige }   le avisa a los teléfonos de un rol («yo» = los de quien pide);
+                         exige = solo a quien tenga ese permiso extra («actas», «compra», «encargada»)
    El Worker cifra el mensaje (RFC 8291, aes128gcm) y lo firma (VAPID, RFC 8292) para el servicio de notificaciones del
    teléfono (Google, Apple, Mozilla o Microsoft).
 
@@ -31,6 +32,7 @@ const LLAVES_GOOGLE = 'https://www.googleapis.com/service_accounts/v1/jwk/secure
 const ROLES = ['gerente', 'jefe', 'equipos', 'soporte', 'compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional', 'administrativo', 'colaborador', 'financiero', 'consulta'];
 // Igual que las reglas de Firebase: «rol.nombre.apellido@example.com» es una persona de prueba y el rol es lo primero.
 const PRUEBA = /^(gerente|jefe|equipos|soporte|compras|asistente|carros|conductor|logistica|profesional|administrativo|colaborador|financiero|consulta)[.][a-z.]+@example[.]com$/;
+const EXTRAS = ['compra', 'actas', 'encargada'];
 const MAX_DESTINOS = 25, MAX_TELEFONOS = 5, DIAS_VIGENTE = 60, MAX_CUERPO = 16 * 1024, MAX_TITULO = 80, MAX_TEXTO = 300, MAX_URL = 300, MAX_ETIQUETA = 80;
 const MAX_POR_MINUTO = 20, MAX_POR_DIA = 300;
 
@@ -197,8 +199,11 @@ async function avisar(env, quien, p, pub, sujeto) {
   const para = p && typeof p.para === 'string' ? p.para : '';
   if (para !== 'yo' && !ROLES.includes(para)) return { estado: 400, cuerpo: { error: 'no hay a quién avisar' } };
   const aviso = { titulo: corto(p.titulo, MAX_TITULO) || 'Control (demo)', texto: corto(p.texto, MAX_TEXTO), url: urlSegura(p.url), etiqueta: corto(p.etiqueta, MAX_ETIQUETA) };
+  // exige: solo a quien tenga ese permiso extra (por ejemplo, las actas de Equipos solo le avisan a Soporte con el permiso «actas»).
+  const exige = typeof p.exige === 'string' && EXTRAS.includes(p.exige) ? p.exige : '';
+  const tiene = (m, x) => Array.isArray(m.extras) && m.extras.includes(x);
   const destino = (await claves(env, 'u:')).filter(k => { const m = k.metadata || {};
-    return para === 'yo' ? m.uid === quien.uid : m.rol === para || (para === 'compras' && m.rol === 'asistente' && Array.isArray(m.extras) && m.extras.includes('compra')); }).slice(0, MAX_DESTINOS);
+    return para === 'yo' ? m.uid === quien.uid : (m.rol === para || (para === 'compras' && m.rol === 'asistente' && tiene(m, 'compra'))) && (!exige || tiene(m, exige)); }).slice(0, MAX_DESTINOS);
   const texto = JSON.stringify(aviso);
   const resultados = await Promise.all(destino.map(async k => {
     try {

@@ -270,7 +270,7 @@
   function aviso(para, titulo, txt) {
     if (!para || para === miRol()) return null;
     pushPendientes.push({ para, titulo, texto: txt });
-    return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'reuniones', leido: {} }];
+    return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'reuniones', leido: {}, deUid: window.nube.uid() }];
   }
   const historial = r => (Array.isArray(r.historial) ? r.historial : []).filter(x => x && typeof x === 'object');
   const paso = (r, texto, por) => historial(r).concat([{ fecha: ahora(), texto, por: por || persona().nombre }]);

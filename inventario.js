@@ -515,7 +515,7 @@
   function aviso(para, titulo, txt, aOtros) {
     if (!para || (!aOtros && persona() && para === persona().rol)) return null;
     pushPendientes.push({ para, titulo, texto: txt });
-    return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'inventario', leido: {} }];
+    return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'inventario', leido: {}, deUid: window.nube.uid() }];
   }
   /** Cambia la cantidad de un artículo y deja su movimiento en la misma escritura: el artículo apunta a su movimiento (ultimoMov) y las reglas lo comprueban. */
   const mover = (a, delta, o) => { const id = window.nube.idNuevo('mo'); return [['update', 'articulos', a.id, { cantidad: window.nube.incremento(delta), ultimoMov: id }], movimiento(o, id)]; };

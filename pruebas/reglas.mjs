@@ -459,6 +459,32 @@ await prueba('nadie lee, crea, cambia ni borra «suscripciones» (ahora las guar
     await assertFails(getDoc(doc(db, 'suscripciones', 'tel-1'))); await assertFails(setDoc(doc(db, 'suscripciones', 'tel-2'), { rol: 'jefe' }));
     await assertFails(updateDoc(doc(db, 'suscripciones', 'tel-1'), { rol: 'gerente' })); await assertFails(deleteDoc(doc(db, 'suscripciones', 'tel-1'))); await assertFails(getDocs(collection(db, 'suscripciones'))); } });
 
+console.log('Revisión de seguridad, paso 8: avisos de la campana sin suplantar');
+await limpiar();
+const avisoNuevo = (uid, o = {}) => Object.assign({ para: 'jefe', titulo: 'Compra por autorizar', texto: 'Alguien pide comprar botas.', en: '2026-11-20T10:00:00Z', modulo: 'inventario', leido: {}, deUid: uid }, o);
+await prueba('un aviso lleva la cuenta de quien lo crea (no se escribe a nombre de otra persona)', async () => {
+  const db = await cuenta('avA', 'logistica');
+  await assertSucceeds(setDoc(doc(db, 'avisos', 'av-1'), avisoNuevo('avA')));
+  await assertFails(setDoc(doc(db, 'avisos', 'av-2'), avisoNuevo('otra-cuenta')));
+  const sin = avisoNuevo('avA'); delete sin.deUid; await assertFails(setDoc(doc(db, 'avisos', 'av-3b'), sin)); });
+await prueba('las personas de prueba también: deUid es su propia cuenta', async () => {
+  await assertSucceeds(setDoc(doc(prueba_('compras'), 'avisos', 'av-4'), avisoNuevo('uid-compras')));
+  await assertFails(setDoc(doc(prueba_('compras'), 'avisos', 'av-5'), avisoNuevo('uid-jefe'))); });
+await prueba('un aviso no lleva campos de más, ni textos enormes, ni un destino inventado, ni nace leído', async () => { const db = await cuenta('avB', 'logistica');
+  await assertFails(setDoc(doc(db, 'avisos', 'av-6'), avisoNuevo('avB', { extra: 'x' })));
+  await assertFails(setDoc(doc(db, 'avisos', 'av-7'), avisoNuevo('avB', { texto: 'x'.repeat(2000) })));
+  await assertFails(setDoc(doc(db, 'avisos', 'av-8'), avisoNuevo('avB', { titulo: 'x'.repeat(500) })));
+  await assertFails(setDoc(doc(db, 'avisos', 'av-9'), avisoNuevo('avB', { para: 'todos' })));
+  await assertFails(setDoc(doc(db, 'avisos', 'av-10'), avisoNuevo('avB', { leido: { avB: true } })));
+  await assertFails(setDoc(doc(db, 'avisos', 'av-11'), avisoNuevo('avB', { modulo: 'otro' })));
+  await assertFails(setDoc(doc(db, 'avisos', 'av-12'), avisoNuevo('avB', { texto: 5 }))); });
+await prueba('sin sesión o sin perfil nadie crea avisos, y cada quien sigue marcando solo SU «leído»', async () => {
+  await assertFails(setDoc(doc(anonimo(), 'avisos', 'av-13'), avisoNuevo('x')));
+  const db = await cuenta('avC', 'logistica');
+  await assertSucceeds(updateDoc(doc(db, 'avisos', 'av-1'), { leido: { avC: true } }));
+  await assertFails(updateDoc(doc(db, 'avisos', 'av-1'), { leido: { otro: true } }));
+  await assertFails(updateDoc(doc(db, 'avisos', 'av-1'), { texto: 'cambiado' })); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

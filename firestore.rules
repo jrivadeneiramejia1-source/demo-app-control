@@ -518,11 +518,17 @@ service cloud.firestore {
         || (request.auth != null && !exists(rutaPerfil()) && getAfter(rutaPerfil()).data.codigo == codigo);
     }
 
-    // Avisos de la campana: cualquiera los crea; cada quien solo cambia SU marca de leído (con su id de cuenta).
-    // La Jefe puede reescribirlos (al cargar o reiniciar los datos de prueba se reemplazan los avisos de ejemplo).
+    // Avisos de la campana: cualquiera los crea, pero con SU cuenta (deUid), solo con los campos de siempre, textos de largo razonable,
+    // para un rol que existe y sin nacer leídos. Así nadie escribe un aviso a nombre de otra persona ni los llena de basura.
+    // Cada quien solo cambia SU marca de leído (con su id de cuenta).
+    // La Jefe de prueba puede reescribirlos (al cargar o reiniciar los datos de prueba se reemplazan los avisos de ejemplo).
     match /avisos/{id} {
       allow read: if esDemo();
-      allow create: if esDemo();
+      allow create: if (esJefe() && esPrueba())
+        || (esDemo() && nuevo().keys().hasOnly(['para', 'titulo', 'texto', 'en', 'modulo', 'leido', 'deUid'])
+            && nuevo().deUid == request.auth.uid && nuevo().para in ROLES()
+            && nuevo().titulo is string && nuevo().titulo.size() <= 150 && nuevo().texto is string && nuevo().texto.size() <= 800
+            && nuevo().en is string && nuevo().modulo in ['equipos', 'inventario', 'vehiculos', 'reuniones'] && nuevo().leido == {});
       allow update: if esJefe()
         || (esDemo() && soloCambia(['leido'])
             && nuevo().leido.diff(antes().get('leido', {})).affectedKeys().hasOnly([request.auth.uid]));
