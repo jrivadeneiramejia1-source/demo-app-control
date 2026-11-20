@@ -20,8 +20,10 @@ const PROYECTO = 'fir-app-control-d8494';
 // Clave web de Firebase de la demo (no es secreta: es la misma que está en config.js).
 const API_KEY = 'AIzaSyAo58h-I2Ejfa_fINZtXpwTe4iEjBbCxLg';
 const ROBOT = 'buzon.demo@example.com';
-// Solo correos sin leer de los últimos 7 días que hablen de una reunión.
+// Solo correos sin leer de los últimos 7 días, de los REMITENTES, que hablen de una reunión.
+// Los demás correos del buzón ni se miran ni se tocan.
 const BUSQUEDA = 'in:inbox is:unread newer_than:7d -label:buzon-error (reunion OR reunión OR reuniones)';
+const conRemitentes = lista => BUSQUEDA + ' from:(' + lista.join(' OR ') + ')';
 const MAX_TEXTO = 7000;
 const ETIQUETA_ERROR = 'buzon-error';
 
@@ -32,13 +34,14 @@ function revisarBuzon() {
   if (!clave) throw new Error('Falta la propiedad CLAVE_ROBOT (Configuración del proyecto > Propiedades del script).');
   const permitidos = String(props.getProperty('REMITENTES') || '').toLowerCase().split(',').map(x => x.trim()).filter(Boolean);
   if (!permitidos.length) throw new Error('Falta la propiedad REMITENTES (los correos que pueden mandar a la demo, separados por coma).');
-  const hilos = GmailApp.search(BUSQUEDA, 0, 10);
+  if (permitidos.some(x => !/^[^\s@()]+@[^\s@()]+$/.test(x))) throw new Error('REMITENTES tiene algo que no es un correo: ' + permitidos.join(', '));
+  const hilos = GmailApp.search(conRemitentes(permitidos), 0, 10);
   if (!hilos.length) return;
   let token = null;
   hilos.forEach(hilo => hilo.getMessages().forEach(m => {
     if (!m.isUnread()) return;
     const de = correoDe(m.getFrom());
-    if (permitidos.indexOf(de) < 0) { m.markRead(); return; }   // no es de alguien permitido: se ignora
+    if (permitidos.indexOf(de) < 0) return;   // otro correo del mismo hilo que no es de los REMITENTES: no se toca
     if (!token) token = entrar(clave);
     const r = subir(token, m);
     if (r === 'ok') m.markRead();
@@ -63,7 +66,7 @@ function entrar(clave) {
 function subir(token, m) {
   const id = String(m.getId()).replace(/[^A-Za-z0-9]/g, '').slice(0, 40);
   const texto = Array.from(tapar(limpiar(m.getPlainBody()))).slice(0, MAX_TEXTO).join('');   // por letras completas (no parte emojis)
-  if (texto.length < 10) return 'ok';   // vacío: no hay nada que leer
+  if (texto.length < 10) { console.log('El correo «' + m.getSubject() + '» no tiene texto: no se pasó a la app. Mándalo otra vez con los datos de la reunión.'); return 'ok'; }
   const cuerpo = { fields: {
     asunto: { stringValue: Array.from(tapar(String(m.getSubject() || ''))).slice(0, 200).join('') },
     texto: { stringValue: texto },
