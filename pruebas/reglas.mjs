@@ -557,6 +557,40 @@ await prueba('las cotizaciones son fotos JPEG (no texto cualquiera ni otro tipo 
   await assertFails(setDoc(doc(db, 'compras', 'ct-4'), nueva('logistica', { cotizaciones: ['data:text/html;base64,PGI+'] })));
   await assertFails(setDoc(doc(db, 'compras', 'ct-5'), nueva('logistica', { cotizaciones: [FOTO + 'A'.repeat(200000)] }))); });
 
+console.log('Paso 12: el límite de 1000 expresiones con CUENTAS PROPIAS (no solo personas de prueba)');
+await limpiar();
+const PNG = 'data:image/png;base64,iVBORw0KGgo', JPG = 'data:image/jpeg;base64,/9j/4AAQ';
+await prueba('cuenta propia: pedir una compra de 5 artículos con 3 cotizaciones', async () => { const db = await cuenta('lmP', 'profesional'), l = (v, i) => linea(v, { que: 'Art ' + i });
+  await assertSucceeds(setDoc(doc(db, 'compras', 'lim-1'), nueva(correoCuenta('lmP'), { pideRol: 'profesional', pideUid: 'lmP', valorAprox: 150, lineas: [l(10, 1), l(20, 2), l(30, 3), l(40, 4), l(50, 5)], cotizaciones: [FOTO, FOTO, FOTO] }))); });
+await prueba('cuenta propia de Compras: registrar una compra «sin autorizar» con 5 líneas', async () => { const db = await cuenta('lmC', 'compras');
+  await assertSucceeds(setDoc(doc(db, 'compras', 'lim-2'), nueva(correoCuenta('lmC'), { estado: 'sin-autorizar', pideRol: 'compras', pideUid: 'lmC', valorAprox: 15, lineas: [linea(1), linea(2), linea(3), linea(4), linea(5)], cotizaciones: [FOTO, FOTO, FOTO] }))); });
+await prueba('cuenta propia de Bodega: entregar un pedido de material (pedido + artículo + movimiento)', async () => { const db = await cuenta('bodR', 'asistente');
+  await sembrar(async d => { await setDoc(doc(d, 'articulos', 'ar-e'), { nombre: 'Guantes', cantidad: 9, minimo: 1, maximo: 20 });
+    await setDoc(doc(d, 'solicitudes', 'so-e'), { articulo: 'Guantes', cantidad: 2, pideUid: 'x', pideRol: 'profesional', estado: 'pendiente' }); });
+  await assertSucceeds(lote(db, b => { b.set(doc(db, 'solicitudes', 'so-e'), { estado: 'entregada', entregadaPor: 'Bodega', fechaEntrega: '2026-11-20', motivo: '' }, { merge: true });
+    b.update(doc(db, 'articulos', 'ar-e'), { cantidad: 7, ultimoMov: 'mo-e' }); b.set(doc(db, 'movimientos', 'mo-e'), movDe({ articuloId: 'ar-e', tipo: 'salida', motivo: 'entrega', cantidad: 2, saldo: 7, solicitudId: 'so-e' })); })); });
+await prueba('cuenta propia de Transporte: el Conductor registra una salida (vehículo + salida con 5 fotos)', async () => { const db = await cuenta('lmV', 'conductor');
+  await sembrar(db0 => setDoc(doc(db0, 'vehiculos', 've-l'), { placa: 'AAA111', estado: 'disponible', km: 1000, conductor: '', historial: H1, soat: '2027-01-01', tecno: '2027-01-01' }));
+  const fotos = { frente: JPG, atras: JPG, izquierda: JPG, derecha: JPG, llantas: JPG };
+  await assertSucceeds(lote(db, b => { b.update(doc(db, 'vehiculos', 've-l'), { estado: 'en-uso', km: 1100, conductor: 'Persona', historial: H2, ultimaEntrega: 'en-l' });
+    b.set(doc(db, 'entregas', 'en-l'), { vehiculoId: 've-l', km: 1100, tipo: 'salida', porRol: 'conductor', fotos }); })); });
+await prueba('cuenta propia Administrativo: registrar el acta (reunión realizada + acta lista)', async () => { const db = await cuenta('lmA', 'administrativo');
+  await sembrar(async d => { await setDoc(doc(d, 'reuniones', 're-l'), { comunidad: 'X', fecha: '2020-01-01', estado: 'programada', historial: H1 });
+    await setDoc(doc(d, 'necesidades', 'ne-l'), { reunionId: 're-l', tipo: 'acta', responsableRol: 'administrativo', estado: 'pendiente', fechaReunion: '2020-01-01' }); });
+  await assertSucceeds(lote(db, b => { b.update(doc(db, 'reuniones', 're-l'), { estado: 'realizada', historial: H2, actaId: 'ne-l' });
+    b.update(doc(db, 'necesidades', 'ne-l'), { estado: 'listo', por: 'Natalia', en: '2026-11-20', acta: { asistentes: 10 } }); })); });
+await prueba('cuenta propia Encargado de equipos: entregar un equipo con su acta firmada', async () => { const db = await cuenta('lmE', 'equipos');
+  await sembrar(d => setDoc(doc(d, 'equipos', 'eq-l'), { serial: 'S1', estado: 'bodega', historial: H1, asignadoA: '', asignadoCedula: '', proyecto: '' }));
+  const paso = { fecha: '2026-11-20T10:00:00Z', texto: 'Entregado', por: 'Fabián', hojaId: 'ac7', tipo: 'entrega' };
+  await assertSucceeds(lote(db, b => { b.update(doc(db, 'equipos', 'eq-l'), { estado: 'asignado', asignadoA: 'Persona Uno', asignadoCedula: '123456', proyecto: 'P', historial: H1.concat([paso]) });
+    b.set(doc(db, 'hojas', 'ac7'), { numero: 7, porRol: 'equipos', revision: 'pendiente', devoluciones: [], persona: 'Persona Uno', cedula: '123456', equipos: [{ serial: 'S1' }], otros: [], firmaPersona: PNG }); })); });
+await prueba('cuenta propia de Compras informa lo que hay y cuenta propia de Profesional confirma SU asistencia', async () => {
+  await sembrar(async d => { await setDoc(doc(d, 'necesidades', 'ne-i'), { reunionId: 're-l', tipo: 'refrigerios', responsableRol: 'jefe', estado: 'pendiente', informes: [] });
+    await setDoc(doc(d, 'necesidades', 'ne-as'), { reunionId: 're-l', tipo: 'asistencia', responsableRol: 'profesional', responsableCorreo: correoCuenta('lmQ'), estado: 'pendiente' }); });
+  const cmp = await cuenta('lmC2', 'compras'), prof = await cuenta('lmQ', 'profesional');
+  await assertSucceeds(updateDoc(doc(cmp, 'necesidades', 'ne-i'), { informes: [{ rol: 'compras', por: 'Mauricio', texto: 'Hay 12', en: '2026-11-20' }] }));
+  await assertSucceeds(updateDoc(doc(prof, 'necesidades', 'ne-as'), decide())); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

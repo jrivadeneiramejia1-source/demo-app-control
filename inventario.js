@@ -1045,7 +1045,7 @@
   function cargarXlsx() {
     if (window.XLSX) return Promise.resolve(window.XLSX);
     cargaXlsx = cargaXlsx || new Promise((res, rej) => {
-      const s = document.createElement('script'); s.src = 'lib/xlsx/xlsx.full.min.js';
+      const s = document.createElement('script'); s.src = 'lib/xlsx/xlsx.full.min.js?v=2';
       s.onload = () => (window.XLSX ? res(window.XLSX) : rej(new Error('xlsx'))); s.onerror = () => { cargaXlsx = null; rej(new Error('xlsx')); };
       document.head.appendChild(s);
     });
