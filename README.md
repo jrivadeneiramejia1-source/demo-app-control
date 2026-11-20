@@ -31,8 +31,8 @@ Desde la pantalla de entrada hay dos formas:
 4. Al confirmar, la app busca la invitación de ese correo y le crea el perfil con el rol, los niveles y los permisos extra que dijo la Jefe. **La invitación sirve una sola vez.**
 5. Si su correo **no está en la lista**, la app le dice «Tu correo no está en la lista» y no ve nada. **Olvidé mi clave** manda el correo de cambio de clave.
 
-Alternativa sin Excel: la Jefe puede crear un **código por rol** (`LOG-7KQ4-M2XP`, las 3 letras dicen el rol) y dárselo a la persona, que lo escribe en «Tengo un código de rol». Los códigos de Gerente y Jefe también los crea la Jefe y **sirven una sola vez**.
-- **El primer código de Jefe se crea a mano** en Firebase: Firestore Database > Datos > Iniciar colección `codigosDireccion`, documento con ID `JEF-XXXX-XXXX` y campos `rol` = `jefe`, `activo` = `true` (booleano), `por` = `consola`, `en` = la fecha. Con ese código se registra la primera Jefe.
+Alternativa sin Excel: la Jefe puede crear un **código por rol** (`LOG-7KQ4-M2XP`, las 3 letras dicen el rol) y dárselo a la persona, que lo escribe en «Tengo un código de rol». Los códigos de **Gerente y Jefe no se crean desde la app**: se ponen a mano en la consola de Firebase (así una cuenta robada de la Jefe no puede llenar la app de Gerentes) y **sirven una sola vez**.
+- **Los códigos de Jefe y de Gerente se crean a mano** (el primero y todos los demás) en Firebase: Firestore Database > Datos > Iniciar colección `codigosDireccion`, documento con ID `JEF-XXXX-XXXX` y campos `rol` = `jefe`, `activo` = `true` (booleano), `por` = `consola`, `en` = la fecha. Con ese código se registra la primera Jefe.
 - **A un Gerente o a otra Jefe no se les cambia nada desde la app** (ni rol, ni pausa, ni permisos): solo desde la consola de Firebase. Así una Jefe no puede sacar a otra.
 
 ### Niveles por persona

@@ -220,7 +220,7 @@
   const errorVisible = () => S.errorFijo || Object.values(S.erroresLectura || {})[0] || '';
   function escucharTodo() {
     // Las personas, los códigos y las invitaciones solo los lee la Jefe con cuenta propia (panel «Personas y permisos»).
-    const p = S.persona, panel = p.real && p.rol === 'jefe' ? ['usuarios', 'codigos', 'codigosDireccion', 'invitaciones'] : [];
+    const p = S.persona, panel = p.real && p.rol === 'jefe' ? ['usuarios', 'codigos', 'invitaciones'] : [];
     // La bandeja de correos (Gmail de prueba) solo la leen la Jefe y la Administrativa encargada.
     if (p.rol === 'jefe' || (p.rol === 'administrativo' && tieneExtra('encargada'))) panel.push('buzon');
     S.errBuzon = '';

@@ -285,6 +285,21 @@ await prueba('solo vale el correo con el rol al principio y @example.com', async
   for (const malo of ['jefe@example.com', 'otro.jefe.nombre@example.com', 'jefe.nombre@otro.com', 'Jefe.Nombre@example.com', 'dios.nombre@example.com', 'jefe.nombre@example.com.mx'])
     await assertFails(getDoc(doc(como(malo), 'compras', 'cp-z'))); });
 
+console.log('Revisión de seguridad, paso 1: Gerentes y Jefes solo desde la consola');
+await limpiar();
+await prueba('la Jefe no invita a un Gerente ni a otra Jefe', async () => { const j = await cuenta('jefR1', 'jefe');
+  await assertFails(setDoc(doc(j, 'invitaciones', 'ger.nuevo@correo-inventado.test'), inv({ rol: 'gerente', permisos: {} })));
+  await assertFails(setDoc(doc(j, 'invitaciones', 'jef.nueva@correo-inventado.test'), inv({ rol: 'jefe', permisos: {} })));
+  await assertSucceeds(setDoc(doc(j, 'invitaciones', 'bod.nuevo@correo-inventado.test'), inv())); });
+await prueba('la Jefe no crea códigos de Gerente ni de Jefe (se crean a mano en la consola)', async () => { const j = await cuenta('jefR2', 'jefe');
+  await assertFails(setDoc(doc(j, 'codigosDireccion', 'GER-CODIGO-LARGO-1'), { rol: 'gerente', activo: true, por: 'Jefa', en: '2026-11-20' }));
+  await assertFails(setDoc(doc(j, 'codigosDireccion', 'JEF-CODIGO-LARGO-1'), { rol: 'jefe', activo: true, por: 'Jefa', en: '2026-11-20' })); });
+await prueba('un código de Gerente puesto a mano en la consola sirve una sola vez', async () => {
+  await sembrar(db => setDoc(doc(db, 'codigosDireccion', 'GER-A-MANO-1234'), { rol: 'gerente', activo: true, por: 'consola', en: '2026-11-20' }));
+  const db = nuevoCtx('gerNuevo', 'gernuevo@correo-inventado.test'), b = writeBatch(db);
+  b.set(doc(db, 'usuarios', 'gerNuevo'), { nombre: 'Gerente Nuevo', correo: 'gernuevo@correo-inventado.test', rol: 'gerente', codigo: 'GER-A-MANO-1234', activo: true, en: '2026-11-20' });
+  b.delete(doc(db, 'codigosDireccion', 'GER-A-MANO-1234')); await assertSucceeds(b.commit()); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

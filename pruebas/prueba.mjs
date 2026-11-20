@@ -768,8 +768,7 @@ try {
   await t.page.click('#genteCuerpo [data-g="crear"][data-rol="logistica"]');
   const codLog = await (async () => (await hasta(t.page, () => !!document.querySelector('#genteCuerpo [data-g="copiar"][data-id^="LOG-"]'))) ? t.page.evaluate(() => document.querySelector('#genteCuerpo [data-g="copiar"][data-id^="LOG-"]').dataset.id) : '')();
   log('la Jefe crea el código de Logística (LOG-XXXX-XXXX)', /^LOG-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(codLog), codLog);
-  await t.page.click('#genteCuerpo [data-g="crear"][data-rol="jefe"]');
-  log('la Jefe también crea códigos de Jefe y Gerente (de un solo uso)', await hasta(t.page, () => !!document.querySelector('#genteCuerpo [data-g="copiar"][data-id^="JEF-"]') && /Sirve una sola vez/.test(document.getElementById('genteCuerpo').textContent)));
+  log('la Jefe no ve cómo crear códigos de Jefe ni de Gerente (esos se crean en la consola)', await t.page.evaluate(() => !document.querySelector('#genteCuerpo [data-g="crear"][data-rol="jefe"], #genteCuerpo [data-g="crear"][data-rol="gerente"], #genteCuerpo [data-g="cambiar"][data-rol="jefe"], #genteCuerpo [data-g="cambiar"][data-rol="gerente"]')));
   await t.page.click('#genteCuerpo [data-g="pruebas"]'); await t.page.click('#cfSi');
   log('la Jefe apaga las personas de prueba y queda guardado', await hasta(t.page, () => { const a = (JSON.parse(localStorage.getItem('__fb_datos')).ajustesApp || {}).seguridad; return a && a.personasPrueba === false && /Personas de prueba: apagadas/.test(document.getElementById('genteCuerpo').textContent); }));
   await t.page.click('#genteCuerpo [data-g="pruebas"]'); await t.page.click('#cfSi');

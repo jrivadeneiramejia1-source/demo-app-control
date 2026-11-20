@@ -13,7 +13,6 @@
   const yo = () => A().S.persona;
   const esJefeReal = () => !!yo() && yo().real === true && yo().rol === 'jefe';
   const esDireccion = rol => ['gerente', 'jefe'].includes(rol);
-  const coleccion = rol => (esDireccion(rol) ? 'codigosDireccion' : 'codigos');
   const MAX_FILAS = 200, MAX_BYTES = 1000000;
   let ocupado = false, previa = null;   // previa: las filas del Excel ya entendidas, esperando el «Guardar»
 
@@ -84,7 +83,7 @@
         if (v !== 'no' && !D.NIVELES[m].some(x => x[0] === v)) { errores.push(`El nivel «${txt.slice(0, 30)}» no sirve en ${m}.`); return; }
         permisos[m] = v;
       });
-      if (rol && esDireccion(rol) && Object.keys(permisos).length) errores.push('A un Gerente o a una Jefe no se les ponen niveles: ven todo.');
+      if (rol && esDireccion(rol)) errores.push('Los Gerentes y las Jefes se crean desde la consola de Firebase, no desde el Excel.');
       const extras = [];
       String(f.extras == null ? '' : f.extras).split(/[;,]/).map(norm).filter(Boolean).forEach(t => {
         const id = EXTRA_ALIAS[t], e = D.EXTRAS.find(x => x.id === id);
@@ -93,7 +92,6 @@
         else if (!extras.includes(id)) extras.push(id);
       });
       if (!errores.length && invitados.has(correo)) avisos.push('Ya tenía invitación: se reemplaza.');
-      if (!errores.length && esDireccion(rol)) avisos.push('Rol de dirección: la invitación sirve una sola vez.');
       return { fila: i + 2, nombre, correo, rol, permisos, extras, errores, avisos };
     });
   }
@@ -124,7 +122,7 @@
       X.utils.book_append_sheet(libro, X.utils.json_to_sheet(ejemplo), 'Personas');
       const ayuda = [['Cómo llenarlo'], ['Una fila por persona. Borra las filas de ejemplo y escribe las reales. Nombre, Correo y Rol son obligatorios.'],
         ['Los niveles (Equipos, Inventario, Vehículos, Reuniones) se dejan vacíos si la persona hace lo que dice su rol.'], [''], ['Roles que sirven']]
-        .concat(D.ROLES.map(r => [`${r.rolTxt} (${r.cargo})`])).concat([[''], ['Niveles que sirven']])
+        .concat(D.ROLES.filter(r => !esDireccion(r.rol)).map(r => [`${r.rolTxt} (${r.cargo})`])).concat([[''], ['Niveles que sirven']])
         .concat(['Sin acceso'].map(x => [`Todos los módulos: ${x}`])).concat(Object.entries(D.NIVELES).map(([m, l]) => [`${m}: ${l.map(x => x[1].split(':')[0]).join(', ')}`]))
         .concat([[''], ['Permisos extra (columna Extras, separados por coma)']]).concat(D.EXTRAS.map(e => [`${e.id}: ${e.txt} (solo para ${e.roles.join(', ')})`]));
       X.utils.book_append_sheet(libro, X.utils.aoa_to_sheet(ayuda), 'Ayuda');
@@ -210,14 +208,14 @@
     return h;
   }
   function htmlCodigos() {
-    const S = A().S, D = window.DEMO, codigos = S.datos.codigos.concat(S.datos.codigosDireccion).filter(c => c.activo === true);
+    const S = A().S, D = window.DEMO, codigos = S.datos.codigos.filter(c => c.activo === true);
     return `<details class="ct-codigo" id="genteCodigos"><summary>Códigos por rol (para quien no está en el Excel)</summary>${D.AREAS.map(area => {
-      const roles = D.ROLES.filter(r => r.area === area);
+      const roles = D.ROLES.filter(r => r.area === area && !esDireccion(r.rol));
       return `<div class="gente-area"><b class="meta">${esH(area)}</b>${roles.map(r => {
         const c = codigos.filter(x => x.rol === r.rol).sort((a, b) => String(b.en).localeCompare(String(a.en)))[0];
         const botones = c ? `<button class="btn small" type="button" data-g="copiar" data-id="${esH(c.id)}">Copiar</button><button class="btn small ghost" type="button" data-g="cambiar" data-rol="${esH(r.rol)}">Cambiar</button>`
           : `<button class="btn small primary" type="button" data-g="crear" data-rol="${esH(r.rol)}">${window.ico('mas')}Crear código</button>`;
-        return `<div class="codigo-fila"><span class="cf-t"><b>${esH(r.rolTxt)}</b>${esDireccion(r.rol) ? '<span class="meta">Sirve una sola vez</span>' : ''}${c ? `<code>${esH(c.id)}</code>` : '<span class="meta">Sin código</span>'}</span><span class="row">${botones}</span></div>`;
+        return `<div class="codigo-fila"><span class="cf-t"><b>${esH(r.rolTxt)}</b>${c ? `<code>${esH(c.id)}</code>` : '<span class="meta">Sin código</span>'}</span><span class="row">${botones}</span></div>`;
       }).join('')}</div>`;
     }).join('')}</details>`;
   }
@@ -250,7 +248,7 @@
   }
   // Código nuevo para el rol; los viejos de ese rol se borran (dejan de servir para registrarse).
   function nuevo(rol) {
-    const col = coleccion(rol), viejos = (A().S.datos[col] || []).filter(c => c.rol === rol);
+    const col = 'codigos', viejos = (A().S.datos[col] || []).filter(c => c.rol === rol);
     const c = window.nube.codigoNuevo(rol);
     return window.nube.lote(viejos.map(v => ['borrar', col, v.id]).concat([['set', col, c, { rol, activo: true, por: yo().nombre, en: new Date().toISOString() }]]));
   }

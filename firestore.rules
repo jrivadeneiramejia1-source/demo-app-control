@@ -7,7 +7,8 @@ rules_version = '2';
 //   Gerente: ve todo; autoriza o rechaza las compras que pide la Jefe y las que valen el monto que él fija (ajustesApp/compras)
 //   o más, después de la Jefe; si él pide una compra, nace autorizada. No maneja personas ni códigos.
 //   Jefe: carga y reinicia los datos de prueba, autoriza las compras (las grandes pasan después al Gerente), maneja personas,
-//   niveles e invitaciones (solo con cuenta propia, nunca a otra Jefe ni al Gerente) y puede hacer cualquier paso (menos autorizarse a sí misma).
+//   niveles e invitaciones (solo con cuenta propia; nunca invita ni toca a otra Jefe ni a un Gerente: esos se crean con un código
+//   que se pone a mano en la consola de Firebase) y puede hacer cualquier paso (menos autorizarse a sí misma).
 //   Nivel por módulo: lo que dice el rol, salvo que la Jefe le haya puesto otro a esa persona (usuarios/<uid>.permisos).
 //   Las cuentas propias necesitan el correo confirmado. Las personas de prueba se pueden apagar (ajustesApp/seguridad).
 //   Compras: registra la compra autorizada (proveedor, valor, factura) y las compras hechas sin autorización.
@@ -405,7 +406,7 @@ service cloud.firestore {
       allow create, update: if esCuentaDe(['jefe']) && correo.matches('^[^@/ ]+@[^@/ ]+[.][^@/ ]+$') && correo == correo.lower()
         && nuevo().keys().hasOnly(['nombre', 'rol', 'permisos', 'extras', 'por', 'en'])
         && nuevo().nombre is string && nuevo().nombre.size() >= 3 && nuevo().nombre.size() <= 60
-        && nuevo().rol in ROLES() && permisosOk(nuevo().get('permisos', {}))
+        && nuevo().rol in ROLES() && !esDireccion(nuevo().rol) && permisosOk(nuevo().get('permisos', {}))
         && nuevo().get('extras', []) is list && nuevo().get('extras', []).size() <= 5
         && nuevo().get('extras', []).hasOnly(['compra', 'actas', 'encargada'])
         && nuevo().por is string && nuevo().en is string;
@@ -476,13 +477,11 @@ service cloud.firestore {
       allow delete: if esCuentaDe(['jefe']);
     }
 
-    // Códigos de Gerente y Jefe: solo los ve y crea la Jefe (el primero se crea a mano en Firebase), y sirven una sola vez.
+    // Códigos de Gerente y Jefe: solo se crean a mano en la consola de Firebase (la app no puede crearlos, así una cuenta
+    // robada de la Jefe no se llena de Gerentes). La Jefe los ve, y cada uno sirve una sola vez.
     match /codigosDireccion/{codigo} {
       allow read: if esCuentaDe(['jefe']);
-      allow create: if esCuentaDe(['jefe'])
-        && nuevo().keys().hasOnly(['rol', 'activo', 'por', 'en'])
-        && esDireccion(nuevo().rol) && nuevo().activo == true
-        && codigo.size() >= 12;
+      allow create: if false;
       allow update: if false;
       // Lo borra el Gerente, o quien lo está usando para crear su perfil en esa misma escritura.
       allow delete: if esCuentaDe(['jefe'])
