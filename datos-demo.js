@@ -325,6 +325,9 @@
       return Object.assign({ reunionId, comunidad: r.comunidad, fechaReunion: r.fecha, tipo, detalle, cantidad, responsableRol, estado,
         por: '', en: '', motivo: '', conductor: '', items: [], acta: null, informes: [], vehiculos: [], vehiculoId: '', placa: '' }, extra || {});
     }
+    // La asistencia y el viaje son por persona: llevan el correo (de prueba) de a quién le toca.
+    const deProf = nombre => { const p = window.DEMO.PERSONAS.find(x => x.rol === 'profesional' && x.nombre === nombre); return p ? { responsableCorreo: p.correo, responsableNombre: p.nombre } : {}; };
+    const deCond = nombre => { const p = window.DEMO.PERSONAS.find(x => x.rol === 'conductor' && x.nombre === nombre); return p ? { responsableCorreo: p.correo, responsableNombre: p.nombre } : {}; };
     const hecho = (por, n, h) => ({ por, en: iso(n, h, 0) });
     // Lo que informan Compras, Transporte o Bodega para que la Jefe decida.
     const inf = (rol, por, texto, n, h) => ({ rol, por, texto, en: iso(n, h, 0) });
@@ -332,30 +335,30 @@
       'ne-001': nec('re-001', 'carros', 'Dos camionetas para el equipo de campo', 2, 'jefe', 'autorizado', Object.assign({ conductor: 'Oscar Farfán, Rafael Ospino',
         vehiculos: [{ vehiculoId: 've-abc123', placa: 'ABC 123', conductor: 'Oscar Farfán' }, { vehiculoId: 've-jkl012', placa: 'JKL 012', conductor: 'Rafael Ospino' }],
         informes: [inf('carros', 'Wilson Muñoz', 'Están libres la ABC 123 y la DEF 456. Oscar puede manejar.', -2, 8)] }, hecho('Carolina Castillo', -2, 9))),
-      'ne-002': nec('re-001', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Norte en el ABC 123', 1, 'conductor', 'pendiente', { conductor: 'Oscar Farfán', vehiculoId: 've-abc123', placa: 'ABC 123', carrosId: 'ne-001' }),
+      'ne-002': nec('re-001', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Norte en el ABC 123', 1, 'conductor', 'pendiente', Object.assign({ conductor: 'Oscar Farfán', vehiculoId: 've-abc123', placa: 'ABC 123', carrosId: 'ne-001' }, deCond('Oscar Farfán'))),
       'ne-025': nec('re-001', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Norte en el JKL 012', 1, 'conductor', 'listo', Object.assign({ conductor: 'Rafael Ospino', vehiculoId: 've-jkl012', placa: 'JKL 012', carrosId: 'ne-001' }, hecho('Oscar Farfán', -1, 18))),
       'ne-003': nec('re-001', 'refrigerios', 'Refrigerios para 30 personas', 30, 'jefe', 'pendiente', { informes: [inf('asistente', 'Andrés Beltrán', 'En bodega hay 12 refrigerios; faltan 18 por comprar.', -1, 10)] }),
       'ne-004': nec('re-001', 'almuerzo', 'Almuerzo para 30 personas', 30, 'jefe', 'pendiente'),
       'ne-005': nec('re-001', 'logistica', 'Alistar el salón para 30 personas', 30, 'logistica', 'pendiente', { items: items([1]) }),
-      'ne-006': nec('re-001', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'pendiente'),
+      'ne-006': nec('re-001', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'pendiente', deProf('Margaret Pulido')),
       'ne-007': nec('re-001', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'pendiente'),
       'ne-008': nec('re-002', 'carros', 'Una camioneta para el equipo', 1, 'jefe', 'pendiente'),
       'ne-009': nec('re-002', 'refrigerios', 'Refrigerios para 20 personas', 20, 'jefe', 'pendiente'),
       'ne-010': nec('re-002', 'logistica', 'Alistar el kiosco para 20 personas', 20, 'logistica', 'pendiente', { items: items([]) }),
-      'ne-011': nec('re-002', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Margaret Pulido', -1, 16)),
+      'ne-011': nec('re-002', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', Object.assign(deProf('Margaret Pulido'), hecho('Margaret Pulido', -1, 16))),
       'ne-012': nec('re-002', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'pendiente'),
       'ne-013': nec('re-003', 'carros', 'Una camioneta para el equipo', 1, 'jefe', 'autorizado', Object.assign({ conductor: 'Oscar Farfán', vehiculos: [{ vehiculoId: 've-abc123', placa: 'ABC 123', conductor: 'Oscar Farfán' }] }, hecho('Carolina Castillo', -16, 10))),
-      'ne-014': nec('re-003', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Centro en el ABC 123', 1, 'conductor', 'listo', Object.assign({ conductor: 'Oscar Farfán', vehiculoId: 've-abc123', placa: 'ABC 123' }, hecho('Oscar Farfán', -15, 8))),
+      'ne-014': nec('re-003', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Centro en el ABC 123', 1, 'conductor', 'listo', Object.assign({ conductor: 'Oscar Farfán', vehiculoId: 've-abc123', placa: 'ABC 123' }, deCond('Oscar Farfán'), hecho('Oscar Farfán', -15, 8))),
       'ne-015': nec('re-003', 'almuerzo', 'Almuerzo para 15 personas', 15, 'jefe', 'autorizado', hecho('Carolina Castillo', -16, 11)),
       'ne-016': nec('re-003', 'logistica', 'Alistar la escuela para 15 personas', 15, 'logistica', 'listo', Object.assign({ items: items([0, 1, 2, 3]) }, hecho('Elkin Bruno', -11, 15))),
-      'ne-017': nec('re-003', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Margaret Pulido', -14, 9)),
+      'ne-017': nec('re-003', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', Object.assign(deProf('Margaret Pulido'), hecho('Margaret Pulido', -14, 9))),
       'ne-018': nec('re-003', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'listo', Object.assign({
         acta: { asistentes: 14, inicio: '10:00', fin: '12:30', observaciones: 'Se presentó el proyecto. La comunidad pidió una segunda reunión para revisar el cronograma.', foto: '' } }, hecho('Paola Martínez', -10, 16))),
       'ne-019': nec('re-004', 'carros', 'Una camioneta para el equipo', 1, 'jefe', 'autorizado', Object.assign({ conductor: 'Oscar Farfán', vehiculos: [{ vehiculoId: 've-def456', placa: 'DEF 456', conductor: 'Oscar Farfán' }] }, hecho('Carolina Castillo', -6, 9))),
-      'ne-020': nec('re-004', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Occidente en el DEF 456', 1, 'conductor', 'listo', Object.assign({ conductor: 'Oscar Farfán', vehiculoId: 've-def456', placa: 'DEF 456' }, hecho('Oscar Farfán', -5, 8))),
+      'ne-020': nec('re-004', 'viaje', 'Llevar al equipo a la Comunidad Ejemplo Occidente en el DEF 456', 1, 'conductor', 'listo', Object.assign({ conductor: 'Oscar Farfán', vehiculoId: 've-def456', placa: 'DEF 456' }, deCond('Oscar Farfán'), hecho('Oscar Farfán', -5, 8))),
       'ne-021': nec('re-004', 'refrigerios', 'Refrigerios para 25 personas', 25, 'jefe', 'autorizado', hecho('Carolina Castillo', -6, 11)),
       'ne-022': nec('re-004', 'logistica', 'Alistar la cancha para 25 personas', 25, 'logistica', 'listo', Object.assign({ items: items([0, 1, 2, 3]) }, hecho('Elkin Bruno', -2, 15))),
-      'ne-023': nec('re-004', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', hecho('Margaret Pulido', -4, 9)),
+      'ne-023': nec('re-004', 'asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', 'listo', Object.assign(deProf('Margaret Pulido'), hecho('Margaret Pulido', -4, 9))),
       'ne-024': nec('re-004', 'acta', 'Registrar el acta y el formato diario', 0, 'administrativo', 'pendiente')
     };
 

@@ -311,32 +311,38 @@ service cloud.firestore {
     }
 
     // Lo que le toca a cada rol en una reunión (una tarea por documento). Cada quien cambia solo la suya,
-    // sin tocar de qué reunión es, qué es ni a quién le toca.
-    match /necesidades/{id} {
-      allow read: if veReuniones();
-      // Las crea la Jefe (también el viaje del conductor, al autorizar los carros).
-      allow create: if esJefe();
-      // Cada quien decide SU tarea una vez (mientras está pendiente). El acta, el día de la reunión o después.
-      allow update: if esJefe()
-        || (actuaReu() && antes().responsableRol == rol() && antes().estado == 'pendiente'
+    // sin tocar de qué reunión es, qué es ni a quién le toca. La asistencia y el viaje son POR PERSONA: llevan su correo
+    // (responsableCorreo) y solo esa persona los decide; las tareas viejas sin correo las decide cualquiera de ese rol.
+    function actualizaNec(id) {
+      let r = rol();
+      return (antes().responsableRol == r && antes().estado == 'pendiente'
+            && antes().get('responsableCorreo', request.auth.token.email) == request.auth.token.email
             && soloCambia(['estado', 'por', 'en', 'motivo', 'conductor', 'items', 'acta'])
             && nuevo().estado in estadosDe(antes().tipo)
             && (antes().tipo != 'acta' || yaFue(antes().fechaReunion)))
         // Compras, Transporte y Bodega agregan lo que hay (un informe a la vez, sin tocar los de los demás) para que la Jefe decida.
-        || (actuaReu() && rol() in informanEn(antes().tipo) && antes().estado == 'pendiente' && soloCambia(['informes'])
+        || (r in informanEn(antes().tipo) && antes().estado == 'pendiente' && soloCambia(['informes'])
             && nuevo().informes is list && nuevo().informes.size() == antes().get('informes', []).size() + 1 && nuevo().informes.size() <= 20
             && nuevo().informes == antes().get('informes', []).concat([nuevo().informes[nuevo().informes.size() - 1]])
-            && nuevo().informes[nuevo().informes.size() - 1].rol == rol()
+            && nuevo().informes[nuevo().informes.size() - 1].rol == r
             && nuevo().informes[nuevo().informes.size() - 1].texto is string
             && nuevo().informes[nuevo().informes.size() - 1].texto.size() <= 200)
         // El conductor que no puede devuelve los carros para que la Jefe escoja otro.
-        //   Tiene que decir cuál de sus viajes deja (y ese viaje queda en «no-va» en la misma escritura).
-        || (actuaReu() && rol() == 'conductor' && antes().tipo == 'carros' && antes().estado == 'autorizado'
+        //   Tiene que decir cuál de sus viajes deja (y ese viaje queda en «no-va» en la misma escritura, que solo puede hacer su dueño).
+        || (r == 'conductor' && antes().tipo == 'carros' && antes().estado == 'autorizado'
             && nuevo().estado == 'pendiente' && nuevo().conductor == '' && soloCambia(['estado', 'conductor', 'motivo', 'devuelto'])
             && nuevo().devuelto is string && get(rutaNec(nuevo().devuelto)).data.tipo == 'viaje'
             && get(rutaNec(nuevo().devuelto)).data.estado in ['pendiente', 'listo']
             && getAfter(rutaNec(nuevo().devuelto)).data.carrosId == id
             && getAfter(rutaNec(nuevo().devuelto)).data.estado == 'no-va');
+    }
+    match /necesidades/{id} {
+      allow read: if veReuniones();
+      // Las crea la Jefe (también el viaje del conductor, al autorizar los carros).
+      allow create: if esJefe();
+      // Cada quien decide SU tarea una vez (mientras está pendiente). El acta, el día de la reunión o después.
+      // (Quién es la persona y su rol se miran una sola vez, en actualizaNec(): así no se pasa del límite de expresiones.)
+      allow update: if esJefe() || (actuaReu() && actualizaNec(id));
       allow delete: if esJefe();
     }
 

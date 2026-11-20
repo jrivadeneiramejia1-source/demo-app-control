@@ -18,7 +18,11 @@
   const perm = () => A().permiso('reuniones');
   const esJefe = () => perm() === 'jefe';
   const esGerente = () => miRol() === 'gerente';
-  const puedoHacer = rol => miRol() === rol || esJefe();
+  // La asistencia y el viaje son POR PERSONA: llevan el correo de a quién le toca (responsableCorreo) y solo esa persona los decide.
+  // Las tareas viejas sin correo las decide cualquiera de ese rol.
+  const correoMio = () => (persona() ? String(persona().correo || '').toLowerCase() : '');
+  const esDeOtro = n => !!n.responsableCorreo && String(n.responsableCorreo).toLowerCase() !== correoMio();
+  const puedoHacerTarea = n => esJefe() || (miRol() === n.responsableRol && !esDeOtro(n));
   // Administrativa con el permiso extra «encargada»: ve todas las tareas y la bandeja de correos (sin autorizar).
   const esEncargada = () => miRol() === 'administrativo' && A().tieneExtra('encargada');
   const ahora = () => new Date().toISOString();
@@ -54,9 +58,9 @@
   const informantes = n => INFORMAN[n.tipo] || [];
   /** ¿Quien tiene la sesión puede informar en esta tarea? (le toca informar y todavía no lo hizo) */
   const puedeInformar = n => esTarea(n) && informantes(n).includes(miRol()) && !informes(n).some(i => i.rol === miRol());
-  const puedeDecidir = n => esTarea(n) && puedoHacer(n.responsableRol);
+  const puedeDecidir = n => esTarea(n) && puedoHacerTarea(n);
   /** Tarea de quien tiene la sesión: le toca hacerla o informar. */
-  const esMia = n => esTarea(n) && (n.responsableRol === miRol() || puedeInformar(n));
+  const esMia = n => esTarea(n) && ((n.responsableRol === miRol() && !esDeOtro(n)) || puedeInformar(n));
   const tareas = () => D().necesidades.filter(esTarea).sort((a, b) => ordenFecha(reunionPorId(a.reunionId), reunionPorId(b.reunionId)));
   function progreso(r) {
     const ns = necDe(r.id).filter(n => n.estado !== 'cancelado' && n.tipo !== 'acta' && !(n.tipo === 'viaje' && n.estado === 'no-va'));
@@ -156,7 +160,7 @@
     else if (n.tipo === 'acta') titulo = 'Registrar el acta y el formato diario';
     if (n.motivo) extra += `<span class="meta">Nota: ${esH(n.motivo)}</span>`;
     extra += htmlInformes(n);
-    const pie = botones || App.pill(n.responsableRol === 'jefe' ? 'Lo autoriza ' + nombreRol('jefe') : 'Le toca a ' + nombreRol(n.responsableRol), 'none', 'persona');
+    const pie = botones || App.pill(n.responsableRol === 'jefe' ? 'Lo autoriza ' + nombreRol('jefe') : 'Le toca a ' + (n.responsableNombre || nombreRol(n.responsableRol)), 'none', 'persona');
     return `<div class="card tarea st-org">
       <div class="tarea-cab"><span class="ico t-org" aria-hidden="true">${window.ico(tt[1])}</span>
         <div class="tarea-t"><b>${esH(titulo)}: ${esH(r ? r.comunidad : n.comunidad)}</b><span class="meta">${esH([n.detalle, r ? fechaTxt(r) : '', r && r.lugar].filter(Boolean).join(' · '))}</span></div></div>
@@ -423,7 +427,20 @@
   const origen = f => (f === 'gemini' ? 'Agente (Gemini)' : 'Agente (respaldo)');
   const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
 
+  /** Profesionales a los que se les puede preguntar si van: las personas de prueba (mientras estén encendidas) y las cuentas propias con ese rol. */
+  function invitables() {
+    const vistos = new Set(), out = [];
+    const sumar = (nombre, correo) => { const k = String(correo || '').toLowerCase(); if (k && nombre && !vistos.has(k)) { vistos.add(k); out.push({ nombre, correo: k }); } };
+    if (window.PERSONAS_PRUEBA !== false) window.DEMO.PERSONAS.filter(p => p.rol === 'profesional').forEach(p => sumar(p.nombre, p.correo));
+    (D().usuarios || []).filter(u => u.rol === 'profesional' && u.activo !== false).forEach(u => sumar(u.nombre, u.correo));
+    return out;
+  }
+  const correoDeConductor = nombre => {
+    const p = window.DEMO.PERSONAS.find(x => x.rol === 'conductor' && x.nombre === nombre) || (D().usuarios || []).find(u => u.rol === 'conductor' && u.nombre === nombre);
+    return p && p.correo ? String(p.correo).toLowerCase() : '';
+  };
   function confirmarNueva(c, d, encabezado, fuente) {
+    const inv = invitables();
     abrir({
       titulo: 'Reunión nueva: revisa y reparte', sub: 'Corrige lo que haga falta antes de repartir. Lo vacío queda como «falta».',
       campos: encabezado + campoTxt('rcCom', 'Comunidad', d.comunidad, '', 80) +
@@ -431,7 +448,8 @@
         campoTxt('rcLugar', 'Lugar', d.lugar, 'Falta: déjalo vacío si no ha llegado', 120) +
         `<div class="fields cols">${campoNum('rcAsis', 'Personas esperadas', d.asistentes || '', 0, 5000)}${campoNum('rcCarros', 'Camionetas', d.carros, 0, 20)}</div>` +
         `<div class="field"><span class="lbl">Comida</span>${marca('rcRef', 'Refrigerio', d.refrigerios)}${marca('rcAlm', 'Almuerzo', d.almuerzo)}</div>` +
-        `<div class="field"><span class="lbl">Logística</span>${ITEMS_LOG().map((t, k) => marca('rcLog' + k, t, d.logistica.includes(t) || t === 'Refrigerios recibidos' && (d.refrigerios || d.almuerzo))).join('')}</div>`,
+        `<div class="field"><span class="lbl">Logística</span>${ITEMS_LOG().map((t, k) => marca('rcLog' + k, t, d.logistica.includes(t) || t === 'Refrigerios recibidos' && (d.refrigerios || d.almuerzo))).join('')}</div>` +
+        (inv.length ? `<details class="field" id="rcInvitados"><summary class="lbl">¿Quiénes van? (${inv.length} profesionales: cada uno confirma por su cuenta)</summary>${inv.map((p, k) => marca('rcInv' + k, p.nombre, true)).join('')}</details>` : ''),
       primario: 'Crear reunión y repartir', icono: 'enviar', listo: 'Listo: reunión creada. Cada persona ya tiene su tarea y su aviso.',
       ops: () => {
         const com = valor('rcCom'), fecha = valor('rcFecha'), hora = valor('rcHora'), lugar = valor('rcLugar'), asis = entero('rcAsis') || 0, carros = entero('rcCarros') || 0;
@@ -453,7 +471,10 @@
         if (alm) ops.push(n('almuerzo', `Almuerzo para ${quienes}`, asis, 'jefe'));
         if (carros) ops.push(n('carros', `${plural(carros, 'camioneta', 'camionetas')} para el equipo de campo`, carros, 'jefe'));
         ops.push(n('logistica', `Alistar ${lugar || 'el lugar'} para ${quienes}`, asis, 'logistica', { items: (items.length ? items : ITEMS_LOG()).map(t => ({ t, ok: false })) }));
-        ops.push(n('asistencia', 'Confirmar si vas a la reunión', 0, 'profesional'));
+        // Una tarea de asistencia por cada profesional invitado (cada quien decide la suya). Si no se conoce a ninguno, queda una para el rol.
+        const invitados = inv.filter((p, k) => $('rcInv' + k) && $('rcInv' + k).checked);
+        if (!inv.length) ops.push(n('asistencia', 'Confirmar si vas a la reunión', 0, 'profesional'));
+        invitados.forEach(p => ops.push(n('asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', { responsableCorreo: p.correo, responsableNombre: p.nombre })));
         ops.push(n('acta', 'Registrar el acta y el formato diario', 0, 'administrativo'));
         const cuandoTxt = `${A().fechaCorta(fecha)} a las ${hora12(hora)}`;
         const comidaTxt = [ref && 'refrigerio', alm && 'almuerzo'].filter(Boolean).join(' y ');
@@ -583,7 +604,8 @@
         ops.push(['mezclar', 'necesidades', n.id, hecho({ estado: 'autorizado', conductor: conds.join(', '), vehiculos: vs, motivo: '' })]);
         vs.forEach(a => {
           ops.push(['set', 'necesidades', window.nube.idNuevo('ne'), { reunionId: n.reunionId, comunidad: n.comunidad, fechaReunion: n.fechaReunion, tipo: 'viaje', detalle: `Llevar al equipo a la ${n.comunidad} en el ${a.placa}`, cantidad: 1,
-            responsableRol: 'conductor', estado: 'pendiente', por: '', en: '', motivo: '', conductor: a.conductor, items: [], acta: null, informes: [], vehiculoId: a.vehiculoId, placa: a.placa, carrosId: n.id }]);
+            responsableRol: 'conductor', estado: 'pendiente', por: '', en: '', motivo: '', conductor: a.conductor, items: [], acta: null, informes: [], vehiculoId: a.vehiculoId, placa: a.placa, carrosId: n.id,
+            ...(correoDeConductor(a.conductor) ? { responsableCorreo: correoDeConductor(a.conductor), responsableNombre: a.conductor } : {}) }]);
         });
         ops.push(aviso('conductor', 'Tienes un viaje', `${n.comunidad}${r ? ', ' + fechaTxt(r) : ''}: ${vs.map(a => `${a.conductor} en el ${a.placa}`).join('; ')}. Confírmalo.`));
         ops.push(aviso('carros', 'Carros autorizados', `${n.comunidad}: ${vs.map(a => `${a.placa} con ${a.conductor}`).join('; ')}.`));
@@ -670,6 +692,15 @@
   }
 
   /* ---------- detalle de una reunión ---------- */
+  /** «Asistencia: 5 van, 1 no va y 11 sin responder», con los nombres (cada profesional confirma la suya). */
+  function resumenAsistencia(ns) {
+    const a = ns.filter(n => n.tipo === 'asistencia' && n.estado !== 'cancelado');
+    if (a.length < 2) return '';
+    const de = est => a.filter(n => n.estado === est).map(n => n.responsableNombre || n.por || 'Sin nombre');
+    const van = de('listo'), no = de('no-va'), falta = de('pendiente');
+    const linea = (txt, l) => (l.length ? `<span class="meta"><b>${esH(txt)} (${l.length}):</b> ${esH(l.join(', '))}</span>` : '');
+    return `<div class="card asistencia-res"><b>¿Quién va?</b>${linea('Van', van)}${linea('No van', no)}${linea('Sin responder', falta)}</div>`;
+  }
   function ver(r) {
     const App = A(), st = EST_RE[r.estado] || ['Sin estado', 'none'], ns = necDe(r.id);
     const acta = ns.find(n => n.tipo === 'acta' && n.acta);
@@ -677,7 +708,7 @@
     const orden = ['refrigerios', 'almuerzo', 'carros', 'viaje', 'logistica', 'asistencia', 'acta'];
     const filas = ns.slice().sort((a, b) => orden.indexOf(a.tipo) - orden.indexOf(b.tipo)).map(n => {
       const e = EST_NE[n.estado] || [n.estado, 'none'];
-      const quien = n.por ? `${n.por}${n.en ? ', ' + App.hace(n.en) : ''}` : n.responsableRol === 'jefe' ? 'Lo autoriza ' + nombreRol('jefe') : 'Le toca a ' + nombreRol(n.responsableRol);
+      const quien = n.por ? `${n.por}${n.en ? ', ' + App.hace(n.en) : ''}` : n.responsableRol === 'jefe' ? 'Lo autoriza ' + nombreRol('jefe') : 'Le toca a ' + (n.responsableNombre || nombreRol(n.responsableRol));
       const mas = [Array.isArray(n.vehiculos) && n.vehiculos.length ? `carros: ${n.vehiculos.map(x => x && `${x.placa} (${x.conductor})`).filter(Boolean).join(', ')}` : n.conductor && `conductor: ${n.conductor}`, n.placa && `carro: ${n.placa}`, n.tipo === 'logistica' && Array.isArray(n.items) && `${n.items.filter(x => x && x.ok).length} de ${n.items.length} listos`, n.motivo].filter(Boolean).join(' · ');
       // Si a quien mira le toca esta tarea (o es la Jefe), puede hacerla desde aquí mismo.
       const bts = botonesDe(n), acc = bts ? `<div class="tarea-pie">${bts}</div>` : '';
@@ -688,7 +719,7 @@
     abrir({ titulo: r.comunidad, sub: `${fechaTxt(r)}${pend ? ` · ${pend} ${pend === 1 ? 'cosa puedes hacer' : 'cosas puedes hacer'} desde aquí` : ''}`,
       campos: `<div class="row">${App.pill(st[0], st[1])}${(r.faltan || []).length ? App.pill('Falta: ' + r.faltan.join(', '), 's-peligro', 'aviso') : ''}</div>
         <dl class="datos"><dt>Lugar</dt><dd>${esH(r.lugar || 'Falta el lugar')}</dd><dt>Personas</dt><dd>${num(r.asistentes) || 'Sin dato'}</dd><dt>Jefe</dt><dd>${esH(r.jefe || '')}</dd>${r.motivo ? `<dt>Motivo</dt><dd>${esH(r.motivo)}</dd>` : ''}</dl>
-        <div class="section-label">Tareas</div><ul class="necesidades-l">${filas || '<li><span class="meta">Sin tareas.</span></li>'}</ul>
+        <div class="section-label">Tareas</div>${resumenAsistencia(ns)}<ul class="necesidades-l">${filas || '<li><span class="meta">Sin tareas.</span></li>'}</ul>
         ${acta ? `<div class="section-label">Acta</div><dl class="datos"><dt>Asistentes</dt><dd>${num(acta.acta.asistentes)}</dd><dt>Horario</dt><dd>${esH(acta.acta.inicio)} a ${esH(acta.acta.fin)}</dd><dt>Observaciones</dt><dd>${esH(acta.acta.observaciones)}</dd></dl>${foto ? `<img class="factura" src="${esH(foto)}" alt="Lista firmada de ${esH(r.comunidad)}">` : ''}` : ''}
         ${typeof r.correo === 'string' && r.correo ? `<details class="correo-orig"><summary>Ver el correo original</summary><pre>${esH(r.correo)}</pre></details>` : ''}
         <div class="section-label">Cómo va</div><ol class="linea">${hist.map(x => `<li><b>${esH(x.texto)}</b><span class="meta">${esH(x.por || '')} · ${esH(App.hace(x.fecha))}</span></li>`).join('') || '<li><span class="meta">Sin historial.</span></li>'}</ol>` });

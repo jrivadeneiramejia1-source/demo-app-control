@@ -485,6 +485,42 @@ await prueba('sin sesión o sin perfil nadie crea avisos, y cada quien sigue mar
   await assertFails(updateDoc(doc(db, 'avisos', 'av-1'), { leido: { otro: true } }));
   await assertFails(updateDoc(doc(db, 'avisos', 'av-1'), { texto: 'cambiado' })); });
 
+console.log('Revisión de seguridad, paso 9: las tareas de reunión son por persona');
+await limpiar();
+const comoPrueba = (uid, correo) => env.authenticatedContext(uid, { email: correo, email_verified: true, firebase: { sign_in_provider: 'password' } }).firestore();
+const otroConductor = comoPrueba('uid-cond-2', 'conductor.otro.chofer@example.com'), otroProf = comoPrueba('uid-prof-2', 'profesional.otra.persona@example.com');
+const decide = (est = 'listo') => ({ estado: est, por: 'Alguien', en: '2026-11-20T10:00:00Z', motivo: '' });
+await sembrar(async db => {
+  await setDoc(doc(db, 'reuniones', 're-p'), { comunidad: 'X', fecha: '2026-12-01', estado: 'programada' });
+  await setDoc(doc(db, 'necesidades', 'ne-v1'), { reunionId: 're-p', tipo: 'viaje', responsableRol: 'conductor', responsableCorreo: CORREOS.conductor, estado: 'pendiente', carrosId: 'ne-c1', conductor: 'Oscar' });
+  await setDoc(doc(db, 'necesidades', 'ne-v2'), { reunionId: 're-p', tipo: 'viaje', responsableRol: 'conductor', responsableCorreo: 'conductor.otro.chofer@example.com', estado: 'pendiente', carrosId: 'ne-c2', conductor: 'Otro' });
+  await setDoc(doc(db, 'necesidades', 'ne-c1'), { reunionId: 're-p', tipo: 'carros', responsableRol: 'jefe', estado: 'autorizado', conductor: 'Oscar', vehiculos: [] });
+  await setDoc(doc(db, 'necesidades', 'ne-a1'), { reunionId: 're-p', tipo: 'asistencia', responsableRol: 'profesional', responsableCorreo: CORREOS.profesional, estado: 'pendiente' });
+  await setDoc(doc(db, 'necesidades', 'ne-a2'), { reunionId: 're-p', tipo: 'asistencia', responsableRol: 'profesional', responsableCorreo: 'profesional.otra.persona@example.com', estado: 'pendiente' });
+  await setDoc(doc(db, 'necesidades', 'ne-a3'), { reunionId: 're-p', tipo: 'asistencia', responsableRol: 'profesional', estado: 'pendiente' });
+});
+await prueba('un Profesional decide SU asistencia y no la de otro', async () => {
+  await assertFails(updateDoc(doc(otroProf, 'necesidades', 'ne-a1'), decide()));
+  await assertFails(updateDoc(doc(prueba_('profesional'), 'necesidades', 'ne-a2'), decide()));
+  await assertSucceeds(updateDoc(doc(prueba_('profesional'), 'necesidades', 'ne-a1'), decide('no-va')));
+  await assertSucceeds(updateDoc(doc(otroProf, 'necesidades', 'ne-a2'), decide())); });
+await prueba('un Conductor confirma SU viaje y no el de otro (con cuenta propia tampoco)', async () => {
+  await assertFails(updateDoc(doc(otroConductor, 'necesidades', 'ne-v1'), decide()));
+  await assertFails(updateDoc(doc(prueba_('conductor'), 'necesidades', 'ne-v2'), decide()));
+  await assertSucceeds(updateDoc(doc(prueba_('conductor'), 'necesidades', 'ne-v1'), decide()));
+  const real = await cuenta('condReal', 'conductor');
+  await assertFails(updateDoc(doc(real, 'necesidades', 'ne-v2'), decide()));
+  await assertSucceeds(updateDoc(doc(otroConductor, 'necesidades', 'ne-v2'), decide())); });
+await prueba('una tarea vieja sin persona (datos de antes) la decide cualquiera de ese rol; otro rol no', async () => {
+  await assertFails(updateDoc(doc(prueba_('conductor'), 'necesidades', 'ne-a3'), decide()));
+  await assertSucceeds(updateDoc(doc(prueba_('profesional'), 'necesidades', 'ne-a3'), decide())); });
+await prueba('un Conductor no devuelve el viaje de otro (ni deja los carros pendientes por él)', async () => {
+  await sembrar(async db => { await setDoc(doc(db, 'necesidades', 'ne-v1'), { reunionId: 're-p', tipo: 'viaje', responsableRol: 'conductor', responsableCorreo: CORREOS.conductor, estado: 'pendiente', carrosId: 'ne-c1', conductor: 'Oscar' }); });
+  const devolver = (db, viaje) => lote(db, b => { b.update(doc(db, 'necesidades', viaje), { estado: 'no-va', por: 'X', en: '2026-11-20T10:00:00Z', motivo: 'No puedo' });
+    b.update(doc(db, 'necesidades', 'ne-c1'), { estado: 'pendiente', conductor: '', motivo: 'No puede', devuelto: viaje }); });
+  await assertFails(devolver(otroConductor, 'ne-v1'));
+  await assertSucceeds(devolver(prueba_('conductor'), 'ne-v1')); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

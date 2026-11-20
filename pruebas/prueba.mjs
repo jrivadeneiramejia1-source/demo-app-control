@@ -818,7 +818,8 @@ try {
   await tocarReu('correo', 'nueva');
   log('el agente lee el correo nuevo (respaldo) y llena la reunión: comunidad, 40 personas, 2 camionetas y falta el lugar', await hasta(t.page, () => document.getElementById('rcCom') && document.getElementById('rcCom').value === 'Comunidad Ejemplo Oriente' && document.getElementById('rcAsis').value === '40' && document.getElementById('rcCarros').value === '2' && document.getElementById('rcLugar').value === '' && /respaldo/i.test(document.getElementById('reCampos').textContent)));
   await t.page.screenshot({ path: path.join(CAPTURAS, '09-correo-agente.png') });
-  log('la Jefe crea la reunión y se reparten 6 tareas con su aviso', await guardarReu() && await (async () => { const o = await oriente(); const d = await reu(); return o && o.r.faltan.includes('lugar') && o.ns.length === 6 && ['compras', 'carros', 'logistica', 'profesional', 'administrativo'].every(rol => Object.values(d.avisos).some(a => a.para === rol && /Reunión nueva/.test(a.titulo))); })());
+  const nProf = await t.page.evaluate(() => window.DEMO.PERSONAS.filter(p => p.rol === 'profesional').length);
+  log('la Jefe ve a quiénes invita (todos los profesionales marcados) y crea la reunión: 5 tareas más una de asistencia por profesional, con su aviso', await t.page.evaluate(n => document.querySelectorAll('#rcInvitados input[type="checkbox"]:checked').length === n, nProf) && await guardarReu() && await (async () => { const o = await oriente(); const d = await reu(); return o && o.r.faltan.includes('lugar') && o.ns.length === 5 + nProf && o.ns.filter(n => n.tipo === 'asistencia').every(n => /^profesional\..*@example\.com$/.test(n.responsableCorreo) && n.responsableNombre) && ['compras', 'carros', 'logistica', 'profesional', 'administrativo'].every(rol => Object.values(d.avisos).some(a => a.para === rol && /Reunión nueva/.test(a.titulo))); })());
   await tocarReu('correo', 'nueva');
   log('si el mismo correo llega otra vez, no crea otra reunión', await hasta(t.page, () => /ya existe/.test(document.getElementById('reT').textContent)));
   await t.page.keyboard.press('Escape');
@@ -881,8 +882,10 @@ try {
   log('Logística marca todo y la reunión queda alistada', await guardarReu() && await (async () => { o = await oriente(); return o.ns.find(n => n.tipo === 'logistica').estado === 'listo'; })());
   log('cambia a Laura (Profesional)', await cambiar(t.page, 'profesional'));
   await irReu('hacer');
-  await tocarReu('voy', nec('asistencia').id);
-  log('el Profesional confirma que va', await guardarReu() && await (async () => { o = await oriente(); return o.ns.find(n => n.tipo === 'asistencia').estado === 'listo'; })());
+  const suya = () => o.ns.find(n => n.tipo === 'asistencia' && n.responsableNombre === 'Margaret Pulido');
+  log('el Profesional solo ve SUS tareas de asistencia (la de ayer y la nueva), no las de los demás', await hasta(t.page, () => document.querySelectorAll('#reuContenido [data-accion="voy"]').length === 2));
+  await tocarReu('voy', suya().id);
+  log('el Profesional confirma que va (solo cambia la suya)', await guardarReu() && await (async () => { o = await oriente(); return suya().estado === 'listo' && o.ns.filter(n => n.tipo === 'asistencia' && n.estado === 'pendiente').length === nProf - 1; })());
   log('cambia a Natalia (Administrativo)', await cambiar(t.page, 'administrativo'));
   await irReu('hacer');
   log('Administrativo tiene el acta de la reunión de ayer y no la de la reunión futura', await hasta(t.page, () => document.querySelectorAll('#reuContenido [data-accion="acta"]').length === 1 && /Occidente/.test(document.getElementById('reuContenido').textContent)));
@@ -931,7 +934,7 @@ try {
   await t.page.click('#reSecundario');
   log('si Gemini está saturado (503), espera y vuelve a intentar solo, diciendo en qué va', await hasta(t.page, () => /Gemini está ocupado \(intento 1\)\. Vuelvo a intentar en \d+ s/.test(document.getElementById('reCampos').textContent), null, 8000));
   log('con el agente, el correo arma la reunión: 50 personas, refrigerio y 2 camionetas (al segundo intento)', llamadasAgente2 >= 1 && await hasta(t.page, () => !!document.getElementById('rcCom') && document.getElementById('rcCom').value === 'Comunidad Ejemplo Este' && document.getElementById('rcAsis').value === '50' && document.getElementById('rcCarros').value === '2' && document.getElementById('rcRef').checked, null, 15000) && llamadasAgente2 === 2);
-  log('la Jefe la crea, se reparten las tareas y el correo queda «Repartido»', await guardarReu() && await (async () => { const d = await reu(); const r = Object.values(d.reuniones).find(x => x.comunidad === 'Comunidad Ejemplo Este'); return !!r && r.correos.includes('gm-gm18c3') && Object.values(d.necesidades).filter(n => n.comunidad === 'Comunidad Ejemplo Este').length === 5; })() && await hasta(t.page, () => /Repartido/.test(document.getElementById('reuContenido').textContent) && !document.querySelector('#reuContenido [data-accion="buzon"]')));
+  log('la Jefe la crea, se reparten las tareas y el correo queda «Repartido»', await guardarReu() && await (async () => { const d = await reu(); const r = Object.values(d.reuniones).find(x => x.comunidad === 'Comunidad Ejemplo Este'); return !!r && r.correos.includes('gm-gm18c3') && Object.values(d.necesidades).filter(n => n.comunidad === 'Comunidad Ejemplo Este').length === 4 + nProf; })() && await hasta(t.page, () => /Repartido/.test(document.getElementById('reuContenido').textContent) && !document.querySelector('#reuContenido [data-accion="buzon"]')));
   await t.page.screenshot({ path: path.join(CAPTURAS, '09b-bandeja.png'), fullPage: true });
   await t.page.click('#reuContenido [data-accion="borrarbuzon"][data-id="gm18c3"]'); await t.page.click('#cfSi');
   log('la Jefe puede borrar el correo de la bandeja', await hasta(t.page, () => !(JSON.parse(localStorage.getItem('__fb_datos')).buzon || {}).gm18c3 && /Bandeja del Gmail de prueba \(0\)/.test(document.getElementById('reuContenido').textContent)));
