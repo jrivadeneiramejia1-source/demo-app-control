@@ -10,7 +10,7 @@ Cada pantalla trae una etiqueta azul **Versión pagada**: al tocarla dice qué c
 | 1. Preparación | Repositorio, diseño y piezas copiadas de Equipos y Entregas | Hecha |
 | 2. Base y entrada | Cuentas de prueba, cambio de persona, menú de los módulos, datos inventados, campana y etiquetas | Hecha |
 | 3. Equipos | Equipos y Entregas juntas | Pendiente |
-| 4. Vehículos | Hoja de vida, novedades con foto, entrega y recibo | Pendiente |
+| 4. Vehículos | Hoja de vida de cada carro; el Conductor reporta novedades con foto y registra la salida y la llegada (kilometraje, combustible, 5 fotos y revisión); Transporte y Bodega revisan novedades (costo, nota, taller), actualizan SOAT y técnico-mecánica y reciben avisos de vencimiento. En Reuniones la Jefe escoge carro y conductor por camioneta, y el viaje queda ligado a ese carro | Hecha |
 | 5. Inventario y compras | Bodega con las compras adentro: Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras (con foto de factura e historial), Conteo físico y Resumen con Excel. Permisos por rol en las reglas y avisos al teléfono | Hecha (va antes que 3 y 4, a pedido de los jefes) |
 | 6. Reuniones y agente | Cuatro correos de ejemplo; el agente (Worker `agente-demo` con Gemini) los lee y la Jefe confirma y reparte: Compras, Transporte y Bodega informan lo que hay y la Jefe autoriza la comida y los carros (escoge el conductor); el Conductor confirma, Logística alista, el Profesional confirma si va y Administrativo registra el acta con foto. Resumen para Jefe y Gerente | Hecha (falta conectar Gemini) |
 | 7. Pulido | Modo presentación y guion | Pendiente |
@@ -33,18 +33,19 @@ Los códigos se manejan en **Cambiar de persona > Personas y códigos**, que sol
 | Equipos | Daniel Ortiz | Encargado de equipos | Encargado | Pide material | No | No |
 | Equipos | Valentina Ruiz | Soporte | Mantenimiento y entregas | Pide material | No | No |
 | Inventario | Luis Rodríguez | Compras | No | Hace las compras | No | Informa lo que hay |
-| Inventario | Sofía Herrera | Bodega | No | Encargada de bodega | No | Informa lo que hay (comida, carros, logística) |
-| Vehículos | Marta Gómez | Transporte | No | Pide material | Autoriza | Informa qué carros hay |
-| Vehículos | Carlos Pinto | Conductor | No | Pide material | Reporta novedades | Asiste |
+| Inventario | Sofía Herrera | Bodega | No | Encargada de bodega | Igual que Transporte | Informa lo que hay (comida, carros, logística) |
+| Vehículos | Marta Gómez | Transporte | No | Pide material | Revisa novedades, documentos, taller y salidas | Informa qué carros hay |
+| Vehículos | Carlos Pinto | Conductor | No | Pide material | Reporta novedades y registra salida y llegada | Confirma el viaje |
 | Reuniones | Pedro Castillo | Logística | No | Pide material | No | Logística |
 | Reuniones | Laura Medina | Profesional | No | Pide material | No | Asiste |
 | Reuniones | Natalia Vargas | Administrativo | No | Pide material | No | Registra actas y formatos |
 
-Equipos, Vehículos y Reuniones por ahora solo se ven: lo que hace cada rol ahí se arma en sus fases.
+Equipos por ahora solo se ve: lo que hace cada rol ahí se arma en su fase.
 
 ## Archivos
 - `index.html`, `app.js`, `demo.css`: la app. `inventario.js`: el módulo Inventario (bodega y compras).
 - `push.js`, `sw.js`, `manifest.webmanifest`, `iconos/control-*.png`: avisos al teléfono (Web Push) e instalación en la pantalla de inicio.
+- `vehiculos.js`: el módulo Vehículos (las fotos se achican a JPEG antes de guardarse para no pasar el límite de Firebase).
 - `reuniones.js`: el módulo Reuniones. `correos-demo.js`: los 4 correos de ejemplo y la respuesta de respaldo de cada uno (se usa si el agente no está conectado o falla).
 - `agente/worker.js`: Worker «agente-demo» para Cloudflare. Solo atiende a la Jefe (revisa el token de Firebase y el rol) y tiene límite de lecturas por cuenta; le pasa el correo a Gemini y devuelve en JSON lo que entendió (no escribe en la base). La clave de Gemini debe ser de un proyecto sin facturación. Secreto `GEMINI_API_KEY`; su dirección va en `config.js` (`window.AGENTE_DEMO`).
 - `avisos/worker.js`: servidor de avisos «avisos-demo» para Cloudflare Workers (gratis). Se pega a mano en Cloudflare con los secretos `VAPID_D` y `VAPID_PUB`.

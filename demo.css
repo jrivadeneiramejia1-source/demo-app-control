@@ -255,3 +255,13 @@ button.card .card-title { text-align: left; }
 .informes { list-style: none; margin: 4px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); display: flex; flex-direction: column; gap: 4px; font-size: .9rem; overflow-wrap: anywhere; }
 .informes li, .necesidades-l .informes li { display: block; border: 0; padding: 0; background: none; border-radius: 0; }
 .informes li .meta { display: inline; }
+
+/* Vehículos */
+.nov-fila { display: flex; gap: 12px; align-items: flex-start; }
+.nov-foto { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; flex: none; border: 1px solid var(--line); }
+.fotos-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.foto-campo { gap: 6px; }
+.foto-campo .btn { width: 100%; }
+.fotos-fila { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.ent-foto { width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
+.barra-botones { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 8px; }
