@@ -517,7 +517,9 @@
     pushPendientes.push({ para, titulo, texto: txt });
     return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'inventario', leido: {} }];
   }
-  const movimiento = o => ['set', 'movimientos', window.nube.idNuevo('mo'), Object.assign({ persona: '', proyecto: '', nota: '', compraId: '', solicitudId: '', por: persona().nombre, porRol: persona().rol, fecha: ahora() }, o)];
+  /** Cambia la cantidad de un artículo y deja su movimiento en la misma escritura: el artículo apunta a su movimiento (ultimoMov) y las reglas lo comprueban. */
+  const mover = (a, delta, o) => { const id = window.nube.idNuevo('mo'); return [['update', 'articulos', a.id, { cantidad: window.nube.incremento(delta), ultimoMov: id }], movimiento(o, id)]; };
+  const movimiento = (o, id) => ['set', 'movimientos', id || window.nube.idNuevo('mo'), Object.assign({ persona: '', proyecto: '', nota: '', compraId: '', solicitudId: '', por: persona().nombre, porRol: persona().rol, fecha: ahora() }, o)];
   const historial = c => (Array.isArray(c.historial) ? c.historial : []).filter(h => h && typeof h === 'object');
   const paso = (c, txt) => historial(c).concat([{ fecha: ahora(), texto: txt, por: persona().nombre }]);
 
@@ -792,8 +794,7 @@
           if (n < num(l.cantidad)) faltan.push(`${l.que}: ${n} de ${num(l.cantidad)}`);
           if (!a || n === 0) return;
           stock[a.id] = (stock[a.id] === undefined ? num(a.cantidad) : stock[a.id]) + n;
-          ops.push(['update', 'articulos', a.id, { cantidad: window.nube.incremento(n) }],
-            movimiento({ articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: stock[a.id], persona: c.proveedor || '', nota: [valor('acNota'), n < num(l.cantidad) ? `Llegaron ${n} de ${num(l.cantidad)}` : ''].filter(Boolean).join('. '), compraId: c.id }));
+          ops.push(...mover(a, n, { articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: stock[a.id], persona: c.proveedor || '', nota: [valor('acNota'), n < num(l.cantidad) ? `Llegaron ${n} de ${num(l.cantidad)}` : ''].filter(Boolean).join('. '), compraId: c.id }));
         });
         const nota = [valor('acNota'), faltan.length ? 'Llegó menos: ' + faltan.join('; ') : ''].filter(Boolean).join('. ');
         return [['mezclar', 'compras', c.id, { estado: 'recibido', entregadoA: hayFuera ? valor('acQuien') : '', historial: paso(c, `Recibida${nota ? '. ' + nota : ''}`) }]].concat(ops,
@@ -821,8 +822,7 @@
         const nota = [valor('acNota'), n < num(c.cantidad) ? `Llegaron ${n} de ${num(c.cantidad)}` : ''].filter(Boolean).join('. ');
         return [
           ['mezclar', 'compras', c.id, { estado: 'recibido', historial: paso(c, `Recibido en bodega: ${cantTxt(n, a.unidad)}${nota ? '. ' + nota : ''}`) }],
-          ['update', 'articulos', a.id, { cantidad: window.nube.incremento(n) }],
-          movimiento({ articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: hay + n, persona: c.proveedor || '', nota, compraId: c.id }),
+          ...mover(a, n, { articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: hay + n, persona: c.proveedor || '', nota, compraId: c.id }),
           c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya está en bodega.`) : null,
           n < num(c.cantidad) ? aviso('jefe', 'Llegó menos de lo comprado', `${c.que}: llegaron ${n} de ${num(c.cantidad)}.`) : null
         ];
@@ -882,8 +882,7 @@
         const parcial = n < num(s.cantidad) ? `Se entregaron ${n} de ${num(s.cantidad)}` : '';
         return [
           ['mezclar', 'solicitudes', s.id, { estado: 'entregada', entregadaPor: persona().nombre, fechaEntrega: ahora(), motivo: parcial }],
-          ['update', 'articulos', a.id, { cantidad: window.nube.incremento(-n) }],
-          movimiento({ articuloId: a.id, articulo: a.nombre, tipo: 'salida', motivo: 'entrega', cantidad: n, saldo: hay - n, persona: s.pide, proyecto: valor('acProy'), nota: parcial, solicitudId: s.id }),
+          ...mover(a, -n, { articuloId: a.id, articulo: a.nombre, tipo: 'salida', motivo: 'entrega', cantidad: n, saldo: hay - n, persona: s.pide, proyecto: valor('acProy'), nota: parcial, solicitudId: s.id }),
           aviso(s.pideRol, 'Tu pedido está listo', `${persona().nombre} te entregó ${cantTxt(n, a.unidad)} de ${a.nombre}.`)
         ];
       }
@@ -941,8 +940,7 @@
         if (motivo === 'entrega' && !valor('acPersona')) return fallar('Escribe a quién se entregó.', 'acPersona');
         if (motivo === 'dano' && !valor('acNota')) return fallar('Escribe qué pasó en la nota.', 'acNota');
         return [
-          ['update', 'articulos', a.id, { cantidad: window.nube.incremento(entrada ? n : -n) }],
-          movimiento({ articuloId: a.id, articulo: a.nombre, tipo: entrada ? 'entrada' : 'salida', motivo, cantidad: n, saldo: entrada ? hay + n : hay - n, persona: valor('acPersona'), proyecto: valor('acProy'), nota: valor('acNota') }),
+          ...mover(a, entrada ? n : -n, { articuloId: a.id, articulo: a.nombre, tipo: entrada ? 'entrada' : 'salida', motivo, cantidad: n, saldo: entrada ? hay + n : hay - n, persona: valor('acPersona'), proyecto: valor('acProy'), nota: valor('acNota') }),
           motivo === 'dano' ? aviso('jefe', 'Material dañado o perdido', `${persona().nombre} registró ${cantTxt(n, a.unidad)} de ${a.nombre} como daño o pérdida: ${valor('acNota')}.`) : null
         ];
       }
@@ -970,8 +968,9 @@
         const datos = { nombre: valor('acNom'), categoria: valor('acCat'), unidad: valor('acUni'), minimo: mn, maximo: mx, ubicacion: valor('acUbi'), costo, proveedor: valor('acProvH') };
         if (!nuevo) return [['mezclar', 'articulos', a.id, datos]];
         const id = window.nube.idNuevo('ar');
-        return [['set', 'articulos', id, Object.assign({ cantidad: ini }, datos)],
-          ini > 0 ? movimiento({ articuloId: id, articulo: datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo' }) : null];
+        const movId = window.nube.idNuevo('mo');
+        return [['set', 'articulos', id, Object.assign({ cantidad: ini }, ini > 0 ? { ultimoMov: movId } : {}, datos)],
+          ini > 0 ? movimiento({ articuloId: id, articulo: datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo' }, movId) : null];
       }
     });
   }
@@ -1040,10 +1039,7 @@
         if (difs.length && !valor('acMotivo')) return fallar(`Hay ${difs.length} ${difs.length === 1 ? 'diferencia' : 'diferencias'}: escribe el motivo.`, 'acMotivo');
         accion.listo = difs.length ? `Listo: conteo guardado. Se ajustaron ${difs.length} ${difs.length === 1 ? 'artículo' : 'artículos'}.` : 'Listo: conteo guardado. Todo cuadra con la app.';
         if (!difs.length) return [];
-        return difs.flatMap(x => [
-          ['update', 'articulos', x.a.id, { cantidad: window.nube.incremento(x.dif) }],
-          movimiento({ articuloId: x.a.id, articulo: x.a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: x.dif, saldo: x.contado, nota: valor('acMotivo') })
-        ]).concat([aviso('jefe', 'Conteo con diferencias', `${persona().nombre} contó la bodega: ${difs.length} ${difs.length === 1 ? 'artículo no cuadró' : 'artículos no cuadraron'} (${valor('acMotivo')}).`)]);
+        return difs.flatMap(x => mover(x.a, x.dif, { articuloId: x.a.id, articulo: x.a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: x.dif, saldo: x.contado, nota: valor('acMotivo') })).concat([aviso('jefe', 'Conteo con diferencias', `${persona().nombre} contó la bodega: ${difs.length} ${difs.length === 1 ? 'artículo no cuadró' : 'artículos no cuadraron'} (${valor('acMotivo')}).`)]);
       }
     });
   }

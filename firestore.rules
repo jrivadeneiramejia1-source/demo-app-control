@@ -340,25 +340,39 @@ service cloud.firestore {
       allow delete: if esJefe();
     }
 
-    // Bodega: artículos y movimientos.
+    // Bodega: artículos y movimientos. Cada cambio de cantidad deja su movimiento en la MISMA escritura: el artículo apunta a su
+    // movimiento nuevo (ultimoMov), que no existía antes, es de ese artículo y trae la diferencia exacta (entrada y ajuste suman su
+    // cantidad; salida resta). Así no se cambia el stock sin dejar rastro. La Jefe de prueba carga y reinicia los datos de ejemplo.
+    function rutaMov(m) { return /databases/$(database)/documents/movimientos/$(m); }
+    function movOk(artId, cantAntes) {
+      return nuevo().get('ultimoMov', null) is string && !exists(rutaMov(nuevo().ultimoMov))
+        && getAfter(rutaMov(nuevo().ultimoMov)).data.articuloId == artId
+        && nuevo().cantidad - cantAntes == (getAfter(rutaMov(nuevo().ultimoMov)).data.tipo == 'salida' ? 0 - getAfter(rutaMov(nuevo().ultimoMov)).data.cantidad : getAfter(rutaMov(nuevo().ultimoMov)).data.cantidad);
+    }
     match /articulos/{id} {
       allow read: if veInventario();
       // La cantidad nunca queda negativa (si dos personas sacan al tiempo lo último, la segunda recibe un error).
-      allow create, update: if esBodega() && nuevo().cantidad is number && nuevo().cantidad >= 0;
+      allow create: if (esJefe() && esPrueba())
+        || (esBodega() && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == 0 || movOk(id, 0)));
+      allow update: if (esJefe() && esPrueba())
+        || (esBodega() && soloCambia(['cantidad', 'ultimoMov', 'nombre', 'categoria', 'unidad', 'minimo', 'maximo', 'ubicacion', 'costo', 'proveedor'])
+            && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == antes().cantidad || movOk(id, antes().cantidad)));
       allow delete: if esJefe();
     }
     match /movimientos/{id} {
       allow read: if veMovimientos();
-      allow create: if esJefe() || (esBodega() && nuevo().por is string && nuevo().porRol == rol());
+      allow create: if esJefe()
+        || (esBodega() && nuevo().por is string && nuevo().porRol == rol() && nuevo().tipo in ['entrada', 'salida', 'ajuste'] && nuevo().cantidad is number);
       allow update, delete: if esPrueba() && rol() == 'jefe';
     }
 
-    // Pedidos de material: cada quien pide a su nombre; la bodega los entrega o los cierra.
+    // Pedidos de material: cada quien pide a su nombre; la bodega los entrega o los cierra (solo toca el estado, quién entregó y el motivo).
     match /solicitudes/{id} {
       allow read: if veLoSuyo();
       allow create: if puedePedir() && (nuevo().pideRol == rol() || esJefe()) && (nuevo().estado == 'pendiente' || esJefe())
         && nuevo().get('pideUid', request.auth.uid) == request.auth.uid;
-      allow update: if esBodega();
+      allow update: if (esJefe() && esPrueba())
+        || (antes().estado == 'pendiente' && nuevo().estado in ['entregada', 'rechazada'] && soloCambia(['estado', 'entregadaPor', 'fechaEntrega', 'motivo']) && esBodega());
       allow delete: if esJefe();
     }
 
