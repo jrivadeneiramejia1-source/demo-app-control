@@ -181,20 +181,40 @@
         { fechaPedido: dias(-9), motivoRechazo: 'Ya hay cámaras en bodega, usa esas primero' }),
       'co-005': compra('Cables HDMI y adaptadores', 5, 'unidades', 'Accesorios', 140000, 'Para el proyector de las reuniones',
         'Andrés Beltrán', 'Mauricio Giraldo', 'comprado',
-        { fechaPedido: dias(-12), proveedor: 'Ferretería El Faro', valorReal: 152000, fechaCompra: dias(-8), articuloId: 'ar-010' }),
+        { fechaPedido: dias(-12), proveedor: 'Ferretería El Faro', proveedorId: 'pv-elfaro', valorReal: 152000, fechaCompra: dias(-8), articuloId: 'ar-010' }),
       'co-006': compra('Memorias USB de 64 GB', 10, 'unidades', 'Cómputo', 320000, 'Para entregar copias a los líderes',
         'Mauricio Giraldo', 'Oscar Muñoz', 'comprado',
-        { fechaPedido: dias(-7), proveedor: 'Papelería Central', valorReal: 305000, fechaCompra: dias(-3) }),
+        { fechaPedido: dias(-7), proveedor: 'Papelería Central', proveedorId: 'pv-papcentral', valorReal: 305000, fechaCompra: dias(-3) }),
       'co-007': compra('Chalecos reflectivos', 12, 'unidades', 'EPP', 420000, 'Para la cuadrilla de campo',
         'Andrés Beltrán', 'Mauricio Giraldo', 'recibido',
-        { fechaPedido: dias(-25), proveedor: 'Ferretería El Faro', valorReal: 438000, fechaCompra: dias(-20), entregadoA: 'Jorge Ibarra', articuloId: 'ar-003' }),
+        { fechaPedido: dias(-25), proveedor: 'Ferretería El Faro', proveedorId: 'pv-elfaro', valorReal: 438000, fechaCompra: dias(-20), entregadoA: 'Jorge Ibarra', articuloId: 'ar-003' }),
       'co-008': compra('Garrafones de agua', 6, 'unidades', 'Refrigerios', 90000, 'Para la reunión de la semana pasada',
         'Un compañero (sin identificar)', '', 'sin-autorizar',
-        { fechaPedido: dias(-5), proveedor: 'Distribuidora Agua Clara', valorReal: 96000, fechaCompra: dias(-5) }),
+        { fechaPedido: dias(-5), proveedor: 'Distribuidora Agua Clara', proveedorId: 'pv-aguaclara', valorReal: 96000, fechaCompra: dias(-5) }),
       // Vale más de 5 millones: la Coordinadora ya la autorizó y falta el Gerente general.
       'co-009': compra('Portátiles para el equipo de campo', 2, 'unidades', 'Cómputo', 6800000, 'Para los dos proyectos nuevos',
-        'Ángel Ortiz', '', 'por-gerente', { fechaPedido: dias(-2), autorizaJefe: 'Mauricio Giraldo' })
+        'Ángel Ortiz', '', 'por-gerente', { fechaPedido: dias(-2), autorizaJefe: 'Mauricio Giraldo' }),
+      // Compras de hace uno o varios meses (ya recibidas), para que cada proveedor tenga historial y se vea si los precios suben.
+      'co-010': compra('Chalecos reflectivos', 12, 'unidades', 'EPP', 380000, 'Para la cuadrilla de campo',
+        'Andrés Beltrán', 'Mauricio Giraldo', 'recibido', { fechaPedido: dias(-75), proveedor: 'Ferretería El Faro', proveedorId: 'pv-elfaro', valorReal: 396000, fechaCompra: dias(-70), entregadoA: 'Camilo Suárez' }),
+      'co-011': compra('Cables HDMI y adaptadores', 5, 'unidades', 'Accesorios', 120000, 'Para el proyector de las reuniones',
+        'Andrés Beltrán', 'Mauricio Giraldo', 'recibido', { fechaPedido: dias(-104), proveedor: 'Ferretería El Faro', proveedorId: 'pv-elfaro', valorReal: 130000, fechaCompra: dias(-100), entregadoA: 'Andrés Beltrán' }),
+      'co-012': compra('Resmas de papel carta', 8, 'resmas', 'Papelería', 210000, 'Para imprimir listas de asistencia',
+        'Andrés Beltrán', 'Mauricio Giraldo', 'recibido', { fechaPedido: dias(-48), proveedor: 'Papelería Central', proveedorId: 'pv-papcentral', valorReal: 216000, fechaCompra: dias(-45), entregadoA: 'Paola Ríos' }),
+      'co-013': compra('Mouse inalámbrico', 6, 'unidades', 'Accesorios', 170000, 'Para los portátiles de campo',
+        'Carolina Castillo', 'Oscar Muñoz', 'recibido', { fechaPedido: dias(-84), proveedor: 'Tecnoventas Ejemplo S. A. S.', proveedorId: 'pv-tecnoventas', valorReal: 177000, fechaCompra: dias(-80), entregadoA: 'Jorge Ibarra' }),
+      'co-014': compra('Teclados USB', 5, 'unidades', 'Accesorios', 210000, 'Para reponer los que se dañaron',
+        'Ángel Ortiz', 'Mauricio Giraldo', 'recibido', { fechaPedido: dias(-44), proveedor: 'Equipos del Caribe Ejemplo', proveedorId: 'pv-eqcaribe', valorReal: 225000, fechaCompra: dias(-40), entregadoA: 'Ángel Ortiz' })
     };
+    // ---------- PROVEEDORES (todo inventado: NIT con su dígito de verificación bien calculado, teléfonos y correos de ejemplo) ----------
+    const proveedores = {
+      'pv-elfaro': { nombre: 'Ferretería El Faro', nit: '900000001-2', contacto: 'Marta Ejemplo', telefono: '300 000 0001', correo: 'ventas@elfaro.example.com', nota: 'Entrega en 2 días. Fía a 30 días.' },
+      'pv-papcentral': { nombre: 'Papelería Central', nit: '900000003-7', contacto: 'Luis Ejemplo', telefono: '300 000 0003', correo: 'pedidos@papeleriacentral.example.com', nota: 'Descuento si se compran más de 5 resmas.' },
+      'pv-aguaclara': { nombre: 'Distribuidora Agua Clara', nit: '', contacto: 'Rosa Ejemplo', telefono: '300 000 0005', correo: '', nota: 'Reparte los martes y los viernes. Todavía sin NIT anotado.' },
+      'pv-tecnoventas': { nombre: 'Tecnoventas Ejemplo S. A. S.', nit: '901234567-7', contacto: 'Carlos Ejemplo', telefono: '300 000 0007', correo: 'comercial@tecnoventas.example.com', nota: 'Da garantía de un año en los equipos.' },
+      'pv-eqcaribe': { nombre: 'Equipos del Caribe Ejemplo', nit: '900000009-0', contacto: '', telefono: '300 000 0009', correo: '', nota: '' }
+    };
+    Object.values(proveedores).forEach(v => Object.assign(v, { por: 'Fredy Torres', porRol: 'compras', en: dias(-110) }));
     // Historial de cada compra (cómo va), armado según su estado. Las horas son de oficina y nunca quedan en el futuro.
     const desfase = f => Math.round((new Date(f + 'T12:00:00') - new Date(dias(0) + 'T12:00:00')) / 86400000);
     Object.values(compras).forEach(c => {
@@ -436,8 +456,8 @@
       'av-006': aviso('asistente', 'Pedidos de material por entregar', 'Tienes 3 pedidos de material por entregar.', iso(-1, 17, 10), 'inventario')
     };
 
-    return { equipos, hojas, tareasEq, compras, vehiculos, novedades, entregas, tanqueos, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
+    return { equipos, hojas, tareasEq, compras, proveedores, vehiculos, novedades, entregas, tanqueos, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 16, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 17, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

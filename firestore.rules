@@ -22,6 +22,8 @@ rules_version = '2';
 //   Vehículos: el Conductor reporta novedades con foto y registra salidas y llegadas; Transporte y Bodega revisan, asignan y
 //   actualizan documentos. Los tanqueos (combustible, con la foto del recibo) los crea quien tenga nivel en Vehículos (menos «solo ver»)
 //   a su nombre; no se cambian después (solo la Jefe).
+//   Proveedores: los ven Compras, la Coordinadora, Bodega, Financiero, Gerente y la Jefe; los crean y editan Compras, la Jefe y Bodega con el
+//   extra «compra». Solo la Jefe los borra (la app no deja borrar uno que ya tiene compras).
 //   Todos: piden material y piden compras a su nombre, y marcan sus avisos como leídos.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -450,6 +452,30 @@ service cloud.firestore {
       allow delete: if esJefe();
     }
 
+    // Proveedores: nombre, NIT (opcional; la app revisa su dígito de verificación), contacto y una nota. Quién los ve: los que ven compras y bodega.
+    // Los crean y editan Compras, la Jefe y Bodega con el extra «compra» (los mismos que registran compras). Solo la Jefe los borra.
+    function veProveedores() { return esDemo() && nivel('inventario') in ['compra', 'coordina', 'bodega', 'jefe', 'finanzas', 'gerente']; }
+    function rutaProv(p) { return /databases/$(database)/documents/proveedores/$(p); }
+    function txtMax(c, max) { let v = nuevo().get(c, ''); return v is string && v.size() <= max; }
+    function proveedorOk() {
+      let n = nuevo().get('nombre', ''); let nit = nuevo().get('nit', ''); let co = nuevo().get('correo', '');
+      return n is string && n.size() >= 2 && n.size() <= 80
+        && nit is string && (nit == '' || nit.matches('^[0-9]{5,15}-[0-9]$'))
+        && co is string && co.size() <= 80 && (co == '' || co.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$'))
+        && txtMax('contacto', 60) && txtMax('telefono', 25) && txtMax('nota', 200);
+    }
+    // El proveedor que se anota en una compra (opcional) tiene que existir cuando termina el lote (la app lo crea en la misma escritura si era nuevo).
+    function proveedorIdOk() { let p = nuevo().get('proveedorId', ''); return p is string && (p == '' || (p.matches('^pv-[a-z0-9]{4,30}$') && existsAfter(rutaProv(p)))); }
+    match /proveedores/{id} {
+      allow read: if veProveedores();
+      allow create: if (esPrueba() && esJefe())
+        || (id.matches('^pv-[a-z0-9]{4,30}$') && nuevo().keys().hasOnly(['nombre', 'nit', 'contacto', 'telefono', 'correo', 'nota', 'por', 'porRol', 'en'])
+            && nuevo().get('por', 0) is string && nuevo().get('porRol', '') == rol() && esFecha(nuevo().get('en', '')) && proveedorOk() && esCompras());
+      allow update: if (esPrueba() && esJefe())
+        || (soloCambia(['nombre', 'nit', 'contacto', 'telefono', 'correo', 'nota']) && proveedorOk() && esCompras());
+      allow delete: if esJefe();
+    }
+
     // Compras. Pasos: pedido -> autorizado (o rechazado) -> comprado -> recibido.
     //   Quién autoriza: lo autoriza la Coordinadora de compras (ya no la Jefe). Si vale MÁS del monto del Gerente
     //   (ajustesApp/compras.montoGerente, por defecto 5.000.000), queda «por-gerente» y lo autoriza después el Gerente general.
@@ -473,7 +499,7 @@ service cloud.firestore {
       // compras hechas sin autorización (nacen sin revisar). La Jefe de prueba crea cualquier compra porque carga y reinicia los datos de ejemplo.
       allow create: if (esJefe() && esPrueba())
         || (nuevo().estado == 'pedido' && nuevo().pideRol == rol() && puedePedir() && pedidoOk())
-        || (nuevo().estado == 'sin-autorizar' && nuevo().revisada == false && esCompras() && pedidoOk())
+        || (nuevo().estado == 'sin-autorizar' && nuevo().revisada == false && proveedorIdOk() && esCompras() && pedidoOk())
         // El Gerente general pide una compra y nace autorizada (nadie autoriza lo suyo ni lo de él).
         || (nuevo().estado == 'autorizado' && nuevo().pideRol == 'gerente' && esGerenteGeneral() && puedePedir() && pedidoOk() && nuevo().autorizaCorreo == request.auth.token.email);
       allow update:
@@ -484,7 +510,7 @@ service cloud.firestore {
         // El Gerente general decide lo que la Coordinadora le pasó por el monto.
         || (antes().estado == 'por-gerente' && nuevo().estado in ['autorizado', 'rechazado'] && decideCampos() && nuevo().get('autorizaJefe', '') == antes().get('autorizaJefe', '') && esGerenteGeneral())
         // Comprar (autorizada -> comprada): Compras, sin tocar lo autorizado.
-        || (antes().estado == 'autorizado' && nuevo().estado == 'comprado' && soloCambia(['estado', 'proveedor', 'valorReal', 'fechaCompra', 'factura', 'historial']) && historialSigue() && esCompras())
+        || (antes().estado == 'autorizado' && nuevo().estado == 'comprado' && soloCambia(['estado', 'proveedor', 'proveedorId', 'valorReal', 'fechaCompra', 'factura', 'historial']) && historialSigue() && proveedorIdOk() && esCompras())
         // Recibir (comprada -> recibida): la bodega.
         || (antes().estado == 'comprado' && nuevo().estado == 'recibido' && soloCambia(['estado', 'entregadoA', 'historial']) && historialSigue() && esBodega())
         // La Coordinadora (o el Gerente general) marca como revisada una compra hecha sin autorización.

@@ -951,6 +951,103 @@ await prueba('Conteo: un lote de 100 artículos que cuadran (solo la fecha del c
 await prueba('Código: la Jefe de prueba carga los datos de ejemplo con códigos sin pasar por las revisiones', async () => {
   await assertSucceeds(setDoc(doc(prueba_('jefe'), 'articulos', 'ar-ej9'), AR13({ cantidad: 4, codigo: '7700000000013', ultimoConteo: '2026-10-11' }))); });
 
+console.log('Fase 12: proveedores');
+await limpiar();
+const PV = (rol, o = {}) => Object.assign({ nombre: 'Ferretería El Faro', nit: '900000001-2', contacto: 'Marta Ejemplo', telefono: '300 000 0001', correo: 'ventas@elfaro.example.com', nota: 'Entrega en 2 días', por: 'Persona de prueba', porRol: rol, en: '2026-11-25' }, o);
+await prueba('Proveedores: Compras crea un proveedor (completo, o solo con el nombre y sin NIT)', async () => {
+  const com = await cuenta('pvCom1', 'compras');
+  await assertSucceeds(setDoc(doc(com, 'proveedores', 'pv-elfaro'), PV('compras')));
+  await assertSucceeds(setDoc(doc(com, 'proveedores', 'pv-aguaclara'), { nombre: 'Distribuidora Agua Clara', nit: '', contacto: '', telefono: '', correo: '', nota: '', por: 'Persona de prueba', porRol: 'compras', en: '2026-11-25' })); });
+await prueba('Proveedores: la Jefe y Bodega con el extra «compra» también los crean; Bodega sin el extra, no', async () => {
+  await assertSucceeds(setDoc(doc(await cuenta('pvJef1', 'jefe'), 'proveedores', 'pv-jefe1'), PV('jefe', { nombre: 'Papelería Central', nit: '900000003-7' })));
+  await assertSucceeds(setDoc(doc(await cuenta('pvBod1', 'asistente', { extras: ['compra'] }), 'proveedores', 'pv-bodega1'), PV('asistente', { nombre: 'Tecnoventas Ejemplo S. A. S.', nit: '901234567-7' })));
+  await assertFails(setDoc(doc(await cuenta('pvBod2', 'asistente'), 'proveedores', 'pv-bodega2'), PV('asistente', { nombre: 'Otro proveedor', nit: '' }))); });
+await prueba('Proveedores: la Coordinadora, el Financiero, el Gerente, el Conductor, el Colaborador y Consulta no los crean', async () => {
+  for (const [uid, rol] of [['pvCoo', 'coordcompras'], ['pvFin', 'financiero'], ['pvGer', 'gerente'], ['pvCon', 'conductor'], ['pvCol', 'colaborador'], ['pvCons', 'consulta']])
+    await assertFails(setDoc(doc(await cuenta(uid, rol), 'proveedores', 'pv-x' + uid.toLowerCase()), PV(rol))); });
+await prueba('Proveedores: sin nombre, con nombre de una letra o de más de 80, no pasan', async () => {
+  const com = await cuenta('pvCom2', 'compras');
+  for (const [i, n] of [['a', ''], ['b', 'X'], ['c', 'N'.repeat(81)], ['d', 12345]]) await assertFails(setDoc(doc(com, 'proveedores', 'pv-nom' + i), PV('compras', { nombre: n })));
+  await assertSucceeds(setDoc(doc(com, 'proveedores', 'pv-nome'), PV('compras', { nombre: 'N'.repeat(80), nit: '' }))); });
+await prueba('Proveedores: un NIT mal escrito (sin guion, con puntos, con dos dígitos al final o con letras) no pasa', async () => {
+  const com = await cuenta('pvCom3', 'compras');
+  for (const [i, nit] of [['a', '9000000012'], ['b', '900.000.001-2'], ['c', '900000001-12'], ['d', '9000-2'], ['e', 'ABC-1'], ['f', 900000001]]) await assertFails(setDoc(doc(com, 'proveedores', 'pv-nit' + i), PV('compras', { nit })));
+  await assertSucceeds(setDoc(doc(com, 'proveedores', 'pv-nitg'), PV('compras', { nombre: 'Nit de quince', nit: '123456789012345-0' }))); });
+await prueba('Proveedores: un correo sin arroba, un texto muy largo o un campo de más no pasan', async () => {
+  const com = await cuenta('pvCom4', 'compras');
+  await assertFails(setDoc(doc(com, 'proveedores', 'pv-cor1'), PV('compras', { correo: 'ventas.elfaro' })));
+  await assertFails(setDoc(doc(com, 'proveedores', 'pv-cor2'), PV('compras', { nota: 'x'.repeat(201) })));
+  await assertFails(setDoc(doc(com, 'proveedores', 'pv-cor3'), PV('compras', { telefono: '3'.repeat(26) })));
+  await assertFails(setDoc(doc(com, 'proveedores', 'pv-cor4'), PV('compras', { contacto: 'c'.repeat(61) })));
+  await assertFails(setDoc(doc(com, 'proveedores', 'pv-cor5'), PV('compras', { activo: true }))); });
+await prueba('Proveedores: no se pone a nombre de otro rol, con otra fecha rara ni con un código que no es pv-…', async () => {
+  const com = await cuenta('pvCom5', 'compras');
+  await assertFails(setDoc(doc(com, 'proveedores', 'pv-rol1'), PV('jefe')));
+  await assertFails(setDoc(doc(com, 'proveedores', 'pv-rol2'), PV('compras', { en: 'ayer' })));
+  await assertFails(setDoc(doc(com, 'proveedores', 'PV-ROL3'), PV('compras')));
+  await assertFails(setDoc(doc(com, 'proveedores', 'xx-rol4'), PV('compras')));
+  await assertFails(setDoc(doc(com, 'proveedores', 'pv-ab'), PV('compras'))); });
+await prueba('Proveedores: los ven Compras, la Coordinadora, Bodega, el Financiero, el Gerente y la Jefe; no los ven el Conductor, Consulta ni quien está sin acceso al inventario', async () => {
+  await sembrar(d => setDoc(doc(d, 'proveedores', 'pv-lee1'), PV('compras')));
+  for (const [uid, rol] of [['pvL1', 'compras'], ['pvL2', 'coordcompras'], ['pvL3', 'asistente'], ['pvL4', 'financiero'], ['pvL5', 'gerente'], ['pvL6', 'jefe']]) await assertSucceeds(getDoc(doc(await cuenta(uid, rol), 'proveedores', 'pv-lee1')));
+  for (const [uid, rol] of [['pvN1', 'conductor'], ['pvN2', 'consulta'], ['pvN3', 'colaborador'], ['pvN4', 'carros'], ['pvN5', 'logistica']]) await assertFails(getDoc(doc(await cuenta(uid, rol), 'proveedores', 'pv-lee1')));
+  await assertFails(getDoc(doc(await cuenta('pvN6', 'compras', { permisos: { inventario: 'no' } }), 'proveedores', 'pv-lee1')));
+  await assertFails(getDoc(doc(anonimo(), 'proveedores', 'pv-lee1')));
+  await assertSucceeds(getDocs(collection(prueba_('compras'), 'proveedores'))); });
+await prueba('Proveedores: Compras cambia el nombre, el NIT, el contacto, el teléfono, el correo y la nota; no quién lo creó ni cuándo', async () => {
+  await sembrar(d => setDoc(doc(d, 'proveedores', 'pv-ed1'), PV('compras')));
+  const com = await cuenta('pvCom6', 'compras');
+  await assertSucceeds(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { nombre: 'Ferretería El Faro S. A. S.', nit: '900000003-7', contacto: 'Luis Ejemplo', telefono: '300 000 0003', correo: 'otro@elfaro.example.com', nota: '' }));
+  await assertFails(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { por: 'Otra persona' }));
+  await assertFails(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { porRol: 'jefe' }));
+  await assertFails(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { en: '2020-01-01' }));
+  await assertFails(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { activo: false })); });
+await prueba('Proveedores: al cambiarlo, el NIT y el correo siguen con su formato (nada de dejar un nombre vacío)', async () => {
+  const com = await cuenta('pvCom7', 'compras');
+  await assertFails(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { nit: '123' }));
+  await assertFails(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { correo: 'sin-arroba' }));
+  await assertFails(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { nombre: '' }));
+  await assertSucceeds(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { nit: '' })); });
+await prueba('Proveedores: la Coordinadora, el Financiero, el Gerente y Bodega sin el extra no los cambian', async () => {
+  for (const [uid, rol] of [['pvE1', 'coordcompras'], ['pvE2', 'financiero'], ['pvE3', 'gerente'], ['pvE4', 'asistente']]) await assertFails(updateDoc(doc(await cuenta(uid, rol), 'proveedores', 'pv-ed1'), { nota: 'cambiada' }));
+  await assertSucceeds(updateDoc(doc(await cuenta('pvE5', 'asistente', { extras: ['compra'] }), 'proveedores', 'pv-ed1'), { nota: 'la cambia Bodega con el extra' })); });
+await prueba('Proveedores: solo la Jefe los borra', async () => {
+  await sembrar(async d => { await setDoc(doc(d, 'proveedores', 'pv-bo1'), PV('compras')); await setDoc(doc(d, 'proveedores', 'pv-bo2'), PV('compras')); });
+  await assertFails(deleteDoc(doc(await cuenta('pvB1', 'compras'), 'proveedores', 'pv-bo1')));
+  await assertFails(deleteDoc(doc(await cuenta('pvB2', 'asistente', { extras: ['compra'] }), 'proveedores', 'pv-bo1')));
+  await assertSucceeds(deleteDoc(doc(await cuenta('pvB3', 'jefe'), 'proveedores', 'pv-bo1')));
+  await assertSucceeds(deleteDoc(doc(prueba_('jefe'), 'proveedores', 'pv-bo2'))); });
+await prueba('Proveedores: la Jefe de prueba carga los datos de ejemplo sin pasar por las revisiones', async () => {
+  await assertSucceeds(setDoc(doc(prueba_('jefe'), 'proveedores', 'pv-elfaro2'), { nombre: 'Ferretería El Faro', nit: '900000001-2', contacto: 'Marta Ejemplo', telefono: '300 000 0001', correo: 'ventas@elfaro.example.com', nota: '', por: 'Fredy Torres', porRol: 'compras', en: '2026-08-07' })); });
+await prueba('Compra con proveedor: Compras registra la compra con el id de un proveedor que ya existe', async () => {
+  await sembrar(async d => { await setDoc(doc(d, 'proveedores', 'pv-existe'), PV('compras')); await setDoc(doc(d, 'compras', 'co-pv1'), compra({ estado: 'autorizado' })); });
+  await assertSucceeds(updateDoc(doc(await cuenta('pvC1', 'compras'), 'compras', 'co-pv1'), { estado: 'comprado', proveedor: 'Ferretería El Faro', proveedorId: 'pv-existe', valorReal: 100000, fechaCompra: '2026-11-25', factura: '', historial: H1 })); });
+await prueba('Compra con proveedor: con un id que no existe, o que no es pv-…, no pasa', async () => {
+  await sembrar(async d => { await setDoc(doc(d, 'compras', 'co-pv2'), compra({ estado: 'autorizado' })); await setDoc(doc(d, 'compras', 'co-pv3'), compra({ estado: 'autorizado' })); });
+  const com = await cuenta('pvC2', 'compras');
+  await assertFails(updateDoc(doc(com, 'compras', 'co-pv2'), { estado: 'comprado', proveedor: 'Fantasma', proveedorId: 'pv-fantasma', valorReal: 100000, fechaCompra: '2026-11-25', factura: '', historial: H1 }));
+  await assertFails(updateDoc(doc(com, 'compras', 'co-pv3'), { estado: 'comprado', proveedor: 'Raro', proveedorId: 'cualquier-cosa', valorReal: 100000, fechaCompra: '2026-11-25', factura: '', historial: H1 })); });
+await prueba('Compra con proveedor nuevo: se crea el proveedor y se registra la compra en la misma escritura', async () => {
+  await sembrar(d => setDoc(doc(d, 'compras', 'co-pv4'), compra({ estado: 'autorizado' })));
+  const com = await cuenta('pvC3', 'compras');
+  await assertSucceeds(lote(com, b => { b.set(doc(com, 'proveedores', 'pv-nuevo1'), { nombre: 'Almacén Nuevo', nit: '', contacto: '', telefono: '', correo: '', nota: '', por: 'Persona de prueba', porRol: 'compras', en: '2026-11-25' });
+    b.update(doc(com, 'compras', 'co-pv4'), { estado: 'comprado', proveedor: 'Almacén Nuevo', proveedorId: 'pv-nuevo1', valorReal: 100000, fechaCompra: '2026-11-25', factura: '', historial: H1 }); })); });
+await prueba('Compra con proveedor nuevo: si el proveedor no se crea (o se crea mal), la compra tampoco pasa', async () => {
+  await sembrar(d => setDoc(doc(d, 'compras', 'co-pv5'), compra({ estado: 'autorizado' })));
+  const com = await cuenta('pvC4', 'compras');
+  await assertFails(lote(com, b => { b.set(doc(com, 'proveedores', 'pv-malo1'), { nombre: 'X', nit: '', contacto: '', telefono: '', correo: '', nota: '', por: 'Persona de prueba', porRol: 'compras', en: '2026-11-25' });
+    b.update(doc(com, 'compras', 'co-pv5'), { estado: 'comprado', proveedor: 'X', proveedorId: 'pv-malo1', valorReal: 100000, fechaCompra: '2026-11-25', factura: '', historial: H1 }); })); });
+await prueba('Compra sin autorización con proveedor: lo pide un proveedor que existe; con uno inventado, no', async () => {
+  await sembrar(d => setDoc(doc(d, 'proveedores', 'pv-sinaut'), PV('compras')));
+  const com = await cuenta('pvC5', 'compras'), correo = correoCuenta('pvC5');
+  await assertSucceeds(setDoc(doc(com, 'compras', 'co-pv6'), nueva(correo, { estado: 'sin-autorizar', pideRol: 'compras', proveedor: 'Ferretería El Faro', proveedorId: 'pv-sinaut', valorReal: 96000, fechaCompra: '2026-11-25', historial: H1 })));
+  await assertFails(setDoc(doc(com, 'compras', 'co-pv7'), nueva(correo, { estado: 'sin-autorizar', pideRol: 'compras', proveedor: 'Ferretería El Faro', proveedorId: 'pv-inventado', valorReal: 96000, fechaCompra: '2026-11-25', historial: H1 }))); });
+await prueba('Compra con proveedor: una vez recibida, nadie le cambia el proveedor (ni Bodega ni Compras)', async () => {
+  await sembrar(async d => { await setDoc(doc(d, 'proveedores', 'pv-fijo'), PV('compras')); await setDoc(doc(d, 'compras', 'co-pv8'), compra({ estado: 'comprado', proveedor: 'Ferretería El Faro', proveedorId: 'pv-fijo', valorReal: 100000, fechaCompra: '2026-11-25', historial: H2 })); });
+  await assertFails(updateDoc(doc(await cuenta('pvC6', 'compras'), 'compras', 'co-pv8'), { proveedorId: 'pv-otro' }));
+  await assertFails(updateDoc(doc(await cuenta('pvC7', 'asistente'), 'compras', 'co-pv8'), { estado: 'recibido', entregadoA: 'Sofía', proveedorId: 'pv-otro', historial: H3 }));
+  await assertSucceeds(updateDoc(doc(await cuenta('pvC8', 'asistente'), 'compras', 'co-pv8'), { estado: 'recibido', entregadoA: 'Sofía', historial: H3 })); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

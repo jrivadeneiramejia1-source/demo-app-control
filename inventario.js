@@ -1,5 +1,5 @@
 /* inventario.js — Módulo Inventario de la demo: bodega de consumibles con las compras adentro.
-   Partes: Qué hay que hacer · Bodega (3 bodegas: Riohacha, Guamal y Bogotá, con traslados) · Movimientos · Pedidos de material · Compras · Conteo · Resumen.
+   Partes: Qué hay que hacer · Bodega (3 bodegas: Riohacha, Guamal y Bogotá, con traslados) · Movimientos · Pedidos de material · Compras · Proveedores · Conteo · Resumen.
    Las tareas salen solas de los datos:
      artículo agotado o bajo sin compra abierta  -> Pedir compra        (bodega)
      pedido de material pendiente               -> Entregar            (bodega)
@@ -19,7 +19,7 @@
   const A = () => window.App;
   const $ = id => document.getElementById(id);
   const ABIERTA = ['pedido', 'por-gerente', 'autorizado', 'comprado'];
-  const SECCIONES = [['hacer', 'Qué hay que hacer'], ['existencias', 'Bodega'], ['movimientos', 'Movimientos'], ['solicitudes', 'Pedidos de material'], ['compras', 'Compras'], ['conteo', 'Conteo'], ['resumen', 'Resumen']];
+  const SECCIONES = [['hacer', 'Qué hay que hacer'], ['existencias', 'Bodega'], ['movimientos', 'Movimientos'], ['solicitudes', 'Pedidos de material'], ['compras', 'Compras'], ['proveedores', 'Proveedores'], ['conteo', 'Conteo'], ['resumen', 'Resumen']];
   const SEC = Object.fromEntries(SECCIONES);
   const sec = (...ks) => ks.map(k => [k, SEC[k]]);
   // Qué partes ve cada nivel. El Gerente ve todo a detalle pero sin lo del día a día; quien solo pide ve lo suyo y las existencias;
@@ -27,12 +27,12 @@
   const SECCIONES_NIVEL = {
     jefe: [['panorama', 'Panorama']].concat(SECCIONES),
     bodega: SECCIONES,
-    compra: sec('hacer', 'existencias', 'compras', 'solicitudes', 'movimientos', 'resumen'),
-    coordina: sec('hacer', 'compras', 'existencias', 'solicitudes', 'movimientos', 'resumen'),
+    compra: sec('hacer', 'existencias', 'compras', 'proveedores', 'solicitudes', 'movimientos', 'resumen'),
+    coordina: sec('hacer', 'compras', 'proveedores', 'existencias', 'solicitudes', 'movimientos', 'resumen'),
     pide: [['hacer', 'Lo mío']].concat(sec('existencias', 'solicitudes', 'compras')),
     ver: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'resumen'),
-    finanzas: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'resumen'),
-    gerente: sec('resumen', 'compras', 'existencias', 'solicitudes')
+    finanzas: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'proveedores', 'resumen'),
+    gerente: sec('resumen', 'compras', 'proveedores', 'existencias', 'solicitudes')
   };
   const PROYECTOS = ['Proyecto Costa Norte', 'Proyecto Ruta Alta', 'Oficina'];
   const CATEGORIAS = ['EPP', 'Eléctricos', 'Cómputo', 'Accesorios', 'Papelería', 'Aseo', 'Cafetería', 'Refrigerios', 'Herramientas', 'Otro'];
@@ -145,6 +145,58 @@
   const HOY_MAX = 10;
   const contarHoyDe = bod => porContarHoy().slice(0, HOY_MAX).filter(x => bodegaDe(x.a) === bod).map(x => x.a.id);
 
+  /* ---------- proveedores ---------- */
+  const PESOS_NIT = [3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71];
+  /** Dígito de verificación de un NIT (el de la DIAN): cada cifra, de derecha a izquierda, se multiplica por su peso y se suma;
+      el resto de dividir esa suma entre 11 es el dígito (si el resto es 0 o 1, ese mismo; si no, 11 menos el resto). */
+  const dvNit = base => { const sum = String(base).split('').reverse().reduce((t, c, i) => t + Number(c) * PESOS_NIT[i], 0), r = sum % 11; return r > 1 ? 11 - r : r; };
+  /** Lee el NIT que escribió la persona: devuelve { nit } (vacío si no escribió nada) o { error } diciendo cómo arreglarlo. */
+  function leerNit(txt) {
+    const t = String(txt == null ? '' : txt).replace(/[.\s]/g, '').replace(/[–—−]/g, '-');
+    if (!t) return { nit: '' };
+    const m = /^(\d{5,15})-(\d)$/.exec(t);
+    if (!m) {
+      if (/^\d{6,16}$/.test(t) && Number(t.slice(-1)) === dvNit(t.slice(0, -1))) return { error: `Escríbelo con guion antes del último número: ${t.slice(0, -1)}-${t.slice(-1)}.` };
+      if (/^\d{5,15}$/.test(t)) return { error: `Falta el dígito de verificación. Si ${t} es el NIT sin dígito, escríbelo así: ${t}-${dvNit(t)}.` };
+      return { error: 'El NIT va con su dígito de verificación después de un guion, sin puntos. Ejemplo: 900000001-2.' };
+    }
+    const bueno = dvNit(m[1]);
+    if (Number(m[2]) !== bueno) return { error: `El dígito de verificación no cuadra: el NIT ${m[1]} termina en -${bueno}, no en -${m[2]}.` };
+    return { nit: m[1] + '-' + m[2] };
+  }
+  const provs = () => D().proveedores || [];
+  const normNom = v => String(v == null ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const provPorNombre = n => provs().find(p => normNom(p.nombre) === normNom(n)) || null;
+  const nitSolo = n => String(n || '').split('-')[0];
+  const veProv = () => ['compra', 'coordina', 'bodega', 'jefe', 'finanzas', 'gerente'].includes(perm());
+  // Agrega y cambia proveedores quien hace las compras (Compras, la Jefe y Bodega con el extra «compra»: lo mismo que piden las reglas).
+  const gestionaProv = () => puedoHacer('compras');
+  const HECHAS = ['comprado', 'recibido', 'sin-autorizar'];
+  const delAnio = f => String(f || '').slice(0, 4) === A().hoyISO().slice(0, 4);
+  /** Compras ya hechas a un proveedor: las que guardan su id y, en las de antes (solo con el nombre escrito), las del mismo nombre. */
+  const comprasDe = p => D().compras.filter(c => HECHAS.includes(c.estado) && (c.proveedorId ? c.proveedorId === p.id : normNom(c.proveedor) === normNom(p.nombre)))
+    .sort((x, y) => String(y.fechaCompra).localeCompare(String(x.fechaCompra)));
+  function statsProv(p) {
+    const cs = comprasDe(p);
+    return { cs, n: cs.length, anio: cs.filter(c => delAnio(c.fechaCompra)).reduce((t, c) => t + num(c.valorReal), 0), ultima: cs.length ? cs[0].fechaCompra : '' };
+  }
+  /** Último precio pagado por cada artículo en las compras de ese proveedor (con el anterior, para ver si subió). Lo pagado se anota por toda la compra:
+      en una compra con varios artículos se reparte según lo que valía cada uno al pedirlo. `cs` va de la más nueva a la más vieja. */
+  function preciosProv(cs) {
+    const por = new Map();
+    cs.forEach(c => {
+      const ls = lineasDe(c), suma = ls.reduce((t, l) => t + num(l.valor), 0), pagado = num(c.valorReal), factor = pagado > 0 && suma > 0 ? pagado / suma : 1;
+      ls.forEach(l => {
+        const pag = ls.length === 1 ? pagado : Math.round(num(l.valor) * factor);
+        if (!(num(l.cantidad) > 0) || !(pag > 0)) return;
+        const k = normNom(l.que), cada = Math.round(pag / num(l.cantidad)), x = por.get(k);
+        if (!x) por.set(k, { que: l.que, cada, fecha: c.fechaCompra, previo: 0 });
+        else if (!x.previo) { x.previo = cada; x.previoFecha = c.fechaCompra; }
+      });
+    });
+    return Array.from(por.values()).sort((x, y) => String(x.que).localeCompare(String(y.que), 'es'));
+  }
+
   /** Lista de tareas pendientes, de la más urgente a la menos. */
   function tareas() {
     const d = D(), out = [];
@@ -210,12 +262,12 @@
     const mias = resumen().mias;
     $('invSecciones').innerHTML = secciones().map(([k, n]) => `<button type="button" class="chip" data-sec="${k}" aria-pressed="${seccion === k}">${esH(n)}${k === 'hacer' && mias ? ` <span class="n">${mias}</span>` : ''}</button>`).join('');
     const q = $('qInventario');
-    q.hidden = !['existencias', 'movimientos', 'compras'].includes(seccion);
-    q.placeholder = seccion === 'movimientos' ? 'Buscar artículo, persona o proyecto' : seccion === 'compras' ? 'Buscar compra, proveedor o persona' : 'Buscar artículo, categoría o ubicación';
+    q.hidden = !['existencias', 'movimientos', 'compras', 'proveedores'].includes(seccion);
+    q.placeholder = seccion === 'movimientos' ? 'Buscar artículo, persona o proyecto' : seccion === 'compras' ? 'Buscar compra, proveedor o persona' : seccion === 'proveedores' ? 'Buscar proveedor, NIT o contacto' : 'Buscar artículo, categoría o ubicación';
     const c = $('invContenido');
-    if (['articulos', 'compras', 'solicitudes', 'movimientos'].some(App.cargando)) { UI.poner(c, UI.esqueleto(seccion === 'movimientos' ? 5 : 3, true, seccion === 'movimientos' ? 'fila' : undefined)); return; }
+    if (['articulos', 'compras', 'solicitudes', 'movimientos'].some(App.cargando) || (seccion === 'proveedores' && App.cargando('proveedores'))) { UI.poner(c, UI.esqueleto(seccion === 'movimientos' ? 5 : 3, true, seccion === 'movimientos' ? 'fila' : undefined)); return; }
     $('vInventario').classList.toggle('ancha', seccion === 'existencias' && vistaTabla());
-    const html = { panorama: htmlPanorama, hacer: perm() === 'pide' ? htmlMios : () => htmlTareas(f), existencias: () => htmlExistencias(f), movimientos: htmlMovimientos, solicitudes: htmlSolicitudes, compras: htmlCompras, conteo: htmlConteo, resumen: htmlResumen }[seccion];
+    const html = { panorama: htmlPanorama, hacer: perm() === 'pide' ? htmlMios : () => htmlTareas(f), existencias: () => htmlExistencias(f), movimientos: htmlMovimientos, solicitudes: htmlSolicitudes, compras: htmlCompras, proveedores: htmlProveedores, conteo: htmlConteo, resumen: htmlResumen }[seccion];
     if (UI.poner(c, html())) window.llenarIconos(c);
   }
 
@@ -450,6 +502,26 @@
     return h + (vis.length ? `<div class="list">${vis.map(tarjetaCompra).join('')}</div>` : UI.vacio('carrito', 'No hay compras aquí', `Cambia el filtro o toca «${hagoCompras() ? 'Hacer' : 'Pedir'} una compra».`));
   }
 
+  /* --- Proveedores --- */
+  function tarjetaProv(p, st) {
+    const App = A();
+    return `<button type="button" class="card tarea st-${st.n ? 'disco' : 'pend'}" data-accion="verprov" data-id="${esH(p.id)}">
+      <span class="card-head"><span class="card-title">${esH(p.nombre)}</span>${p.nit ? `<span class="serial-chip">${esH(p.nit)}</span>` : ''}</span>
+      <span class="meta">${esH(st.n ? `${st.n} ${st.n === 1 ? 'compra' : 'compras'} · ${st.anio ? App.cop(st.anio) + ' este año' : 'nada este año'} · la última el ${App.fechaCorta(st.ultima)}` : 'Todavía sin compras')}</span>
+      <span class="meta">${esH([p.contacto, p.telefono].filter(Boolean).join(' · ') || 'Sin contacto anotado')}</span>
+    </button>`;
+  }
+  function htmlProveedores() {
+    const q = $('qInventario').value.trim().toLowerCase();
+    const todos = provs().map(p => ({ p, st: statsProv(p) })).sort((x, y) => y.st.anio - x.st.anio || String(x.p.nombre).localeCompare(String(y.p.nombre), 'es'));
+    const vis = todos.filter(x => !q || texto(x.p.nombre, x.p.nit, x.p.contacto, x.p.telefono, x.p.correo, x.p.nota).includes(q));
+    let h = gestionaProv() ? barraBotones([boton('nuevoprov', 'Agregar proveedor', 'mas', '', 'primary small')]) : '<p class="meta">Aquí ves a quién se le compra y cuánto. Los agrega y cambia quien hace las compras.</p>';
+    h += `<div class="count" aria-live="polite">${vis.length === todos.length ? todos.length + (todos.length === 1 ? ' proveedor' : ' proveedores') : vis.length + ' de ' + todos.length + ' proveedores'}</div>`;
+    if (!vis.length) return h + (todos.length ? UI.vacio('vacio', 'Ningún proveedor con ese nombre', 'Quita lo que escribiste en el buscador para ver todos.') + `<div class="acc-rap">${boton('quitarq', 'Quitar la búsqueda', 'x', '', 'ghost small')}</div>`
+      : UI.vacio('carrito', 'Todavía no hay proveedores', gestionaProv() ? 'Toca «Agregar proveedor». También se agregan solos cuando registras una compra con un proveedor nuevo.' : 'Los agrega quien hace las compras.'));
+    return h + `<div class="list">${vis.map(x => tarjetaProv(x.p, x.st)).join('')}</div>`;
+  }
+
   /* --- Conteo --- */
   /** «Te toca contar hoy»: lo que ya toca contar según su clase ABC (A cada 30 días, B cada 90 y C cada 180), de a 10, con un botón por bodega. */
   function cuadroHoy() {
@@ -578,6 +650,8 @@
   /* ---------- hoja de acción ---------- */
   const campoNum = (id, lbl, v, min, max, ayuda) => `<div class="field"><label for="${id}">${lbl}</label><input id="${id}" type="number" inputmode="numeric" min="${min}"${max != null ? ` max="${max}"` : ''} step="1" value="${esH(v)}">${ayuda ? `<span class="meta" id="${id}Ay">${esH(ayuda)}</span>` : ''}</div>`;
   const campoTxt = (id, lbl, v, ph, max) => `<div class="field"><label for="${id}">${lbl}</label><input id="${id}" type="text" maxlength="${max || 120}" autocomplete="off" value="${esH(v || '')}" placeholder="${esH(ph || '')}"></div>`;
+  /** Campo de proveedor con lista para escoger (y escribir uno nuevo). Cada campo trae su propia lista con los proveedores que hay. */
+  const campoProv = (id, lbl, v, ph, max, ayuda) => `<div class="field"><label for="${id}">${lbl}</label><input id="${id}" type="text" maxlength="${max || 80}" autocomplete="off" list="${id}Lista" value="${esH(v || '')}" placeholder="${esH(ph || '')}"><datalist id="${id}Lista">${provs().map(x => `<option value="${esH(x.nombre)}">${esH(x.nit || '')}</option>`).join('')}</datalist>${ayuda ? `<span class="meta" id="${id}Ay">${esH(ayuda)}</span>` : ''}</div>`;
   const campoSel = (id, lbl, ops, v) => `<div class="field"><label for="${id}">${lbl}</label><select id="${id}">${ops.map(([val, txt]) => `<option value="${esH(val)}"${val === v ? ' selected' : ''}>${esH(txt)}</option>`).join('')}</select></div>`;
   const opsArt = vacio => (vacio ? [['', vacio]] : []).concat(articulos().slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map(a => [a.id, `${a.nombre} · ${bodegaDe(a)} (${num(a.cantidad) > 0 ? 'hay ' + cantTxt(a.cantidad, a.unidad) : 'agotado'})`]));
   function abrirAccion(o) {
@@ -676,7 +750,7 @@
         `<div class="fields cols">${campoNum('acCant', 'Cantidad', sug, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), a ? a.unidad : 'unidades')}</div>` +
         `<div class="fields cols">${campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), a && CATEGORIAS.includes(a.categoria) ? a.categoria : 'Otro')}${campoNum('acValor', 'Valor total de este artículo (pesos)', a ? num(a.costo) * sug : '', 0, null)}</div>` +
         `<div id="acExtra"></div><div class="row"><button class="btn small ghost" type="button" data-accion="masLinea">${window.ico('mas')}Agregar otro artículo a esta compra</button></div>` +
-        campoTxt('acProvSug', 'A quién se le va a comprar (opcional)', a ? a.proveedor : '', 'Ej: Ferretería El Faro', 80) +
+        campoProv('acProvSug', 'A quién se le va a comprar (opcional)', a ? a.proveedor : '', 'Ej: Ferretería El Faro', 80) +
         campoTxt('acPara', 'Para qué', a ? 'Reponer la bodega' : '', 'Ej: para la cuadrilla de campo', 140) +
         campoSel('acProy', 'Proyecto', PROYECTOS.map(p => [p, p]), PROYECTOS[0]) +
         `<div class="field"><span class="lbl">Cotizaciones (opcional, hasta 3 fotos)</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="acCotTxt">Adjuntar fotos de cotizaciones</span><input id="acCot" class="archivo-oculto" type="file" accept="image/*" multiple></label><div id="acCotVer" class="cot-mini"></div></div>`,
@@ -911,7 +985,7 @@
       titulo: sinAutorizacion ? 'Registrar compra hecha sin autorización' : 'Registrar compra',
       sub: sinAutorizacion ? 'Para que quede el registro: la Coordinadora de compras recibe el aviso y la compra se ve en rojo en el resumen.' : `${c.que}: ${cantTxt(c.cantidad, c.unidad)}, autorizada por ${c.autoriza || 'la Coordinadora'}.`,
       campos: (sinAutorizacion ? campoTxt('acQue', 'Qué se compró', '', 'Ej: garrafones de agua', 100) + `<div class="fields cols">${campoNum('acCant', 'Cantidad', 1, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), 'unidades')}</div>` + campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), 'Otro') + campoTxt('acPara', 'Para qué', '', 'Ej: para la reunión de hoy', 140) + campoTxt('acQuien', 'Quién compró', '', 'Nombre', 60) : '') +
-        campoTxt('acProv', 'Proveedor', (a && a.proveedor) || (c && c.proveedor) || '', 'Dónde se compró') +
+        campoProv('acProv', 'Proveedor', (a && a.proveedor) || (c && c.proveedor) || '', 'Escribe o escoge de la lista', 80, 'Si no está en la lista, se agrega solo a Proveedores.') +
         campoNum('acValor', 'Valor pagado (pesos)', c ? c.valorAprox : '', 0, null, c ? `Autorizado: aprox. ${A().cop(c.valorAprox)}.` : '') +
         `<div class="field"><span class="lbl">Foto de la factura</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="acFotoTxt">Tomar o escoger foto</span><input id="acFoto" class="archivo-oculto" type="file" accept="image/*" capture="environment"></label><img id="acFotoVer" class="factura-mini" alt="Foto de la factura" hidden></div>`,
       primario: 'Guardar compra', icono: 'check',
@@ -921,24 +995,31 @@
         if (sinAutorizacion && !valor('acQue')) return fallar('Escribe qué se compró.', 'acQue');
         if (sinAutorizacion && !(entero('acCant') > 0)) return fallar('Escribe una cantidad entera mayor que 0.', 'acCant');
         if (sinAutorizacion && !valor('acQuien')) return fallar('Escribe quién compró.', 'acQuien');
-        if (!valor('acProv')) return fallar('Escribe el proveedor.', 'acProv');
+        if (valor('acProv').length < 2) return fallar('Escribe el proveedor.', 'acProv');
         if (!(v > 0)) return fallar('Escribe el valor pagado en pesos, sin puntos ni comas.', 'acValor');
+        // Si el proveedor ya está en la lista (aunque cambie una mayúscula o una tilde) se usa ese; si no, se agrega a Proveedores en la misma escritura.
+        const conocido = provPorNombre(valor('acProv')), provId = conocido ? conocido.id : window.nube.idNuevo('pv'), provNom = conocido ? conocido.nombre : valor('acProv');
+        const opsProv = conocido ? [] : [['set', 'proveedores', provId, { nombre: provNom, nit: '', contacto: '', telefono: '', correo: '', nota: '', por: persona().nombre, porRol: persona().rol, en: A().hoyISO() }]];
         if (sinAutorizacion) {
-          return [['set', 'compras', window.nube.idNuevo('co'), { que: valor('acQue'), cantidad: entero('acCant'), unidad: valor('acUni'), categoria: valor('acCat'), valorAprox: v, paraQue: valor('acPara') || 'Sin dato',
-            pide: valor('acQuien'), pideRol: persona().rol, autoriza: '', estado: 'sin-autorizar', proveedor: valor('acProv'), valorReal: v, fechaPedido: A().hoyISO(), fechaCompra: A().hoyISO(), entregadoA: '', motivoRechazo: '', articuloId: '',
-            factura: fotoFactura, revisada: false, historial: [{ fecha: ahora(), texto: `Registró una compra de ${valor('acQuien')} hecha sin autorización en ${valor('acProv')}`, por: persona().nombre }], ...misMarcas() }],
-            aviso('coordcompras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} en ${valor('acProv')} (${A().cop(v)}) sin autorización.`),
+          return [...opsProv, ['set', 'compras', window.nube.idNuevo('co'), { que: valor('acQue'), cantidad: entero('acCant'), unidad: valor('acUni'), categoria: valor('acCat'), valorAprox: v, paraQue: valor('acPara') || 'Sin dato',
+            pide: valor('acQuien'), pideRol: persona().rol, autoriza: '', estado: 'sin-autorizar', proveedor: provNom, proveedorId: provId, valorReal: v, fechaPedido: A().hoyISO(), fechaCompra: A().hoyISO(), entregadoA: '', motivoRechazo: '', articuloId: '',
+            factura: fotoFactura, revisada: false, historial: [{ fecha: ahora(), texto: `Registró una compra de ${valor('acQuien')} hecha sin autorización en ${provNom}`, por: persona().nombre }], ...misMarcas() }],
+            aviso('coordcompras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} en ${provNom} (${A().cop(v)}) sin autorización.`),
             aviso('compras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} (${A().cop(v)}) sin autorización.`)];
         }
         // Más del 10 % sobre lo autorizado: queda dicho en el historial y le avisa a la Coordinadora (y al Gerente general si él la había autorizado).
         const sobre = num(c.valorAprox) > 0 && v > num(c.valorAprox) * 1.1, pct = Math.round((v / Math.max(1, num(c.valorAprox)) - 1) * 100);
-        return [['mezclar', 'compras', c.id, { estado: 'comprado', proveedor: valor('acProv'), valorReal: v, fechaCompra: A().hoyISO(), factura: fotoFactura || c.factura || '', historial: paso(c, `Compró en ${valor('acProv')} por ${A().cop(v)}${sobre ? ` (${pct} % más de lo autorizado)` : ''}`) }],
-          aviso('asistente', 'Compra en camino: hay que recibirla', `${persona().nombre} compró ${cantTxt(c.cantidad, c.unidad)} de ${c.que} en ${valor('acProv')}. ${a ? 'Recíbela en bodega cuando llegue.' : `Cuando llegue, entrégala a ${c.pide}.`}`),
-          c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Ya se compró', `Se compró ${c.que} en ${valor('acProv')}.`) : null,
+        return [...opsProv, ['mezclar', 'compras', c.id, { estado: 'comprado', proveedor: provNom, proveedorId: provId, valorReal: v, fechaCompra: A().hoyISO(), factura: fotoFactura || c.factura || '', historial: paso(c, `Compró en ${provNom} por ${A().cop(v)}${sobre ? ` (${pct} % más de lo autorizado)` : ''}`) }],
+          aviso('asistente', 'Compra en camino: hay que recibirla', `${persona().nombre} compró ${cantTxt(c.cantidad, c.unidad)} de ${c.que} en ${provNom}. ${a ? 'Recíbela en bodega cuando llegue.' : `Cuando llegue, entrégala a ${c.pide}.`}`),
+          c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Ya se compró', `Se compró ${c.que} en ${provNom}.`) : null,
           sobre ? aviso('coordcompras', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null,
           sobre && c.estado === 'autorizado' && c.autorizaJefe && c.autoriza !== c.autorizaJefe ? aviso('gerente', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null];
       }
     });
+    // Mientras escribe, la app dice si ese proveedor ya existe o se va a agregar.
+    const avisoProv = () => { const t = valor('acProv'), ay = $('acProvAy'); if (!ay) return; const k = provPorNombre(t); ay.textContent = t.length < 2 ? 'Si no está en la lista, se agrega solo a Proveedores.' : k ? `Es «${k.nombre}»${k.nit ? ', NIT ' + k.nit : ''}.` : `«${t}» es nuevo: se agrega a Proveedores al guardar.`; };
+    $('acCampos').oninput = e => { if (e.target && e.target.id === 'acProv') avisoProv(); };
+    avisoProv();
     $('acFoto').addEventListener('change', async e => {
       const f = e.target.files && e.target.files[0]; if (!f) return;
       $('acFotoTxt').textContent = 'Preparando la foto…';
@@ -1049,6 +1130,62 @@
     });
   }
 
+  /* ---------- proveedores: ficha, agregar, editar y borrar ---------- */
+  function verProv(p) {
+    const App = A(), st = statsProv(p), precios = preciosProv(st.cs);
+    const botones = [];
+    if (gestionaProv()) botones.push(boton('editprov', 'Editar', 'lapiz', ` data-id="${esH(p.id)}"`));
+    if (esJefe() && !st.n) botones.push(boton('borrarprov', 'Borrar', 'borrar', ` data-id="${esH(p.id)}"`, 'ghost small'));
+    const cambio = x => { if (!x.previo) return '<span class="meta">Una sola compra</span>'; const pct = Math.round((x.cada / x.previo - 1) * 100);
+      return pct > 0 ? `<span class="err-txt">Subió ${pct} %</span><span class="meta">antes ${esH(App.cop(x.previo))}</span>` : pct < 0 ? `<span>Bajó ${-pct} %</span><span class="meta">antes ${esH(App.cop(x.previo))}</span>` : `<span class="meta">Igual que antes</span>`; };
+    abrirAccion({
+      titulo: p.nombre, sub: p.nit ? 'Proveedor' : 'Proveedor · sin NIT anotado',
+      campos: `<dl class="datos">${p.nit ? `<dt>NIT</dt><dd><span class="serial-chip">${esH(p.nit)}</span></dd>` : ''}${p.contacto ? `<dt>Contacto</dt><dd>${esH(p.contacto)}</dd>` : ''}${p.telefono ? `<dt>Teléfono</dt><dd>${esH(p.telefono)}</dd>` : ''}${p.correo ? `<dt>Correo</dt><dd>${esH(p.correo)}</dd>` : ''}${p.nota ? `<dt>Nota</dt><dd>${esH(p.nota)}</dd>` : ''}
+          <dt>Compras hechas</dt><dd><b>${esH(String(st.n))}</b>${st.ultima ? `<span class="meta"> · la última el ${esH(App.fechaCorta(st.ultima))}</span>` : ''}</dd><dt>Este año</dt><dd><b>${esH(App.cop(st.anio))}</b></dd></dl>
+        ${botones.length ? `<div class="tarea-pie">${botones.join('')}</div>` : ''}
+        <div class="section-label">Último precio por artículo</div>
+        ${precios.length ? `<table class="lineas-tabla"><thead><tr><th>Artículo</th><th>Cada uno</th><th>Cambio</th></tr></thead><tbody>${precios.map(x => `<tr><td><b>${esH(x.que)}</b><span class="meta">${esH(App.fechaCorta(x.fecha))}</span></td><td>${esH(App.cop(x.cada))}</td><td>${cambio(x)}</td></tr>`).join('')}</tbody></table>
+        <p class="meta">Lo pagado se anota por toda la compra; en las de varios artículos se reparte según lo que valía cada uno al pedirlo.</p>` : '<p class="meta">Todavía no hay compras con precio.</p>'}
+        <div class="section-label">Compras hechas${st.n ? ` (${st.n})` : ''}</div>
+        ${st.n ? `<ol class="linea">${st.cs.slice(0, 8).map(c => `<li><b>${esH(c.que)} · ${esH(App.cop(c.valorReal))}</b><span class="meta">${esH([App.fechaCorta(c.fechaCompra), (EST_CO[c.estado] || [''])[0], 'pidió ' + c.pide].filter(Boolean).join(' · '))}</span></li>`).join('')}</ol>${st.n > 8 ? `<p class="meta">Se ven las 8 más nuevas. Todas están en Compras.</p>` : ''}` : '<p class="meta">Todavía no se le ha comprado nada.</p>'}`
+    });
+  }
+  function formProv(p) {
+    const nuevoP = !p;
+    abrirAccion({
+      titulo: nuevoP ? 'Agregar proveedor' : 'Editar proveedor', sub: nuevoP ? 'Con el nombre basta; lo demás se puede completar después.' : `Cambia los datos de ${p.nombre}. Las compras que ya se le hicieron siguen siendo suyas.`,
+      campos: campoTxt('pvNombre', 'Nombre', p ? p.nombre : '', 'Ej: Ferretería El Faro', 80) +
+        `<div class="field"><label for="pvNit">NIT con su dígito (opcional)</label><input id="pvNit" type="text" inputmode="numeric" maxlength="20" autocomplete="off" value="${esH(p ? p.nit || '' : '')}" placeholder="Ej: 900000001-2"><span class="meta">Sin puntos, con un guion y el dígito de verificación. La app revisa que el dígito esté bien.</span></div>` +
+        campoTxt('pvContacto', 'Persona de contacto (opcional)', p ? p.contacto : '', 'Nombre', 60) +
+        `<div class="fields cols">${campoTxt('pvTel', 'Teléfono (opcional)', p ? p.telefono : '', 'Ej: 300 000 0000', 25)}${campoTxt('pvCorreo', 'Correo (opcional)', p ? p.correo : '', 'Ej: ventas@ejemplo.com', 80)}</div>` +
+        campoTxt('pvNota', 'Nota (opcional)', p ? p.nota : '', 'Ej: entrega en 2 días, fía a 30', 200),
+      primario: nuevoP ? 'Agregar' : 'Guardar cambios', icono: 'check', listo: nuevoP ? 'Listo: proveedor agregado.' : 'Listo: proveedor actualizado.',
+      ops: () => {
+        const nom = valor('pvNombre'), tel = valor('pvTel'), correo = valor('pvCorreo');
+        if (nom.length < 2) return fallar('Escribe el nombre del proveedor.', 'pvNombre');
+        const igual = provs().find(x => (!p || x.id !== p.id) && normNom(x.nombre) === normNom(nom));
+        if (igual) return fallar(`Ya hay un proveedor llamado «${igual.nombre}».`, 'pvNombre');
+        const n = leerNit(valor('pvNit'));
+        if (n.error) return fallar(n.error, 'pvNit');
+        const dueno = n.nit && provs().find(x => (!p || x.id !== p.id) && x.nit && nitSolo(x.nit) === nitSolo(n.nit));
+        if (dueno) return fallar(`Ese NIT ya lo tiene «${dueno.nombre}».`, 'pvNit');
+        if (!/^[0-9 +()-]*$/.test(tel)) return fallar('El teléfono lleva solo números, espacios, + o guiones.', 'pvTel');
+        if (correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) return fallar('Ese correo no está bien escrito.', 'pvCorreo');
+        const datos = { nombre: nom, nit: n.nit, contacto: valor('pvContacto'), telefono: tel, correo, nota: valor('pvNota') };
+        if (p) return [['mezclar', 'proveedores', p.id, datos]];
+        return [['set', 'proveedores', window.nube.idNuevo('pv'), Object.assign(datos, { por: persona().nombre, porRol: persona().rol, en: A().hoyISO() })]];
+      }
+    });
+  }
+  function borrarProv(p) {
+    abrirAccion({
+      titulo: 'Borrar proveedor', sub: `${p.nombre} no tiene compras. Si lo borras, se pierden sus datos de contacto.`,
+      campos: '<div class="note">Un proveedor con compras no se puede borrar: así no se pierde de dónde salió lo que se compró.</div>',
+      primario: 'Borrar el proveedor', icono: 'borrar', listo: 'Listo: proveedor borrado.',
+      ops: () => (comprasDe(p).length ? fallar('Ya tiene compras: no se puede borrar.') : [['borrar', 'proveedores', p.id]])
+    });
+  }
+
   /* ---------- acciones: bodega ---------- */
   function entregar(s) {
     const a = artPorId(s.articuloId);
@@ -1141,7 +1278,7 @@
         (nuevo ? campoNum('acCantIni', 'Cantidad que hay ahora', 0, 0, 99999) : '') +
         `<div class="fields cols">${campoNum('acMin', 'Mínimo (avisa al bajar de aquí)', a ? a.minimo : 2, 0, 99999)}${campoNum('acMax', 'Máximo (hasta dónde se compra)', a ? a.maximo : 10, 1, 99999)}</div>` +
         campoTxt('acUbi', 'Ubicación dentro de la bodega', a ? a.ubicacion : 'Estante ', 'Ej: Estante B1', 80) +
-        `<div class="fields cols">${campoNum('acCosto', 'Precio aprox. por unidad (pesos)', a ? a.costo : '', 0, null)}${campoTxt('acProvH', 'Proveedor habitual', a ? a.proveedor : '', 'Ej: Ferretería El Faro', 60)}</div>`,
+        `<div class="fields cols">${campoNum('acCosto', 'Precio aprox. por unidad (pesos)', a ? a.costo : '', 0, null)}${campoProv('acProvH', 'Proveedor habitual', a ? a.proveedor : '', 'Ej: Ferretería El Faro', 60)}</div>`,
       primario: nuevo ? 'Agregar' : 'Guardar cambios', icono: 'check', listo: nuevo ? 'Listo: artículo agregado a la bodega.' : 'Listo: artículo actualizado.',
       ops: () => {
         const mn = entero('acMin'), mx = entero('acMax'), costo = entero('acCosto'), ini = nuevo ? entero('acCantIni') : 0;
@@ -1361,11 +1498,12 @@
     try {
       const d = D(), hojas = [], gen = `Generado el ${A().hoyISO()}.`;
       const TIT = { Bodega: ['Bodega: lo que hay en cada bodega', 'Cuánto hay de cada artículo en Riohacha, Guamal y Bogotá, su estado y su valor.'], Movimientos: ['Movimientos de la bodega', 'Cada entrada, salida y ajuste, del más nuevo al más viejo.'],
-        Compras: ['Compras', 'Todas las compras: quién pidió, quién autorizó, cuánto costó y en qué va.'], 'Pedidos de material': ['Pedidos de material', 'Lo que pidió cada persona a la bodega y si se entregó.'] };
+        Compras: ['Compras', 'Todas las compras: quién pidió, quién autorizó, cuánto costó y en qué va.'], Proveedores: ['Proveedores', 'A quién se le compra: NIT, contacto, compras hechas y lo que se le ha pagado este año.'], 'Pedidos de material': ['Pedidos de material', 'Lo que pidió cada persona a la bodega y si se entregó.'] };
       const hoja = (nombre, filas) => hojas.push(window.Excel.deObjetos(nombre, TIT[nombre][0], `${TIT[nombre][1]} ${gen}`, filas));
       hoja('Bodega', articulos().map(a => ({ Bodega: bodegaDe(a), Artículo: a.nombre, Categoría: a.categoria, Cantidad: num(a.cantidad), Unidad: a.unidad, Mínimo: num(a.minimo), Máximo: num(a.maximo), Estado: EST_ART[estadoArt(a)][0], Ubicación: a.ubicacion, 'Precio aprox.': num(a.costo), 'Valor en bodega': num(a.cantidad) * num(a.costo), Proveedor: a.proveedor })));
       hoja('Movimientos', d.movimientos.slice().sort((x, y) => String(y.fecha).localeCompare(String(x.fecha))).map(m => ({ Fecha: fechaLocal(m.fecha, true), Artículo: m.articulo, Tipo: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: num(m.cantidad), Saldo: num(m.saldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota })));
       hoja('Compras', d.compras.map(c => ({ Qué: c.que, Cantidad: num(c.cantidad), Unidad: c.unidad, Categoría: c.categoria, Estado: (EST_CO[c.estado] || [c.estado])[0], Pidió: c.pide, Autoriza: c.autoriza, 'Valor aprox.': num(c.valorAprox), 'Valor pagado': num(c.valorReal), Proveedor: c.proveedor, 'Fecha pedido': c.fechaPedido, 'Fecha compra': c.fechaCompra, 'Para qué': c.paraQue })));
+      if (veProv()) hoja('Proveedores', provs().map(p => { const st = statsProv(p); return { Proveedor: p.nombre, NIT: p.nit, Contacto: p.contacto, Teléfono: p.telefono, Correo: p.correo, 'Compras hechas': st.n, 'Pagado este año': st.anio, 'Última compra': st.ultima, Nota: p.nota }; }));
       hoja('Pedidos de material', d.solicitudes.map(s => ({ Fecha: fechaLocal(s.fecha, false), Artículo: s.articulo, Cantidad: num(s.cantidad), Pidió: s.pide, 'Para qué': s.paraQue, Proyecto: s.proyecto, Estado: (EST_SOL[s.estado] || [s.estado])[0], Entregó: s.entregadaPor, Motivo: s.motivo })));
       await window.Excel.descargar({ archivo: `Inventario ${A().hoyISO()}`, hojas });
       A().toast('Listo: Excel descargado');
@@ -1674,7 +1812,7 @@
     if (sb) { sub[sb.dataset.sub] = sb.dataset.val; pintar(); return; }
     const b = e.target.closest('[data-accion]'); if (!b) return;
     const d = D(), id = b.dataset.id;
-    const c = d.compras.find(x => x.id === id) || null, s = d.solicitudes.find(x => x.id === id) || null, a = artPorId(id);
+    const c = d.compras.find(x => x.id === id) || null, s = d.solicitudes.find(x => x.id === id) || null, a = artPorId(id), pv = provs().find(x => x.id === id) || null;
     const mapa = {
       pedir: () => a && pedirCompra(a.id, Number(b.dataset.cant) || 0), pedirbajo: () => pedirBajo(), autorizar: () => c && autorizar(c), rechazar: () => c && rechazar(c),
       comprar: () => c && registrarCompra(c), imprimirorden: () => c && imprimirOrden(c), recibir: () => c && recibir(c), revisada: () => c && marcarRevisada(c), vercompra: () => c && verCompra(c),
@@ -1683,6 +1821,8 @@
       nuevoart: () => editarArticulo(null), editart: () => a && editarArticulo(a), verart: () => a && verArticulo(a), pedirmat: () => a && pedirMaterial(a.id),
       trasladar: () => a && trasladar(a), conteo: () => conteo(), volverconteo: () => (conteoEst ? conteoContar(conteoEst.bod, conteoEst.cat, conteoEst.solo) : conteo()), contarhoy: () => { const ids = contarHoyDe(b.dataset.bod); if (!ids.length) { A().toast('Ya no queda nada por contar hoy en esa bodega.'); return true; } return conteoContar(b.dataset.bod, '', ids); }, borrarborrador: () => { borrarBorrador(b.dataset.bod); conteo(b.dataset.bod); }, excel: () => descargarExcel(b), bdexcel: () => descargarBase(b), exguardar: () => guardarExcelExistencias(), exdescartar: () => { previaEx = null; errorEx = ''; pintar(); }, monto: () => cambiarMonto(), kardex: () => a && kardex(a), excelkardex: () => a && descargarKardex(b, a),
       escanear: () => escanearArt(), escancodigo: () => escanearParaCampo(),
+      verprov: () => pv && verProv(pv), nuevoprov: () => gestionaProv() && (formProv(null), true), editprov: () => pv && gestionaProv() && (formProv(pv), true), borrarprov: () => pv && esJefe() && (borrarProv(pv), true),
+      quitarq: () => { $('qInventario').value = ''; pintar(); return true; },
       vista: () => { guardarVista(id); pintar(); return true; },
       ordenar: () => { ordenT = ordenT.col === id ? { col: id, dir: -ordenT.dir } : { col: id, dir: 1 }; pintar(); return true; },
       masLinea: () => masLinea(), quitarLinea: () => quitarLinea(b.dataset.n),

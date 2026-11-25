@@ -336,11 +336,12 @@ En Equipos, Vehículos e Inventario, si escribiste algo (o tomaste una foto o di
 
 | Nivel | Quién lo tiene por defecto | Secciones que ve |
 |---|---|---|
-| **Jefe** | La Jefe | Panorama, Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras, Conteo, Resumen |
-| **Bodega** | Bodega (Andrés Beltrán) | Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras, Conteo, Resumen |
-| **Compra** | Compras | Qué hay que hacer, Existencias, Compras, Pedidos de material, Movimientos, Resumen |
-| **Gerente** | Los Gerentes | Resumen, Compras, Existencias, Pedidos de material |
-| **Finanzas** | Financieros (3 personas) | Existencias, Movimientos, Pedidos, Compras, Resumen |
+| **Jefe** | La Jefe | Panorama, Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras, Proveedores, Conteo, Resumen |
+| **Bodega** | Bodega (Andrés Beltrán) | Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras, Proveedores (solo ver, salvo con el extra «compra»), Conteo, Resumen |
+| **Compra** | Compras | Qué hay que hacer, Existencias, Compras, Proveedores, Pedidos de material, Movimientos, Resumen |
+| **Coordina** | Coordinadora de compras (Mauricio Giraldo) | Qué hay que hacer, Compras, Proveedores (solo ver), Existencias, Pedidos de material, Movimientos, Resumen |
+| **Gerente** | Los Gerentes | Resumen, Compras, Proveedores (solo ver), Existencias, Pedidos de material |
+| **Finanzas** | Financieros (3 personas) | Existencias, Movimientos, Pedidos, Compras, Proveedores (solo ver), Resumen |
 | **Ver** | Consulta | Existencias, Movimientos, Pedidos, Compras, Resumen (solo mirar) |
 | **Pide** | Casi todos los demás | **Lo mío**, Existencias, Pedidos de material, Compras (y solo ve **lo suyo**) |
 
@@ -427,6 +428,16 @@ Quien decide deja su **correo** en la compra (para que nadie se haga pasar por o
 - **Regla de oro:** **cada cambio de cantidad deja su movimiento en la misma escritura**. No se puede cambiar el stock sin dejar rastro. La cantidad **nunca queda negativa**.
 - Si un artículo se **daña o se pierde**, se avisa a la Jefe.
 
+### 8.4.1 Proveedores
+La parte **Proveedores** es la lista de a quién se le compra. Cada tarjeta dice el nombre, el **NIT** (si lo tiene), cuántas compras se le han hecho, cuánto se le ha pagado **este año** y la última compra. Arriba está el buscador (nombre, NIT o contacto); salen primero los que más se compraron este año.
+- **Ficha:** al tocar un proveedor se ve su contacto, sus compras hechas y **«Último precio por artículo»**: lo que se pagó la última vez por cada cosa, comparado con la compra anterior (*Subió 11 %*, *Bajó 5 %* o *Una sola compra*). En una compra con varios artículos lo pagado se reparte según lo que valía cada uno al pedirlo, igual que en el cuadro de la compra.
+- **Quién ve:** Compras, la Coordinadora, Bodega, Financiero, Gerente y la Jefe. Quien no tiene Inventario con esos niveles (por ejemplo, quien solo pide material) no ve esta parte.
+- **Quién agrega y cambia:** quien hace las compras (Compras, la Jefe y Bodega con el extra «compra»). Con **Agregar proveedor** basta el nombre; lo demás (NIT, contacto, teléfono, correo, nota) es opcional.
+- **NIT:** se escribe con su dígito, sin puntos y con un guion: `900000001-2`. La app calcula el dígito de verificación (el de la DIAN) y, si no cuadra, dice cuál debería ser. No acepta dos proveedores con el mismo NIT ni con el mismo nombre (da igual una mayúscula o una tilde).
+- **Al registrar una compra** («Registrar compra» o «Registrar compra hecha sin autorización») el campo **Proveedor** es una lista con los que ya hay: se escoge uno o se escribe uno nuevo, y el nuevo **se agrega solo** a Proveedores (sin NIT; se completa después en su ficha). La compra guarda a qué proveedor pertenece; las compras de antes, que solo traían el nombre, se reconocen por el nombre.
+- **Borrar:** solo la Jefe, y solo un proveedor que **no tiene compras** (así no se pierde de dónde salió lo que se compró). Si se equivocaron en un nombre, se edita.
+- El Excel del Resumen trae una hoja **Proveedores** (NIT, contacto, compras hechas, pagado este año y última compra).
+
 ### 8.5 El Panorama (solo la Jefe)
 Lo urgente en un solo lugar: artículos agotados, compras que esperan a la Jefe y al Gerente, compras hechas sin autorización, compras pagadas con más de lo autorizado, pedidos de material que llevan más de 2 días esperando, artículos bajos del mínimo, compras por comprar y por recibir. Más gráficos: gastado este mes, por persona que pidió, por categoría, por proyecto.
 
@@ -436,6 +447,7 @@ Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin au
 ### 8.7 Lo que nadie puede hacer en Inventario
 - Borrar compras ni movimientos (son el rastro de lo gastado).
 - Editar una compra ya autorizada.
+- Borrar un proveedor que ya tiene compras (solo la Jefe borra uno sin compras).
 - Autorizar lo suyo.
 - Ver lo de otros, si solo tiene nivel «Pide».
 
@@ -641,7 +653,7 @@ Piden **material** de la bodega y **compras** a su nombre, ven **sus** pedidos y
 | Dónde | Qué baja | Quién lo ve |
 |---|---|---|
 | **Personas y permisos > Descargar plantilla** | La plantilla de personas | Solo la Jefe |
-| **Inventario > Resumen** | Existencias, Movimientos, Compras, Pedidos de material | Quien ve el Resumen |
+| **Inventario > Resumen** | Existencias, Movimientos, Compras, Proveedores (solo para quien ve esa parte), Pedidos de material | Quien ve el Resumen |
 | **Inventario > un artículo > Kárdex** | El historial de ese artículo | Quien ve los movimientos |
 | **Vehículos > Reportes** | Carros (con costo de mantenimientos, combustible, total y km por galón), Salidas y llegadas, Novedades, Tanqueos, Por conductor | Transporte, Bodega, Jefe, Gerente |
 | **Equipos** (botón abajo) | Equipos (con verificación, compra, garantía y motivo de baja) y Actas de entrega (sin cédulas ni firmas) | Quien ve Equipos |

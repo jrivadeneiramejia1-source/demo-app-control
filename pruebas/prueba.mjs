@@ -105,9 +105,9 @@ try {
   log('siembra los datos y llena el tablero', await datosListos(t.page));
   await esp(900); // las cifras cuentan hasta su valor
   const sem = await t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos') || '{}'));
-  const COLS = ['equipos', 'hojas', 'tareasEq', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'reuniones', 'necesidades', 'avisos'];
-  log('sembró 13 equipos (12 en uso y 1 de baja), 6 actas, 3 tareas de equipos, 9 compras, 18 artículos, 13 movimientos, 5 pedidos, 4 carros, 3 novedades, 3 salidas/llegadas, 4 reuniones, 25 tareas de reuniones y 12 avisos',
-    COLS.map(c => Object.keys(sem[c] || {}).length).join(',') === '13,6,3,9,18,13,5,4,3,3,4,25,12', COLS.map(c => c + ':' + Object.keys(sem[c] || {}).length).join(' '));
+  const COLS = ['equipos', 'hojas', 'tareasEq', 'compras', 'proveedores', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'reuniones', 'necesidades', 'avisos'];
+  log('sembró 13 equipos (12 en uso y 1 de baja), 6 actas, 3 tareas de equipos, 14 compras, 5 proveedores, 18 artículos, 13 movimientos, 5 pedidos, 4 carros, 3 novedades, 3 salidas/llegadas, 4 reuniones, 25 tareas de reuniones y 12 avisos',
+    COLS.map(c => Object.keys(sem[c] || {}).length).join(',') === '13,6,3,14,5,18,13,5,4,3,3,4,25,12', COLS.map(c => c + ':' + Object.keys(sem[c] || {}).length).join(' '));
   log('el saludo dice Hola, Carolina', (await texto(t.page, '#tInicio')) === 'Hola, Carolina');
   log('Jefe ve 9 cifras de pendientes (ya no autoriza compras)', (await t.page.locator('#sumInicio .sum').count()) === 9);
   log('bodega: 5 agotados o bajos y 3 pedidos por entregar', (await cifra(t.page, 'sumInicio', 0)) === 5 && (await cifra(t.page, 'sumInicio', 1)) === 3);
@@ -245,8 +245,105 @@ try {
   }
   log('la Jefe puede descargar el Excel del resumen', !!(await t.page.$('#invContenido [data-accion="excel"]')));
   const [descarga] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#invContenido [data-accion="excel"]')]);
-  if (descarga) { const ruta = path.join(CAPTURAS, 'excel-inventario.xlsx'); await descarga.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del inventario trae título, columnas en negrilla con cuadros y la primera fila fija (4 hojas)', hs.length === 4 && hs.every(bienFormado) && hs.every(h => h.filas.length >= 1), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); log('los valores de plata salen en pesos y no como texto', await t.page.evaluate(async b64 => { const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer); const ws = wb.getWorksheet('Bodega'); let ok = false; ws.getRow(4).eachCell((c, j) => { if (/Precio/.test(String(c.value))) { const x = ws.getRow(5).getCell(j); ok = typeof x.value === 'number' && /\$/.test(x.numFmt || ''); } }); return ok; }, fs.readFileSync(ruta).toString('base64'))); }
-  log('el Excel se descarga con 4 hojas', !!descarga && /^Inventario .*\.xlsx$/.test(descarga.suggestedFilename()), descarga ? descarga.suggestedFilename() : 'sin descarga');
+  if (descarga) { const ruta = path.join(CAPTURAS, 'excel-inventario.xlsx'); await descarga.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del inventario trae título, columnas en negrilla con cuadros y la primera fila fija (5 hojas)', hs.length === 5 && hs.every(bienFormado) && hs.every(h => h.filas.length >= 1), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); log('los valores de plata salen en pesos y no como texto', await t.page.evaluate(async b64 => { const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer); const ws = wb.getWorksheet('Bodega'); let ok = false; ws.getRow(4).eachCell((c, j) => { if (/Precio/.test(String(c.value))) { const x = ws.getRow(5).getCell(j); ok = typeof x.value === 'number' && /\$/.test(x.numFmt || ''); } }); return ok; }, fs.readFileSync(ruta).toString('base64'))); }
+  log('el Excel se descarga con 5 hojas', !!descarga && /^Inventario .*\.xlsx$/.test(descarga.suggestedFilename()), descarga ? descarga.suggestedFilename() : 'sin descarga');
+
+  // --- Proveedores (Fase 12): lista, ficha con precios, NIT con su dígito, agregar, editar y borrar ---
+  console.log('2a. Proveedores (Jefe)');
+  if (descarga) {
+    const hsP = (await excelInfo(path.join(CAPTURAS, 'excel-inventario.xlsx'))).find(h => h.nombre === 'Proveedores');
+    log('el Excel del inventario trae la hoja «Proveedores» con el mismo formato, una fila por proveedor, su NIT y lo pagado este año en pesos',
+      !!hsP && bienFormado(hsP) && hsP.filas.length === 5 && hsP.titulos.join() === 'Proveedor,NIT,Contacto,Teléfono,Correo,Compras hechas,Pagado este año,Última compra,Nota' && hsP.filas.some(f => f[0] === 'Ferretería El Faro' && f[1] === '900000001-2'), hsP && JSON.stringify(hsP.titulos));
+  }
+  const datosPv = () => t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos')));
+  /** Lo que debe decir cada proveedor, calculado aparte desde los datos guardados: compras hechas (con su id) y lo pagado en el año de hoy. */
+  const esperadoPv = d => Object.entries(d.proveedores).map(([id, p]) => {
+    const cs = Object.values(d.compras).filter(c => ['comprado', 'recibido', 'sin-autorizar'].includes(c.estado) && c.proveedorId === id);
+    return { id, nombre: p.nombre, nit: p.nit, n: cs.length, anio: cs.filter(c => String(c.fechaCompra).slice(0, 4) === String(new Date().getFullYear())).reduce((s, c) => s + c.valorReal, 0) };
+  }).sort((a, b) => b.anio - a.anio || a.nombre.localeCompare(b.nombre, 'es'));
+  const tarjetasPv = () => t.page.evaluate(() => [...document.querySelectorAll('#invContenido .card.tarea')].map(c => ({ nombre: c.querySelector('.card-title').textContent, chip: (c.querySelector('.serial-chip') || {}).textContent || '', texto: c.textContent })));
+  const dPv0 = await datosPv(), espPv0 = esperadoPv(dPv0);
+  await t.page.click('#invSecciones [data-sec="proveedores"]');
+  log('la Jefe ve la parte «Proveedores» con los 5 de ejemplo, el que más se compró este año primero', await hasta(t.page, n => document.querySelectorAll('#invContenido .card.tarea').length === n, 5) && (await tarjetasPv()).map(c => c.nombre).join('|') === espPv0.map(x => x.nombre).join('|'), (await tarjetasPv()).map(c => c.nombre).join('|'));
+  log('cada tarjeta dice cuántas compras tiene y cuánto se le pagó este año (cuentas hechas aparte, desde las compras)', await t.page.evaluate(esp => {
+    const cop = window.App.cop, cards = [...document.querySelectorAll('#invContenido .card.tarea')];
+    return esp.every(x => { const c = cards.find(k => k.querySelector('.card-title').textContent === x.nombre); return !!c && c.textContent.includes(x.n === 1 ? '1 compra' : x.n + ' compras') && c.textContent.includes(x.anio ? cop(x.anio) + ' este año' : 'nada este año'); });
+  }, espPv0));
+  log('el NIT sale en su chip; el proveedor sin NIT no lo trae', await (async () => { const c = await tarjetasPv(); return c.find(x => x.nombre === 'Ferretería El Faro').chip === '900000001-2' && c.find(x => x.nombre === 'Distribuidora Agua Clara').chip === ''; })());
+  log('arriba hay una sola acción llena: «Agregar proveedor»', await t.page.evaluate(() => { const b = [...document.querySelectorAll('#invContenido .acciones-inv .btn.primary')]; return b.length === 1 && /Agregar proveedor/.test(b[0].textContent); }));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '30-proveedores.png'), fullPage: true });
+  await t.page.fill('#qInventario', 'faro');
+  log('el buscador deja solo «Ferretería El Faro»', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.tarea').length === 1 && /Faro/.test(document.querySelector('#invContenido .card-title').textContent)));
+  await t.page.fill('#qInventario', 'zzzz');
+  log('si nada coincide, dice qué pasó y deja un botón para quitar la búsqueda', await hasta(t.page, () => /Ningún proveedor con ese nombre/.test(document.getElementById('invContenido').textContent) && !!document.querySelector('#invContenido [data-accion="quitarq"]')));
+  await t.page.click('#invContenido [data-accion="quitarq"]');
+  log('«Quitar la búsqueda» vuelve a mostrar los 5', await hasta(t.page, () => document.getElementById('qInventario').value === '' && document.querySelectorAll('#invContenido .card.tarea').length === 5));
+
+  // Ficha de Ferretería El Faro: precios (con lo que subieron) y compras hechas.
+  await t.page.click('#invContenido .card.tarea[data-id="pv-elfaro"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  const espFaro = espPv0.find(x => x.id === 'pv-elfaro');
+  log('la ficha de El Faro dice su NIT, cuántas compras tiene y cuánto se le pagó este año', await t.page.evaluate(x => { const tx = document.getElementById('acCampos').textContent; return document.getElementById('acT').textContent === 'Ferretería El Faro' && tx.includes('900000001-2') && tx.includes(window.App.cop(x.anio)) && new RegExp('Compras hechas\\s*' + x.n + '\\b').test(tx) && /Marta Ejemplo/.test(tx) && /ventas@elfaro\.example\.com/.test(tx); }, espFaro), await texto(t.page, '#acCampos'));
+  log('«Último precio por artículo»: los chalecos subieron de 33.000 a 36.500 (11 %) y los cables HDMI de 26.000 a 30.400 (17 %), y lo dice', await t.page.evaluate(() => {
+    const cop = window.App.cop, filas = [...document.querySelectorAll('#acCampos .lineas-tabla tbody tr')].map(r => r.textContent);
+    const ch = filas.find(f => /Chalecos reflectivos/.test(f)), hd = filas.find(f => /Cables HDMI/.test(f));
+    return !!ch && ch.includes(cop(36500)) && /Subió 11 %/.test(ch) && ch.includes('antes ' + cop(33000)) && !!hd && hd.includes(cop(30400)) && /Subió 17 %/.test(hd) && hd.includes('antes ' + cop(26000));
+  }), await texto(t.page, '#acCampos .lineas-tabla'));
+  log('la ficha lista las compras hechas con su valor y quién la pidió', await hasta(t.page, () => { const li = [...document.querySelectorAll('#acCampos ol.linea li')].map(l => l.textContent); return li.length >= 4 && li.some(l => /Chalecos reflectivos/.test(l) && /pidió Andrés Beltrán/.test(l)); }));
+  log('la Jefe ve «Editar» y no «Borrar»: un proveedor con compras no se borra', await t.page.evaluate(() => !!document.querySelector('#acCampos [data-accion="editprov"]') && !document.querySelector('#acCampos [data-accion="borrarprov"]')));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '31-proveedor-ficha.png') });
+  await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shAccion').hidden);
+  await t.page.click('#invContenido .card.tarea[data-id="pv-papcentral"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  log('en Papelería Central cada artículo se compró una sola vez: lo dice y no inventa una subida', await t.page.evaluate(() => { const cop = window.App.cop, f = [...document.querySelectorAll('#acCampos .lineas-tabla tbody tr')].map(r => r.textContent), rs = f.find(x => /Resmas de papel carta/.test(x)), us = f.find(x => /Memorias USB/.test(x)); return !!rs && rs.includes(cop(27000)) && /Una sola compra/.test(rs) && !!us && us.includes(cop(30500)) && /Una sola compra/.test(us); }), await texto(t.page, '#acCampos .lineas-tabla'));
+  await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shAccion').hidden);
+
+  // Editar: cambia la nota y queda guardada.
+  await t.page.click('#invContenido .card.tarea[data-id="pv-eqcaribe"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  await t.page.click('#acCampos [data-accion="editprov"]');
+  log('«Editar» abre el formulario con los datos de ese proveedor', await hasta(t.page, () => document.getElementById('acT').textContent === 'Editar proveedor' && document.getElementById('pvNombre').value === 'Equipos del Caribe Ejemplo' && document.getElementById('pvNit').value === '900000009-0'));
+  await t.page.fill('#pvNota', 'Entregan en Riohacha en 3 días'); await t.page.fill('#pvContacto', 'Sandra Ejemplo'); await t.page.click('#acPrimario');
+  log('al guardar la edición, el proveedor queda con la nota y el contacto nuevos y lo demás igual', await hasta(t.page, () => { const p = JSON.parse(localStorage.getItem('__fb_datos')).proveedores['pv-eqcaribe']; return p.nota === 'Entregan en Riohacha en 3 días' && p.contacto === 'Sandra Ejemplo' && p.nit === '900000009-0' && p.por === 'Fredy Torres'; }));
+
+  // Agregar: el NIT se revisa con su dígito de verificación; las cuentas de cada caso están a la vista en el texto de cada prueba.
+  await t.page.click('#invContenido [data-accion="nuevoprov"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  const errPv = async () => { await t.page.click('#acPrimario'); await hasta(t.page, () => !document.getElementById('acErr').hidden); return texto(t.page, '#acErr'); };
+  log('sin nombre no deja guardar y lo dice', /Escribe el nombre del proveedor/.test(await errPv()));
+  await t.page.fill('#pvNombre', 'ferreteria EL FARO');
+  log('un nombre que ya existe (aunque cambie una mayúscula o una tilde) no se repite: dice cuál es', /Ya hay un proveedor llamado «Ferretería El Faro»/.test(await errPv()));
+  await t.page.fill('#pvNombre', 'Almacén La Ceiba');
+  for (const [nit, re, que] of [
+    ['900000002-9', /termina en -1, no en -9/, '900000002 da 1 (el resto de la suma entre 11 es 1, y entonces el dígito es ese mismo)'],
+    ['901234567-0', /termina en -7, no en -0/, '901234567 da 7 (697 entre 11 deja 4, y 11 - 4 = 7)'],
+    ['900000009-5', /termina en -0, no en -5/, '900000009 da 0 (396 entre 11 deja 0, y el dígito es ese mismo)'],
+    ['900000001-7', /termina en -2, no en -7/, '900000001 da 2 (372 entre 11 deja 9, y 11 - 9 = 2)'],
+    ['900000004', /Falta el dígito de verificación[\s\S]*900000004-4/, 'un NIT sin dígito: dice cuál le toca'],
+    ['9000000044', /Escríbelo con guion[\s\S]*900000004-4/, 'un NIT con el dígito pegado: dice dónde va el guion'],
+    ['abc', /El NIT va con su dígito de verificación/, 'letras']]) {
+    await t.page.fill('#pvNit', nit);
+    log(`NIT ${nit}: ${que}`, re.test(await errPv()), await texto(t.page, '#acErr'));
+  }
+  await t.page.fill('#pvNit', '900.000.001-2');
+  log('un NIT bueno (con puntos) que ya tiene otro proveedor dice de quién es: así se sabe que el dígito se aceptó', /Ese NIT ya lo tiene «Ferretería El Faro»/.test(await errPv()), await texto(t.page, '#acErr'));
+  await t.page.fill('#pvNit', '900000002-1'); await t.page.fill('#pvTel', 'abc');
+  log('un teléfono con letras no pasa', /El teléfono lleva solo números/.test(await errPv()));
+  await t.page.fill('#pvTel', '300 111 2233'); await t.page.fill('#pvCorreo', 'sin-arroba');
+  log('un correo sin arroba no pasa', /Ese correo no está bien escrito/.test(await errPv()));
+  await t.page.fill('#pvCorreo', 'compras@laceiba.example.com'); await t.page.fill('#pvContacto', 'Elena Ejemplo'); await t.page.click('#acPrimario');
+  log('con todo bien se agrega: queda a nombre de la Jefe, con su NIT y la fecha de hoy', await hasta(t.page, () => { const ps = Object.values(JSON.parse(localStorage.getItem('__fb_datos')).proveedores); const p = ps.find(x => x.nombre === 'Almacén La Ceiba'); return !!p && p.nit === '900000002-1' && p.telefono === '300 111 2233' && p.correo === 'compras@laceiba.example.com' && p.por === 'Carolina Castillo' && p.porRol === 'jefe' && /^\d{4}-\d{2}-\d{2}$/.test(p.en); }));
+  await t.page.click('#invContenido [data-accion="nuevoprov"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  await t.page.fill('#pvNombre', 'Distribuciones del Cabo'); await t.page.fill('#pvNit', '900.000.002-1');
+  log('el mismo NIT en otro proveedor no se acepta (el de La Ceiba)', /Ese NIT ya lo tiene «Almacén La Ceiba»/.test(await errPv()));
+  await t.page.fill('#pvNit', '900.000.004-4'); await t.page.click('#acPrimario');
+  log('un NIT con puntos se guarda limpio (900000004-4)', await hasta(t.page, () => { const p = Object.values(JSON.parse(localStorage.getItem('__fb_datos')).proveedores).find(x => x.nombre === 'Distribuciones del Cabo'); return !!p && p.nit === '900000004-4'; }));
+  log('la lista ahora tiene 7 y el nuevo sale «Todavía sin compras»', await hasta(t.page, () => { const cs = [...document.querySelectorAll('#invContenido .card.tarea')]; return cs.length === 7 && cs.some(c => /Distribuciones del Cabo/.test(c.textContent) && /Todavía sin compras/.test(c.textContent)); }));
+
+  // Borrar: solo la Jefe y solo si no tiene compras.
+  const idCabo = await t.page.evaluate(() => Object.entries(JSON.parse(localStorage.getItem('__fb_datos')).proveedores).find(([, p]) => p.nombre === 'Distribuciones del Cabo')[0]);
+  await t.page.click(`#invContenido .card.tarea[data-id="${idCabo}"]`); await t.page.waitForSelector('#shAccion:not([hidden])');
+  log('un proveedor sin compras ofrece «Borrar»', await t.page.evaluate(() => !!document.querySelector('#acCampos [data-accion="borrarprov"]')));
+  await t.page.click('#acCampos [data-accion="borrarprov"]'); await hasta(t.page, () => document.getElementById('acT').textContent === 'Borrar proveedor');
+  await t.page.click('#acPrimario');
+  log('al confirmar se borra y quedan 6', await hasta(t.page, id => { const p = JSON.parse(localStorage.getItem('__fb_datos')).proveedores; return !p[id] && Object.keys(p).length === 6; }, idCabo));
+  await t.page.click('#invSecciones [data-sec="resumen"]');
 
   // --- Existencias como base de datos: bajar, cambiar en Excel, subir con vista previa y guardar ---
   console.log('2b. Base de datos de Existencias en Excel (Jefe)');
@@ -497,7 +594,10 @@ try {
   log('el Gerente ve 7 cifras: agotados o bajos, por autorizar (1), en curso, sin autorizar, actas de equipos, documentos de carros y próximas reuniones', (await t.page.locator('#sumInicio .sum').count()) === 7 && /SOAT o técnico-mecánica/.test(await texto(t.page, '#sumInicio')) && (await cifra(t.page, 'sumInicio', 1)) === 1 && /Compras en curso/.test(await texto(t.page, '#sumInicio')) && /Próximas reuniones/.test(await texto(t.page, '#sumInicio')), await texto(t.page, '#sumInicio'));
   log('el Gerente ve todos los módulos (ninguno con candado)', (await t.page.locator('#modulosLista .modulo.bloqueado').count()) === 0);
   await t.page.click('.tab[data-vista="inventario"]');
-  log('Inventario del Gerente: Resumen, Compras, Existencias y Pedidos (sin tareas, movimientos ni conteo)', await hasta(t.page, () => [...document.querySelectorAll('#invSecciones [data-sec]')].map(b => b.dataset.sec).join(',') === 'resumen,compras,existencias,solicitudes'));
+  log('Inventario del Gerente: Resumen, Compras, Proveedores, Existencias y Pedidos (sin tareas, movimientos ni conteo)', await hasta(t.page, () => [...document.querySelectorAll('#invSecciones [data-sec]')].map(b => b.dataset.sec).join(',') === 'resumen,compras,proveedores,existencias,solicitudes'));
+  await t.page.click('#invSecciones [data-sec="proveedores"]');
+  log('el Gerente ve los proveedores y lo que se les ha comprado, sin botón para agregar', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.tarea').length >= 5 && !document.querySelector('#invContenido [data-accion="nuevoprov"]') && /Aquí ves a quién se le compra/.test(document.getElementById('invContenido').textContent)));
+  await t.page.click('#invSecciones [data-sec="resumen"]');
   log('el Gerente general no pide material; solo puede «Hacer una compra» (nace autorizada)', await t.page.locator('#btnPedirMaterial').isHidden() && await t.page.locator('#btnPedirCompra').isVisible() && (await texto(t.page, '#btnPedirCompraTxt')) === 'Hacer una compra');
   log('en el Resumen le toca autorizar solo los portátiles de Ángel (más de 5 millones, ya pasados por la Coordinadora): no la de Carlos ni la de Ana', await hasta(t.page, () => /Te toca a ti \(1\)/.test(document.getElementById('invContenido').textContent) && document.querySelectorAll('#invContenido [data-accion="autorizar"]').length === 1 && !!document.querySelector('#invContenido [data-accion="autorizar"][data-id="co-009"]') && /Cambiar el monto|El monto lo cambia el Gerente general/.test(document.getElementById('invContenido').textContent)));
   await t.page.screenshot({ path: path.join(CAPTURAS, '04-inventario-gerente.png'), fullPage: true });
@@ -582,13 +682,21 @@ try {
   await t.page.click('#acPrimario');
   log('la compra de Luis queda por autorizar con aviso a la Coordinadora de compras', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const c = Object.values(d.compras).find(x => x.que === 'Silla de oficina'); return c && c.estado === 'pedido' && c.pideRol === 'compras' && Object.values(d.avisos).some(a => a.para === 'coordcompras' && /Silla de oficina/.test(a.texto)); }));
   await t.page.click('#invContenido [data-accion="comprar"][data-id="co-009"]');
-  await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.fill('#acProv', 'Tecnoguajira Suministros'); await t.page.click('#acPrimario');
+  await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.fill('#acProv', 'Tecnoguajira Suministros');
+  const nProvAntes = Object.keys((await datosPv()).proveedores).length;
+  log('al registrar una compra, el proveedor es una lista con los que ya hay (y deja escribir uno nuevo); uno que no está avisa que se agregará', await t.page.evaluate(n => document.getElementById('acProv').getAttribute('list') === 'acProvLista' && document.querySelectorAll('#acProvLista option').length === n && /«Tecnoguajira Suministros» es nuevo: se agrega a Proveedores al guardar/.test(document.getElementById('acProvAy').textContent), nProvAntes));
+  await t.page.click('#acPrimario');
+  log('el proveedor nuevo se agregó solo a Proveedores (a nombre de Fredy, sin NIT todavía) y la compra queda ligada a él', await hasta(t.page, n => { const d = JSON.parse(localStorage.getItem('__fb_datos')), ps = Object.entries(d.proveedores), x = ps.find(([, p]) => p.nombre === 'Tecnoguajira Suministros'); return !!x && ps.length === n + 1 && x[1].por === 'Fredy Torres' && x[1].porRol === 'compras' && x[1].nit === '' && d.compras['co-009'].proveedorId === x[0] && d.compras['co-009'].proveedor === 'Tecnoguajira Suministros'; }, nProvAntes));
   log('Luis registra la compra de los portátiles: queda comprada y le avisa a Sofía para recibirla', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const c = d.compras['co-009']; return c.estado === 'comprado' && c.valorReal > 0 && c.proveedor && c.historial.some(h => /Compró en/.test(h.texto) && h.por === 'Fredy Torres') && Object.values(d.avisos).some(a => a.para === 'asistente' && /hay que recibirla/.test(a.titulo)); }));
   await t.page.click('#invContenido [data-accion="comprar"][data-id="co-003"]');
   await t.page.waitForSelector('#shAccion:not([hidden])');
   await t.page.setInputFiles('#acFoto', path.join(RAIZ, 'iconos', 'control-512.png'));
   log('la foto de la factura se achica y se ve antes de guardar', await hasta(t.page, () => !document.getElementById('acFotoVer').hidden && /^data:image\/jpeg/.test(document.getElementById('acFotoVer').src)));
+  const nProvAntes2 = Object.keys((await datosPv()).proveedores).length;
+  await t.page.fill('#acProv', 'papeleria  CENTRAL');
+  log('al escribir un proveedor que ya existe (sin tilde y en mayúsculas) la app dice cuál es y su NIT', await hasta(t.page, () => /Es «Papelería Central», NIT 900000003-7\./.test(document.getElementById('acProvAy').textContent)), await texto(t.page, '#acProvAy'));
   await t.page.click('#acPrimario');
+  log('la compra usa el proveedor de la lista (con su nombre bien escrito y su id) y no crea otro igual', await hasta(t.page, n => { const d = JSON.parse(localStorage.getItem('__fb_datos')), c = d.compras['co-003']; return c.estado === 'comprado' && c.proveedor === 'Papelería Central' && c.proveedorId === 'pv-papcentral' && Object.keys(d.proveedores).length === n; }, nProvAntes2));
   log('la compra guarda la foto de la factura', await hasta(t.page, () => /^data:image\/jpeg;base64,/.test(JSON.parse(localStorage.getItem('__fb_datos')).compras['co-003'].factura || '')));
   await t.page.click('#invSecciones [data-sec="compras"]');
   log('Luis puede registrar una compra hecha sin autorización', await hasta(t.page, () => !!document.querySelector('#invContenido [data-accion="sinaut"]')));
@@ -798,6 +906,7 @@ try {
   await t.page.fill('#acProv', 'Ferretería El Faro'); await t.page.fill('#acValor', '7500000');
   await enviarHoja();
   log('pagar 7.500.000 de 6.000.000 deja el aviso «Pagaron más de lo autorizado» para la Coordinadora y el Gerente general, y queda en el historial', await hasta(t.page, id => { const d = JSON.parse(localStorage.getItem('__fb_datos')), c = d.compras[id]; const av = Object.values(d.avisos).filter(a => /Pagaron más/.test(a.titulo)); return c.estado === 'comprado' && /25 % más/.test(c.historial[c.historial.length - 1].texto) && av.some(a => a.para === 'coordcompras') && av.some(a => a.para === 'gerente'); }, cv.id));
+  log('esa compra queda ligada a Ferretería El Faro (pv-elfaro), sin repetir el proveedor', await hasta(t.page, id => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.compras[id].proveedorId === 'pv-elfaro' && d.compras[id].proveedor === 'Ferretería El Faro' && Object.values(d.proveedores).filter(p => /El Faro/.test(p.nombre)).length === 1; }, cv.id));
   await t.page.click('#invSecciones [data-sec="compras"]');
   log('en Compras la tarjeta dice «Pagó 25 % más de lo autorizado»', await hasta(t.page, () => /Pagó 25 % más de lo autorizado/.test(document.getElementById('invContenido').textContent)));
 
@@ -880,8 +989,10 @@ try {
   log('el Colaborador ve «Lo mío», Existencias, Pedidos y Compras, y puede pedir material y compras', await hasta(t.page, () => [...document.querySelectorAll('#invSecciones [data-sec]')].map(b => b.dataset.sec).join(',') === 'hacer,existencias,solicitudes,compras' && /Lo mío/.test(document.getElementById('invSecciones').textContent) && !document.getElementById('btnPedirMaterial').hidden && !document.getElementById('btnPedirCompra').hidden));
   log('el Colaborador no ve botones de autorizar, comprar ni recibir', !(await visible(t.page, '#invContenido [data-accion="autorizar"], #invContenido [data-accion="comprar"], #invContenido [data-accion="recibir"]')));
   await cambiarA('financiero.adriana.patino@example.com'); await t.page.click('.tab[data-vista="inventario"]');
-  log('Adriana (Financiero): ve Existencias, Movimientos, Pedidos, Compras y Resumen, y también puede pedir', await hasta(t.page, () => [...document.querySelectorAll('#invSecciones [data-sec]')].map(b => b.dataset.sec).join(',') === 'existencias,movimientos,solicitudes,compras,resumen' && !document.getElementById('btnPedirCompra').hidden));
+  log('Adriana (Financiero): ve Existencias, Movimientos, Pedidos, Compras, Proveedores y Resumen, y también puede pedir', await hasta(t.page, () => [...document.querySelectorAll('#invSecciones [data-sec]')].map(b => b.dataset.sec).join(',') === 'existencias,movimientos,solicitudes,compras,proveedores,resumen' && !document.getElementById('btnPedirCompra').hidden));
   log('el Financiero ve todos los módulos que le tocan y no Equipos ni Vehículos', (await tabs()) === 'inicio,inventario,reuniones', await tabs());
+  await t.page.click('#invSecciones [data-sec="proveedores"]');
+  log('el Financiero ve los proveedores pero no puede agregar ni cambiar ninguno', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.tarea').length >= 6 && !document.querySelector('#invContenido [data-accion="nuevoprov"]')) && await (async () => { await t.page.click('#invContenido .card.tarea'); await t.page.waitForSelector('#shAccion:not([hidden])'); const r = await t.page.evaluate(() => !document.querySelector('#acCampos [data-accion="editprov"]') && !document.querySelector('#acCampos [data-accion="borrarprov"]') && /Último precio por artículo/.test(document.getElementById('acCampos').textContent)); await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shAccion').hidden); return r; })());
   await t.page.click('#invSecciones [data-sec="compras"]'); await t.page.click('#invContenido [data-accion="vercompra"]');
   log('el Financiero abre cualquier compra y ve el detalle y la foto de factura, sin botones de decidir', await hasta(t.page, () => !document.getElementById('shAccion').hidden && /Total aprox\./.test(document.getElementById('acCampos').textContent) && !document.querySelector('#acCampos [data-accion="autorizar"], #acCampos [data-accion="comprar"], #acCampos [data-accion="recibir"]')));
   await t.page.keyboard.press('Escape');
@@ -890,7 +1001,7 @@ try {
   await t.page.click('.tab[data-vista="inventario"]');
   log('y en Inventario solo mira: sin botones de pedir', await hasta(t.page, () => document.getElementById('btnPedirMaterial').hidden && document.getElementById('btnPedirCompra').hidden && [...document.querySelectorAll('#invSecciones [data-sec]')].map(b => b.dataset.sec).join(',') === 'existencias,movimientos,solicitudes,compras,resumen'));
   await cambiarA('gerente.alejandro.giraldo@example.com'); await t.page.click('.tab[data-vista="inventario"]');
-  log('Alejandro Giraldo (Gerente de Proyectos) tiene el mismo Inventario de Gerente: Resumen, Compras, Existencias y Pedidos', (await texto(t.page, '#nombreTop')) === 'Alejandro G.' && (await texto(t.page, '#rolTop')) === 'Gerente' && (await secs()) === 'resumen,compras,existencias,solicitudes', await secs());
+  log('Alejandro Giraldo (Gerente de Proyectos) tiene el mismo Inventario de Gerente: Resumen, Compras, Proveedores, Existencias y Pedidos', (await texto(t.page, '#nombreTop')) === 'Alejandro G.' && (await texto(t.page, '#rolTop')) === 'Gerente' && (await secs()) === 'resumen,compras,proveedores,existencias,solicitudes', await secs());
   await t.page.screenshot({ path: path.join(CAPTURAS, '09d-gerente-alejandro.png'), fullPage: true });
   console.log('4e. Vehículos por rol: Conductor, Bodega y Jefe');
   const dat = () => t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos')));
@@ -1695,7 +1806,7 @@ try {
   await t.page.click('.tab[data-vista="inventario"]'); await t.page.click('#invSecciones [data-sec="compras"]');
   log('Compras trae «Descargar base de datos» y «Subir Excel»', await hasta(t.page, () => !!document.querySelector('#invContenido [data-xbd="bajar"]') && !!document.querySelector('#invContenido input[data-xbd-archivo="compras"]')));
   const rutaBdCo = path.join(CAPTURAS, 'bd-compras.xlsx'), dCo = await bajarBD('#invContenido', /Compras/, rutaBdCo);
-  log('se baja «Base de datos Compras …xlsx» con las compras que ya están (en gris) y las listas de unidad, categoría y proyecto', !!dCo && /^Base de datos Compras .*\.xlsx$/.test(dCo.suggestedFilename()) && await (async () => { const hs = await excelInfo(rutaBdCo), e = hs.find(h => h.nombre === 'Compras'); return !!e && bienFormado(e) && e.filas.filter(f => /^co-/.test(f[0])).length === 9 && e.titulos.slice(0, 9).join() === 'ID,Acción,Qué,Cantidad,Unidad,Categoría,Valor total,Para qué,Proyecto'; })());
+  log('se baja «Base de datos Compras …xlsx» con las compras que ya están (en gris) y las listas de unidad, categoría y proyecto', !!dCo && /^Base de datos Compras .*\.xlsx$/.test(dCo.suggestedFilename()) && await (async () => { const hs = await excelInfo(rutaBdCo), e = hs.find(h => h.nombre === 'Compras'); return !!e && bienFormado(e) && e.filas.filter(f => /^co-/.test(f[0])).length === 14 && e.titulos.slice(0, 9).join() === 'ID,Acción,Qué,Cantidad,Unidad,Categoría,Valor total,Para qué,Proyecto'; })());
   const rutaCo = path.join(CAPTURAS, 'bd-compras-nuevas.xlsx');
   await xlsxHoja('Compras', [
     { Qué: 'Resmas de papel oficio', Cantidad: 5, Unidad: 'resmas', Categoría: 'Papelería', 'Valor total': '$140.000', 'Para qué': 'Para imprimir las listas', Proyecto: 'Oficina', 'Proveedor sugerido': 'Papelería Central' },

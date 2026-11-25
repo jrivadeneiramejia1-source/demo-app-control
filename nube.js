@@ -5,7 +5,7 @@
 (function () {
   'use strict';
   const SDK = 'https://www.gstatic.com/firebasejs/10.12.2/';
-  const COLECCIONES = ['equipos', 'hojas', 'tareasEq', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'tanqueos', 'reuniones', 'necesidades', 'avisos'];
+  const COLECCIONES = ['equipos', 'hojas', 'tareasEq', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'tanqueos', 'proveedores', 'reuniones', 'necesidades', 'avisos'];
   let A = null, FS = null, auth = null, db = null;
 
   /** ¿config.js ya tiene los datos del proyecto? (si no, la app explica qué falta en vez de fallar). */

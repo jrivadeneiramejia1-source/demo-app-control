@@ -15,7 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], tanqueos: [], reuniones: [], necesidades: [], avisos: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [], ajustesApp: [], invitaciones: [] },
+    datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], tanqueos: [], proveedores: [], reuniones: [], necesidades: [], avisos: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [], ajustesApp: [], invitaciones: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     suscritas: new Set(),  // colecciones a las que esta persona se suscribió (las demás no las puede leer y nunca «cargan»)
     oyentes: [],
@@ -227,7 +227,7 @@
     // Cada persona se suscribe solo a lo de los módulos que puede ver (las reglas de Firebase hacen lo mismo).
     const ve = m => permiso(m) !== 'no';
     const cols = ['avisos', 'ajustesApp']
-      .concat(ve('equipos') ? ['equipos', 'hojas', 'tareasEq'] : [], ve('inventario') ? ['compras', 'articulos', 'solicitudes'].concat(permiso('inventario') === 'pide' ? [] : ['movimientos']) : [],
+      .concat(ve('equipos') ? ['equipos', 'hojas', 'tareasEq'] : [], ve('inventario') ? ['compras', 'articulos', 'solicitudes'].concat(permiso('inventario') === 'pide' ? [] : ['movimientos'], ['compra', 'coordina', 'bodega', 'jefe', 'finanzas', 'gerente'].includes(permiso('inventario')) ? ['proveedores'] : []) : [],
         ve('vehiculos') ? ['vehiculos', 'novedades', 'entregas', 'tanqueos'] : [], ve('reuniones') ? ['reuniones', 'necesidades'] : [], panel);
     // Una cuenta real que solo pide material solo puede leer SUS pedidos y compras (las reglas lo exigen): se piden filtrados.
     const soloLoMio = p.real && permiso('inventario') === 'pide';
