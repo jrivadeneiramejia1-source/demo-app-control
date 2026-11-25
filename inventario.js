@@ -739,6 +739,32 @@
       <p class="meta">Lo pagado se anota por toda la compra; por artículo se reparte según lo que valía cada uno al pedirlo.</p>`;
   }
 
+  /** Orden de compra para mandar al proveedor. Se arma con los datos de la compra autorizada y se imprime solo ese documento
+      (en el teléfono sale «Guardar como PDF»). El número es el código corto de la compra. */
+  function imprimirOrden(c) {
+    const App = A(), cop = App.cop, lineas = lineasDe(c);
+    const numero = 'OC-' + String(c.id).replace(/^co-/i, '').slice(-6).toUpperCase();
+    const quien = [c.autorizaJefe, c.autoriza].filter(Boolean).filter((x, i, l) => l.indexOf(x) === i);
+    const doc = `<article class="acta-doc" id="ordenDoc">
+      <header class="acta-cab"><span class="acta-logo"><img src="iconos/logo-empresa.png" alt="Logo de la empresa" width="54" height="49"></span><b>ORDEN DE COMPRA</b><span class="acta-cod">Orden ${esH(numero)}<br>Código: FT-DEMO<br>Versión: 01</span></header>
+      <dl class="acta-datos"><dt>FECHA:</dt><dd>${esH(App.fechaCorta(App.hoyISO()))}</dd><dt>PEDIDA EL:</dt><dd>${esH(c.fechaPedido ? App.fechaCorta(c.fechaPedido) : '')}</dd>
+        <dt>PROVEEDOR:</dt><dd>${esH(c.proveedor || c.proveedorSug || 'Por definir')}</dd><dt>PARA:</dt><dd>${esH(c.paraQue || '')}</dd></dl>
+      <table class="acta-tabla"><thead><tr><th>ARTÍCULO</th><th>CANTIDAD</th><th>UNIDAD</th><th>VALOR APROX.</th></tr></thead>
+        <tbody>${lineas.map(l => `<tr class="llena"><td>${esH(l.que)}</td><td>${esH(String(num(l.cantidad)))}</td><td>${esH(l.unidad || '')}</td><td>${esH(cop(l.valor))}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="3"><b>TOTAL APROX.</b></td><td><b>${esH(cop(c.valorAprox))}</b></td></tr></tfoot></table>
+      <dl class="acta-datos"><dt>PIDIÓ:</dt><dd>${esH(c.pide || '')}</dd><dt>AUTORIZÓ:</dt><dd>${esH(quien.join(' y '))}</dd></dl>
+      <p class="acta-pie">Orden ${esH(numero)} · Documento de prueba: no es una orden de compra real.</p>
+    </article>`;
+    const previo = document.getElementById('impresion'); if (previo) previo.remove();
+    const cont = document.createElement('div'); cont.id = 'impresion'; cont.innerHTML = doc;
+    document.body.appendChild(cont); document.body.classList.add('imprimiendo');
+    const fin = () => { document.body.classList.remove('imprimiendo'); cont.remove(); window.removeEventListener('afterprint', fin); };
+    window.addEventListener('afterprint', fin);
+    try { window.print(); } catch (e) {}
+    setTimeout(fin, 60000);
+    return true;
+  }
+
   function autorizar(c) {
     const App = A(), monto = App.montoGerente(), segundo = c.estado === 'por-gerente';
     // La Coordinadora pasa al Gerente general lo que vale MÁS del monto (lo que pidió ella siempre lo decide el Gerente general, y él decide directo).
@@ -925,6 +951,7 @@
     const botones = [];
     if (puedoDecidir(c)) botones.push(boton('autorizar', 'Autorizar', 'check', ` data-id="${esH(c.id)}"`, 'primary small'), boton('rechazar', 'Rechazar', '', ` data-id="${esH(c.id)}"`, 'ghost small'));
     if (c.estado === 'autorizado' && puedoHacer('compras')) botones.push(boton('comprar', 'Registrar compra', 'carrito', ` data-id="${esH(c.id)}"`, 'primary small'));
+    if (['autorizado', 'comprado'].includes(c.estado)) botones.push(boton('imprimirorden', 'Orden de compra (imprimir o PDF)', 'pdf', ` data-id="${esH(c.id)}"`, 'small'));
     if (c.estado === 'comprado' && puedoHacer('asistente')) botones.push(boton('recibir', lineasDe(c).length > 1 ? 'Recibir la compra' : c.articuloId ? 'Recibir en bodega' : 'Marcar como recibida', 'caja', ` data-id="${esH(c.id)}"`, 'primary small'));
     if (c.estado === 'sin-autorizar' && !c.revisada && (esCoordinador() || esGerenteGeneral())) botones.push(boton('revisada', 'Marcar como revisada', 'check', ` data-id="${esH(c.id)}"`, 'small'));
     const hist = historial(c).sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)));
@@ -1537,7 +1564,7 @@
     const c = d.compras.find(x => x.id === id) || null, s = d.solicitudes.find(x => x.id === id) || null, a = artPorId(id);
     const mapa = {
       pedir: () => a && pedirCompra(a.id, Number(b.dataset.cant) || 0), pedirbajo: () => pedirBajo(), autorizar: () => c && autorizar(c), rechazar: () => c && rechazar(c),
-      comprar: () => c && registrarCompra(c), recibir: () => c && recibir(c), revisada: () => c && marcarRevisada(c), vercompra: () => c && verCompra(c),
+      comprar: () => c && registrarCompra(c), imprimirorden: () => c && imprimirOrden(c), recibir: () => c && recibir(c), revisada: () => c && marcarRevisada(c), vercompra: () => c && verCompra(c),
       entregar: () => s && entregar(s), noentregar: () => s && noEntregar(s), sinaut: () => registrarCompra(null, true),
       entrada: () => entradaSalida('entrada', a ? a.id : ''), salida: () => entradaSalida('salida', a ? a.id : ''),
       nuevoart: () => editarArticulo(null), editart: () => a && editarArticulo(a), verart: () => a && verArticulo(a), pedirmat: () => a && pedirMaterial(a.id),

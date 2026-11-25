@@ -692,6 +692,25 @@ try {
   log('si llegó menos, lo marca en rojo (llegaron 8 de 10: faltan 2) y el total dice lo autorizado y lo pagado', await hasta(t.page, () => { const f = document.querySelectorAll('#acCampos .cuadro-compra tbody tr')[1], pie = document.querySelector('#acCampos .cuadro-compra tfoot').textContent; return /8 .*faltan 2/.test(f.textContent) && !!f.querySelector('.err-txt') && /Total aprox\./.test(pie) && /\$\s?6\.000\.000/.test(pie) && /\$\s?7\.500\.000/.test(pie) && /\+25 %/.test(pie) && /llegó menos en 1 artículo/.test(pie); }));
   await t.page.screenshot({ path: path.join(CAPTURAS, '18-compra-cuadro.png') });
   await t.page.keyboard.press('Escape');
+  // Orden de compra imprimible (Fase 7): solo en compras autorizadas o compradas
+  await t.page.evaluate(() => { window.__impresas = []; window.print = () => { const d = document.getElementById('impresion'); window.__impresas.push({ texto: d ? d.textContent : '', cuerpo: document.body.classList.contains('imprimiendo'), articulos: d ? d.querySelectorAll('.acta-tabla tbody tr').length : 0 }); }; });
+  const abrirCompraInv = async id => { await t.page.click(`#invContenido [data-accion="vercompra"][data-id="${id}"]`); await hasta(t.page, () => !document.getElementById('shAccion').hidden); };
+  await abrirCompraInv('co-002');
+  log('una compra apenas pedida no trae el botón de la orden de compra', await hasta(t.page, () => /Mouse inalámbrico/.test(document.getElementById('acT').textContent) && !document.querySelector('#acCampos [data-accion="imprimirorden"]')));
+  await t.page.keyboard.press('Escape');
+  await abrirCompraInv('co-006');
+  log('una compra ya comprada sí trae «Orden de compra (imprimir o PDF)»', await hasta(t.page, () => !!document.querySelector('#acCampos [data-accion="imprimirorden"]') && /Orden de compra/.test(document.querySelector('#acCampos [data-accion="imprimirorden"]').textContent)));
+  await t.page.click('#acCampos [data-accion="imprimirorden"]');
+  log('al tocarlo arma el documento con el número OC-, el proveedor, cada artículo, el total y «Documento de prueba», y manda a imprimir solo eso', await t.page.evaluate(() => { const x = (window.__impresas || [])[0]; return !!x && x.cuerpo && x.articulos === 1 && /ORDEN DE COMPRA/.test(x.texto) && /OC-006/.test(x.texto) && /Papelería Central/.test(x.texto) && /Memorias USB de 64 GB/.test(x.texto) && /\$\s?320\.000/.test(x.texto) && /Documento de prueba/.test(x.texto) && /AUTORIZÓ:/.test(x.texto) && /Mauricio Giraldo/.test(x.texto) && /Oscar Muñoz/.test(x.texto); }), JSON.stringify(await t.page.evaluate(() => (window.__impresas || [])[0])).slice(0, 400));
+  await t.page.emulateMedia({ media: 'print' }); await esp(150);
+  await t.page.screenshot({ path: path.join(CAPTURAS, '19-orden-compra.png') });
+  await t.page.emulateMedia({ media: null });
+  await t.page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+  log('al terminar de imprimir se quita el documento de la pantalla', await hasta(t.page, () => !document.getElementById('impresion') && !document.body.classList.contains('imprimiendo')));
+  await t.page.keyboard.press('Escape');
+  await abrirCompraInv(cv.id);
+  log('una compra ya recibida no trae el botón de la orden de compra', await hasta(t.page, () => /Taladro percutor/.test(document.getElementById('acT').textContent) && !document.querySelector('#acCampos [data-accion="imprimirorden"]')));
+  await t.page.keyboard.press('Escape');
   await t.page.click('#invSecciones [data-sec="existencias"]');
   // Kárdex largo: con 120 movimientos más se muestran de 50 en 50 y «Ver más» agrega los siguientes sin rehacer la lista.
   await t.page.evaluate(() => { const S = window.App.S, base = S.datos.movimientos.find(m => m.articuloId === 'ar-009'); S.datos.movimientos = S.datos.movimientos.concat(Array.from({ length: 120 }, (_, i) => Object.assign({}, base, { id: 'mov-prueba-' + i, fecha: new Date(Date.now() - (i + 1) * 3600000).toISOString() }))); });
