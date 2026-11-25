@@ -1,0 +1,600 @@
+diff --git a/README.md b/README.md
+index d888355..8f1172a 100644
+--- a/README.md
++++ b/README.md
+@@ -35,6 +35,11 @@ Alternativa sin Excel: la Jefe puede crear un **código por rol** (`LOG-7KQ4-M2X
+ - **Los códigos de Jefe y de Gerente se crean a mano** (el primero y todos los demás) en Firebase: Firestore Database > Datos > Iniciar colección `codigosDireccion`, documento con ID `JEF-XXXX-XXXX` y campos `rol` = `jefe`, `activo` = `true` (booleano), `por` = `consola`, `en` = la fecha. Con ese código se registra la primera Jefe.
+ - **A un Gerente o a otra Jefe no se les cambia nada desde la app** (ni rol, ni pausa, ni permisos): solo desde la consola de Firebase. Así una Jefe no puede sacar a otra.
+ 
++### Los Excel de la app
++Todos los Excel que baja la app salen con el mismo formato: **título en negrilla arriba**, una línea que dice qué es, **columnas en negrilla con color**, cada dato en su cuadro, columnas del ancho justo, la fila de títulos fija al bajar y filtros. Los hay en Inventario (resumen y kárdex de cada artículo), Vehículos, Equipos (equipos y actas, sin cédulas ni firmas), Reuniones (reuniones y tareas) y la **plantilla de personas**.
++
++La **plantilla de personas** (Personas y permisos > Descargar plantilla) trae lo que ya está: las personas registradas e invitadas en gris («Ya registrada» / «Invitada»), 2 filas de ejemplo en amarillo y debajo filas vacías con **listas desplegables** (rol, niveles y permisos extra). Se agregan las personas nuevas abajo y se sube **la misma plantilla**: lo que ya estaba y los ejemplos se omiten y solo se guarda lo nuevo. (El rol y los permisos de quien ya entró se cambian desde su tarjeta, no desde el Excel.) Los Excel se arman con ExcelJS (`lib/exceljs`, gratis, MIT) y se leen con SheetJS (`lib/xlsx`); ambos se cargan solo al tocar el botón.
++
+ ### Niveles por persona
+ Además de su rol, la Jefe le puede poner a cada persona, **por módulo** (Equipos, Inventario, Vehículos, Reuniones): *Como su rol*, *Sin acceso*, *Solo ver* o un nivel de trabajo de ese módulo (por ejemplo, Inventario: *Pide material*, *Hace las compras*, *Encargada de bodega*). Sirve para subir o bajar: un bodeguero que solo mira Equipos, o un conductor que también atiende la bodega. En Reuniones solo se sube o se baja a *Solo ver* (allí cada rol hace su tarea). Las reglas de Firebase lo cumplen: con *Solo ver* o *Sin acceso* ni siquiera se puede leer lo que no toca.
+ 
+diff --git a/datos-demo.js b/datos-demo.js
+index c0cb6f5..93d1bf7 100644
+--- a/datos-demo.js
++++ b/datos-demo.js
+@@ -250,7 +250,7 @@
+       'so-002': solicitud('ar-018', 1, 'Wilson Muñoz', 'carros', 'Para revisar los carros de noche',
+         'Proyecto Costa Norte', 'pendiente', iso(-1, 17, 5)),
+       'so-003': solicitud('ar-002', 8, 'Jorge Ibarra', '', 'Botas para la cuadrilla nueva de campo',
+-        'Proyecto Costa Norte', 'pendiente', iso(-2, 9, 20)),
++        'Proyecto Costa Norte', 'pendiente', iso(-3, 9, 20)),
+       'so-004': solicitud('ar-004', 4, 'Jorge Ibarra', '', 'Guantes para el trabajo de campo',
+         'Proyecto Costa Norte', 'entregada', iso(-7, 15, 0), { entregadaPor: 'Andrés Beltrán', fechaEntrega: iso(-6, 10, 0) }),
+       'so-005': solicitud('ar-017', 20, 'Andrés Mendoza', '', 'Para una reunión con la comunidad',
+diff --git a/equipos.js b/equipos.js
+index 861f7dc..b1d19ee 100644
+--- a/equipos.js
++++ b/equipos.js
+@@ -90,6 +90,24 @@
+     if (esJefe()) s.push(['resumen', 'Resumen']);
+     return s;
+   }
++  /** Excel de Equipos: la lista de equipos y las actas de entrega (sin cédulas ni firmas: esos datos se quedan en la app). */
++  async function descargarExcel(b) {
++    b.disabled = true;
++    try {
++      const gen = `Generado el ${A().hoyISO()}.`, f = window.Inventario.fechaLocal, E = window.Excel;
++      const equipos = D().equipos.slice().sort((x, y) => String(x.serial).localeCompare(String(y.serial))).map(e => ({ Serial: e.serial, Tipo: e.tipo, Marca: e.marca, Modelo: e.modelo, Estado: (EST[e.estado] || [e.estado])[0],
++        'Asignado a': e.asignadoA || '', Proyecto: e.proyecto || '', 'Último mantenimiento': e.ultimoMtto || '', 'Último backup': e.ultimoBackup || '', Observaciones: e.obs || '' }));
++      const actas = D().hojas.slice().sort((x, y) => Number(y.numero) - Number(x.numero)).map(h => ({ 'Acta N.°': Number(h.numero) || 0, Fecha: f(h.en, false) || h.fecha || '', 'Recibió': h.persona, Proyecto: h.proyecto || '',
++        'Equipos entregados': lista(h.equipos).map(x => `${x.serial} (${x.tipo})`).join(', '), 'Otros elementos': lista(h.otros).map(x => `${x.nombre} x${x.cantidad}`).join(', '), 'Devoluciones': lista(h.devoluciones).length,
++        'Revisión': ({ pendiente: 'Por revisar', ok: 'Bien', problema: 'Con problema' })[h.revision] || h.revision, 'Nota de la revisión': h.notaRevision || '', Entregó: h.encargado || h.por || '' }));
++      await E.descargar({ archivo: `Equipos ${A().hoyISO()}`, hojas: [
++        E.deObjetos('Equipos', 'Equipos', `Cada equipo con su estado, a quién está asignado y su último mantenimiento y backup. ${gen}`, equipos),
++        E.deObjetos('Actas de entrega', 'Actas de entrega', `Cada acta con lo que se entregó y cómo salió la revisión. No trae cédulas ni firmas. ${gen}`, actas)] });
++      A().toast('Listo: Excel descargado');
++    } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
++    finally { b.disabled = false; }
++  }
++  $('btnExcelEq').addEventListener('click', e => descargarExcel(e.currentTarget));
+   function pintar() {
+     const App = A(), S = App.S;
+     if (!S.persona) return;
+diff --git a/excel.js b/excel.js
+new file mode 100644
+index 0000000..27b44de
+--- /dev/null
++++ b/excel.js
+@@ -0,0 +1,108 @@
++/* excel.js — Todos los Excel que se descargan de la app salen con el mismo formato, ordenado y listo para leer:
++   arriba el título (letra grande y negrilla) y una línea con lo que es; debajo los títulos de cada columna en negrilla sobre fondo de color;
++   y luego los datos, cada uno en su cuadro, con las columnas del ancho justo, la primera fila fija al bajar y filtros en los títulos.
++   Usa ExcelJS (gratis, MIT), que se carga solo al descargar. Define window.Excel.
++   Uso: Excel.descargar({ archivo: 'Plantilla personas', hojas: [hoja, ...] })
++   hoja = { nombre, titulo, subtitulo, columnas: [{ t, ancho, tipo, lista }], filas: [[...] o { celdas: [...], estilo }], vacias: 10, oculta }
++     tipo: 'texto' (por defecto), 'numero', 'dinero'.  lista: { hoja, rango } = menú desplegable que toma sus opciones de otra hoja.
++     estilo de fila: 'gris' (ya está en la app), 'ejemplo' (de ejemplo: se ignora al subirlo).
++   Excel.deObjetos(nombre, titulo, subtitulo, objetos) arma una hoja a partir de filas {Columna: valor}. */
++(function () {
++  'use strict';
++  const FUENTE = 'Arial';
++  const COLOR = { titulo: 'FF0F3D4C', encabezado: 'FF1F5F7A', borde: 'FFB7C3CB', cebra: 'FFF2F6F9', gris: 'FFEDEDED', ejemplo: 'FFFFF6D6', sub: 'FF5B6770' };
++  const TIPO_XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
++  const FORMATO = { numero: '#,##0', dinero: '"$"#,##0' };
++
++  let carga = null;
++  /** Baja la librería (una sola vez) cuando se necesita. */
++  function cargar() {
++    if (window.ExcelJS) return Promise.resolve(window.ExcelJS);
++    if (!carga) carga = new Promise((res, rej) => {
++      const s = document.createElement('script'); s.src = 'lib/exceljs/exceljs.min.js?v=1';
++      s.onload = () => (window.ExcelJS ? res(window.ExcelJS) : rej(new Error('exceljs')));
++      s.onerror = () => { carga = null; rej(new Error('exceljs')); };
++      document.head.appendChild(s);
++    });
++    return carga;
++  }
++
++  const letra = n => { let s = ''; for (let i = n; i > 0; i = Math.floor((i - 1) / 26)) s = String.fromCharCode(65 + ((i - 1) % 26)) + s; return s; };
++  const lado = { style: 'thin', color: { argb: COLOR.borde } };
++  const bordes = { top: lado, left: lado, bottom: lado, right: lado };
++  const limpio = v => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ') : v);
++  // Un texto que empieza con = + - @ se volvería fórmula al abrirlo en Excel: se guarda como texto.
++  const seguro = v => (typeof v === 'string' && /^[=+\-@]/.test(v) ? "'" + v : v);
++
++  function armarHoja(libro, h) {
++    const cols = h.columnas, n = cols.length, ws = libro.addWorksheet(String(h.nombre).slice(0, 31), { properties: { tabColor: { argb: COLOR.encabezado } } });
++    // Fila 1: título. Fila 2: qué es. Fila 3: respiro. Fila 4: títulos de las columnas.
++    ws.mergeCells(1, 1, 1, n); const t = ws.getCell(1, 1);
++    t.value = h.titulo || h.nombre; t.font = { name: FUENTE, size: 16, bold: true, color: { argb: COLOR.titulo } }; t.alignment = { vertical: 'middle' }; ws.getRow(1).height = 28;
++    ws.mergeCells(2, 1, 2, n); const s = ws.getCell(2, 1);
++    s.value = h.subtitulo || ''; s.font = { name: FUENTE, size: 10, italic: true, color: { argb: COLOR.sub } }; s.alignment = { vertical: 'top', wrapText: true };
++    ws.getRow(2).height = Math.max(18, 14 * Math.ceil(String(h.subtitulo || '').length / Math.max(40, cols.reduce((a, c) => a + (c.ancho || 16), 0) * 1.1)));
++    ws.getRow(3).height = 6;
++    const FILA_TITULOS = 4, enc = ws.getRow(FILA_TITULOS); enc.height = 24;
++    cols.forEach((c, i) => {
++      const x = enc.getCell(i + 1);
++      x.value = c.t; x.font = { name: FUENTE, size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
++      x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.encabezado } };
++      x.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }; x.border = bordes;
++    });
++    const filas = (h.filas || []).map(f => (Array.isArray(f) ? { celdas: f } : f));
++    const total = filas.length + (h.vacias || 0);
++    for (let r = 0; r < total; r++) {
++      const fila = filas[r] || { celdas: [] }, fx = ws.getRow(FILA_TITULOS + 1 + r);
++      cols.forEach((c, i) => {
++        const x = fx.getCell(i + 1);
++        let v = fila.celdas[i]; v = v === undefined || v === null ? '' : limpio(v);
++        x.value = c.tipo === 'texto' || !c.tipo ? seguro(v) : v;
++        x.font = { name: FUENTE, size: 10 };
++        x.alignment = { vertical: 'top', wrapText: true, horizontal: c.tipo === 'numero' || c.tipo === 'dinero' ? 'right' : 'left' };
++        x.border = bordes;
++        if (FORMATO[c.tipo]) x.numFmt = FORMATO[c.tipo];
++        if (fila.estilo === 'gris') { x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.gris } }; x.font = { name: FUENTE, size: 10, italic: true, color: { argb: 'FF555555' } }; }
++        else if (fila.estilo === 'ejemplo') { x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.ejemplo } }; x.font = { name: FUENTE, size: 10, italic: true, color: { argb: 'FF7A5C00' } }; }
++        else if (r % 2 === 1) x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.cebra } };
++        if (c.lista) x.dataValidation = { type: 'list', allowBlank: true, formulae: [`${c.lista.hoja}!${c.lista.rango}`], showErrorMessage: true, errorStyle: 'warning', errorTitle: c.t, error: 'Escoge una opción de la lista (también puedes dejarla vacía).' };
++      });
++    }
++    // Ancho de cada columna: el que dice la hoja o el del texto más largo (entre 12 y 48).
++    cols.forEach((c, i) => {
++      let w = c.ancho;
++      if (!w) { w = Math.max(String(c.t).length + 4, ...filas.slice(0, 200).map(f => String(f.celdas[i] == null ? '' : f.celdas[i]).length + 2)); w = Math.min(48, Math.max(12, w)); }
++      ws.getColumn(i + 1).width = w;
++    });
++    ws.views = [{ state: 'frozen', ySplit: FILA_TITULOS, showGridLines: false }];
++    if (total) ws.autoFilter = { from: { row: FILA_TITULOS, column: 1 }, to: { row: FILA_TITULOS + Math.max(1, total), column: n } };
++    ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 };
++    if (h.oculta) ws.state = 'hidden';
++    return ws;
++  }
++
++  /** Arma el libro y lo baja. Devuelve el nombre del archivo. */
++  async function descargar(o) {
++    const E = await cargar(), libro = new E.Workbook();
++    libro.creator = 'Control (demo)'; libro.created = new Date();
++    libro.properties.date1904 = false;
++    o.hojas.forEach(h => armarHoja(libro, h));
++    const buf = await libro.xlsx.writeBuffer();
++    // Nombre sin tildes ni símbolos (algunos navegadores lo cambian por «download» si los trae).
++    const nombre = String(o.archivo).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^\w .-]/g, '').trim().slice(0, 60) + '.xlsx';
++    const url = URL.createObjectURL(new Blob([buf], { type: TIPO_XLSX }));
++    const a = document.createElement('a'); a.href = url; a.download = nombre; a.hidden = true; document.body.appendChild(a); a.click(); a.remove();
++    setTimeout(() => URL.revokeObjectURL(url), 10000);
++    return nombre;
++  }
++
++  /** Hoja a partir de filas {Columna: valor} (las columnas salen de las llaves). Los números de plata llevan $ y miles. */
++  function deObjetos(nombre, titulo, subtitulo, objetos, extra) {
++    const lista = objetos && objetos.length ? objetos : [{ Nota: 'Sin datos todavía' }], llaves = Object.keys(lista[0]);
++    const dinero = k => /valor|precio|costo|pagad/i.test(k) && !/estado/i.test(k);
++    const columnas = llaves.map(k => ({ t: k, tipo: lista.every(f => typeof f[k] === 'number' || f[k] === '' || f[k] == null) && lista.some(f => typeof f[k] === 'number') ? (dinero(k) ? 'dinero' : 'numero') : 'texto' }));
++    return Object.assign({ nombre, titulo, subtitulo, columnas, filas: lista.map(f => llaves.map(k => f[k])) }, extra || {});
++  }
++
++  window.Excel = Object.freeze({ cargar, descargar, deObjetos, letra });
++})();
+diff --git a/gente.js b/gente.js
+index 20b5863..5f79d7e 100644
+--- a/gente.js
++++ b/gente.js
+@@ -46,7 +46,7 @@
+   };
+   const EXTRA_ALIAS = { compra: 'compra', compras: 'compra', actas: 'actas', encargada: 'encargada', 'encargada de reuniones': 'encargada' };
+   const COLUMNA = { nombre: 'nombre', nombres: 'nombre', 'nombre completo': 'nombre', correo: 'correo', email: 'correo', 'e-mail': 'correo', 'correo electronico': 'correo', rol: 'rol', cargo: 'rol',
+-    equipos: 'equipos', inventario: 'inventario', vehiculos: 'vehiculos', reuniones: 'reuniones', extras: 'extras', 'permisos extra': 'extras', 'permiso extra': 'extras' };
++    equipos: 'equipos', inventario: 'inventario', vehiculos: 'vehiculos', reuniones: 'reuniones', extras: 'extras', 'permisos extra': 'extras', 'permiso extra': 'extras', estado: 'estado' };
+   const rolDeTexto = t => {
+     const n = norm(t).replace(/\./g, ' ').replace(/\s+/g, ' ').trim(); if (!n) return null;
+     if (ROL_ALIAS[n]) return ROL_ALIAS[n];
+@@ -67,12 +67,16 @@
+       const nombre = String(f.nombre == null ? '' : f.nombre).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+       const correo = String(f.correo == null ? '' : f.correo).replace(/\s+/g, '').toLowerCase();
+       const rol = rolDeTexto(f.rol);
++      const fila = crudo.__fila || i + 2;
++      // Lo que ya está en la app (o es de ejemplo) no se vuelve a guardar: así se puede subir la misma plantilla con las personas nuevas agregadas.
++      const marca = norm(f.estado);
++      if (marca.startsWith('ejemplo')) return { fila, nombre, correo, rol, permisos: {}, extras: [], errores, avisos, omitida: 'ejemplo' };
++      if (correo && registrados.has(correo)) { vistos.add(correo); return { fila, nombre, correo, rol, permisos: {}, extras: [], errores, avisos, omitida: 'registrada' }; }
+       if (nombre.length < 3) errores.push('Falta el nombre (mínimo 3 letras).');
+       else if (/^[=+\-@]/.test(nombre)) errores.push('El nombre no puede empezar con = + - ni @.');
+       if (!/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(correo) || correo.length > 80) errores.push('El correo no está bien escrito.');
+       else if (D.porCorreo(correo)) errores.push('Ese correo es de una persona de prueba.');
+       else if (vistos.has(correo)) errores.push('El correo está repetido en el Excel.');
+-      else if (registrados.has(correo)) errores.push('Esa persona ya tiene cuenta. Cámbiale el rol o los permisos en la lista de abajo.');
+       if (correo) vistos.add(correo);
+       if (!rol) errores.push(`No entendí el rol «${String(f.rol == null ? '' : f.rol).slice(0, 30)}». Usa uno de la hoja Ayuda.`);
+       const permisos = {};
+@@ -91,8 +95,13 @@
+         else if (rol && !e.roles.includes(rol)) errores.push(`El permiso extra «${e.txt}» no sirve para ese rol.`);
+         else if (!extras.includes(id)) extras.push(id);
+       });
+-      if (!errores.length && invitados.has(correo)) avisos.push('Ya tenía invitación: se reemplaza.');
+-      return { fila: i + 2, nombre, correo, rol, permisos, extras, errores, avisos };
++      if (!errores.length && invitados.has(correo)) {
++        const ya = S.datos.invitaciones.find(x => String(x.id).toLowerCase() === correo), mismo = ya && ya.nombre === nombre && ya.rol === rol
++          && JSON.stringify(Object.entries(ya.permisos || {}).sort()) === JSON.stringify(Object.entries(permisos).sort()) && JSON.stringify((ya.extras || []).slice().sort()) === JSON.stringify(extras.slice().sort());
++        if (mismo) return { fila, nombre, correo, rol, permisos, extras, errores, avisos, omitida: 'invitada' };
++        avisos.push('Ya tenía invitación: se reemplaza con lo nuevo.');
++      }
++      return { fila, nombre, correo, rol, permisos, extras, errores, avisos, omitida: '' };
+     });
+   }
+ 
+@@ -104,29 +113,65 @@
+     const X = await xlsx();
+     const libro = X.read(await archivo.arrayBuffer(), { type: 'array' });
+     const hoja = libro.Sheets[libro.SheetNames[0]];
+-    const filas = X.utils.sheet_to_json(hoja, { defval: '', raw: false });
+-    if (!filas.length) throw new Error('No encontré filas. Revisa que la primera hoja tenga los títulos y las personas.');
++    // Los títulos pueden estar en la fila 1 (archivo simple) o más abajo (la plantilla trae un título y una explicación arriba).
++    const matriz = X.utils.sheet_to_json(hoja, { header: 1, defval: '', raw: false, blankrows: true });
++    const esTitulos = fila => fila.filter(c => COLUMNA[norm(c)]).length >= 2 && fila.some(c => COLUMNA[norm(c)] === 'correo');
++    const h = matriz.slice(0, 20).findIndex(esTitulos);
++    if (h < 0) throw new Error('No encontré los títulos (Nombre, Correo y Rol). Usa la plantilla que baja el botón «Descargar plantilla».');
++    const titulos = matriz[h].map(c => String(c));
++    const filas = [];
++    matriz.slice(h + 1).forEach((fila, k) => {
++      if (!fila.some(c => String(c == null ? '' : c).trim() !== '')) return;   // fila vacía: se salta
++      const o = { __fila: h + k + 2 };
++      titulos.forEach((tt, j) => { if (tt.trim() !== '') o[tt] = fila[j] == null ? '' : fila[j]; });
++      filas.push(o);
++    });
++    if (!filas.length) throw new Error('No encontré filas con personas. Escribe las personas debajo de los títulos.');
+     if (filas.length > MAX_FILAS) throw new Error(`El Excel tiene ${filas.length} filas y el máximo es ${MAX_FILAS}. Súbelo en partes.`);
+     return entender(filas);
+   }
+-  /** Plantilla con personas inventadas y una hoja de ayuda con los roles y niveles que sirven. */
++  // Texto de cada nivel como lo entiende el lector del Excel (y como sale en las listas desplegables).
++  const NIVEL_TXT = { no: 'Sin acceso', ver: 'Solo ver', encargado: 'Encargado', soporte: 'Soporte', pide: 'Pide material', finanzas: 'Finanzas', compra: 'Hace las compras', bodega: 'Encargada de bodega', reporta: 'Reporta', autoriza: 'Autoriza' };
++  const MODULOS = [['equipos', 'Equipos'], ['inventario', 'Inventario'], ['vehiculos', 'Vehículos'], ['reuniones', 'Reuniones']];
++  const nivelTxt = (p, m) => { const v = (p || {})[m]; return v ? (NIVEL_TXT[v] || '') : ''; };
++  const extrasTxt = (rol, lista) => window.DEMO.extrasDe(rol, lista).join(', ');
++  /** Plantilla con formato: título, columnas en negrilla, lo que ya está en la app, dos ejemplos y filas vacías con listas desplegables.
++      La misma plantilla se puede volver a subir: lo que ya está y los ejemplos se ignoran, solo se guarda lo nuevo. */
+   async function descargarPlantilla(b) {
+     b.disabled = true;
+     try {
+-      const X = await xlsx(), D = window.DEMO, libro = X.utils.book_new();
+-      const ejemplo = [
+-        { Nombre: 'Persona Ejemplo Uno', Correo: 'persona.uno@example.com', Rol: 'Bodega', Equipos: 'Solo ver', Inventario: '', Vehículos: '', Reuniones: '', Extras: '' },
+-        { Nombre: 'Persona Ejemplo Dos', Correo: 'persona.dos@example.com', Rol: 'Compras', Equipos: '', Inventario: '', Vehículos: 'Sin acceso', Reuniones: '', Extras: '' },
+-        { Nombre: 'Persona Ejemplo Tres', Correo: 'persona.tres@example.com', Rol: 'Conductor', Equipos: '', Inventario: 'Solo ver', Vehículos: '', Reuniones: '', Extras: '' }
+-      ];
+-      X.utils.book_append_sheet(libro, X.utils.json_to_sheet(ejemplo), 'Personas');
+-      const ayuda = [['Cómo llenarlo'], ['Una fila por persona. Borra las filas de ejemplo y escribe las reales. Nombre, Correo y Rol son obligatorios.'],
+-        ['Los niveles (Equipos, Inventario, Vehículos, Reuniones) se dejan vacíos si la persona hace lo que dice su rol.'], [''], ['Roles que sirven']]
+-        .concat(D.ROLES.filter(r => !esDireccion(r.rol)).map(r => [`${r.rolTxt} (${r.cargo})`])).concat([[''], ['Niveles que sirven']])
+-        .concat(['Sin acceso'].map(x => [`Todos los módulos: ${x}`])).concat(Object.entries(D.NIVELES).map(([m, l]) => [`${m}: ${l.map(x => x[1].split(':')[0]).join(', ')}`]))
+-        .concat([[''], ['Permisos extra (columna Extras, separados por coma)']]).concat(D.EXTRAS.map(e => [`${e.id}: ${e.txt} (solo para ${e.roles.join(', ')})`]));
+-      X.utils.book_append_sheet(libro, X.utils.aoa_to_sheet(ayuda), 'Ayuda');
+-      X.writeFile(libro, 'Plantilla personas.xlsx');
++      const D = window.DEMO, S = A().S, roles = D.ROLES.filter(r => !esDireccion(r.rol));
++      const rolTxt = rol => { const r = D.rolDe(rol); return r ? r.rolTxt : rol; };
++      const porNombre = (x, y) => String(x.nombre).localeCompare(String(y.nombre));
++      const filas = [];
++      S.datos.usuarios.slice().sort(porNombre).forEach(u => filas.push({ estilo: 'gris', celdas: [u.nombre, u.correo, rolTxt(u.rol),
++        nivelTxt(u.permisos, 'equipos'), nivelTxt(u.permisos, 'inventario'), nivelTxt(u.permisos, 'vehiculos'), nivelTxt(u.permisos, 'reuniones'), extrasTxt(u.rol, u.extras), u.activo === true ? 'Ya registrada' : 'Ya registrada (pausada)'] }));
++      S.datos.invitaciones.slice().sort(porNombre).forEach(i => filas.push({ estilo: 'gris', celdas: [i.nombre, i.id, rolTxt(i.rol),
++        nivelTxt(i.permisos, 'equipos'), nivelTxt(i.permisos, 'inventario'), nivelTxt(i.permisos, 'vehiculos'), nivelTxt(i.permisos, 'reuniones'), extrasTxt(i.rol, i.extras), 'Invitada'] }));
++      filas.push({ estilo: 'ejemplo', celdas: ['Persona Ejemplo Uno', 'persona.uno@example.com', 'Bodega', 'Solo ver', '', '', '', '', 'Ejemplo (se ignora)'] });
++      filas.push({ estilo: 'ejemplo', celdas: ['Persona Ejemplo Dos', 'persona.dos@example.com', 'Compras', '', '', 'Sin acceso', '', '', 'Ejemplo (se ignora)'] });
++      const nivelesDe = m => ['Sin acceso'].concat(D.NIVELES[m].map(x => NIVEL_TXT[x[0]]).filter(Boolean));
++      // Hoja oculta con las opciones de los menús desplegables (sus datos empiezan en la fila 5: título, explicación, respiro y títulos).
++      const cols = [roles.map(r => r.rolTxt)].concat(MODULOS.map(([m]) => nivelesDe(m)), [D.EXTRAS.map(e => e.id)]);
++      const listas = { nombre: 'Listas', titulo: 'Listas de opciones (no tocar)', subtitulo: 'Estas opciones alimentan los menús desplegables de la hoja Personas.', oculta: true,
++        columnas: [{ t: 'Rol', ancho: 24 }].concat(MODULOS.map(([, n]) => ({ t: n, ancho: 24 })), [{ t: 'Permisos extra', ancho: 24 }]), filas: [] };
++      for (let k = 0; k < Math.max(...cols.map(c => c.length)); k++) listas.filas.push(cols.map(c => c[k] || ''));
++      const rango = (col, n) => ({ hoja: 'Listas', rango: `$${col}$5:$${col}$${4 + Math.max(1, n)}` });
++      const personas = { nombre: 'Personas', titulo: 'Plantilla de personas', vacias: 12,
++        subtitulo: 'Una fila por persona. Las filas en gris ya están en la app: déjalas como están. Agrega las personas nuevas en las filas de abajo (Nombre, Correo y Rol son obligatorios; el resto se deja vacío si la persona hace lo que dice su rol) y sube este mismo archivo. Las filas amarillas son de ejemplo y se ignoran. Gerentes y Jefes no van aquí: se crean desde la consola de Firebase.',
++        columnas: [{ t: 'Nombre', ancho: 30 }, { t: 'Correo', ancho: 36 }, { t: 'Rol', ancho: 22, lista: rango('A', roles.length) }, { t: 'Equipos', ancho: 20, lista: rango('B', cols[1].length) },
++          { t: 'Inventario', ancho: 22, lista: rango('C', cols[2].length) }, { t: 'Vehículos', ancho: 20, lista: rango('D', cols[3].length) }, { t: 'Reuniones', ancho: 20, lista: rango('E', cols[4].length) },
++          { t: 'Permisos extra', ancho: 22, lista: rango('F', cols[5].length) }, { t: 'Estado', ancho: 24 }],
++        filas };
++      const ayuda = { nombre: 'Ayuda', titulo: 'Cómo llenar la plantilla', subtitulo: 'Roles, niveles y permisos extra que sirven. Si dejas un nivel vacío, la persona hace lo que dice su rol.',
++        columnas: [{ t: 'Qué', ancho: 28 }, { t: 'Opciones o explicación', ancho: 90 }],
++        filas: [['Rol', roles.map(r => r.rolTxt).join(', ')], ['Equipos', nivelesDe('equipos').join(', ')], ['Inventario', nivelesDe('inventario').join(', ')], ['Vehículos', nivelesDe('vehiculos').join(', ')],
++          ['Reuniones', nivelesDe('reuniones').join(', ')], ['Permisos extra', D.EXTRAS.map(e => `${e.id}: ${e.txt} (solo para ${e.roles.join(', ')})`).join(' · ')],
++          ['Estado', 'Lo llena la app (Ya registrada, Invitada, Ejemplo). En las filas nuevas déjalo vacío.'], ['Correo', 'El mismo con el que la persona va a entrar (con Google o con su clave).'],
++          ['Cargos del organigrama', 'En la columna Rol también puedes escribir el cargo (por ejemplo «Contador» o «Recepcionista»): la app lo traduce al rol.']] };
++      const hojaRoles = { nombre: 'Roles', titulo: 'Roles de la app', subtitulo: 'Para qué sirve cada uno.', columnas: [{ t: 'Rol', ancho: 24 }, { t: 'Quién es', ancho: 44 }, { t: 'Inventario', ancho: 40 }],
++        filas: roles.map(r => [r.rolTxt, r.cargo, D.PERMISO_TXT[r.permisos.inventario] || '']) };
++      await window.Excel.descargar({ archivo: 'Plantilla personas', hojas: [personas, ayuda, hojaRoles, listas] });
+     } catch (e) { A().toast('No se pudo preparar la plantilla. Revisa la conexión y vuelve a intentar.'); }
+     finally { b.disabled = false; }
+   }
+@@ -142,8 +187,10 @@
+     return partes.length ? partes.join(' · ') : `Como ${r ? r.rolTxt : rol}`;
+   };
+   function htmlPrevia() {
+-    const f = previa, buenas = f.filter(x => !x.errores.length), A_ = A(), D = window.DEMO;
+-    let h = `<div class="card"><b>Esto entendí del Excel (${f.length} ${f.length === 1 ? 'fila' : 'filas'})</b><span class="meta">${buenas.length} lista${buenas.length === 1 ? '' : 's'} para guardar${f.length - buenas.length ? ` · ${f.length - buenas.length} con problema (no se guardan)` : ''}. Revisa y toca «Guardar».</span></div>`;
++    const todas = previa, f = todas.filter(x => !x.omitida), buenas = f.filter(x => !x.errores.length), A_ = A(), D = window.DEMO;
++    const ya = todas.filter(x => x.omitida === 'registrada' || x.omitida === 'invitada').length, ejemplo = todas.filter(x => x.omitida === 'ejemplo').length;
++    const omit = [ya ? `${ya} ya ${ya === 1 ? 'estaba' : 'estaban'} en la app (no se tocan)` : '', ejemplo ? `${ejemplo} ${ejemplo === 1 ? 'fila de ejemplo' : 'filas de ejemplo'} (se ignoran)` : ''].filter(Boolean).join(' · ');
++    let h = `<div class="card"><b>Esto entendí del Excel (${todas.length} ${todas.length === 1 ? 'fila' : 'filas'})</b><span class="meta">${buenas.length} lista${buenas.length === 1 ? '' : 's'} para guardar${f.length - buenas.length ? ` · ${f.length - buenas.length} con problema (no se guardan)` : ''}${omit ? ' · ' + omit : ''}. Revisa y toca «Guardar».</span></div>`;
+     h += `<div class="list">${f.map(x => `<div class="card persona-reg${x.errores.length ? ' pausada' : ''}">
+       <span class="card-head"><span class="card-title">${esH(x.nombre || '(sin nombre)')}</span>${A_.pill(x.errores.length ? 'Con problema' : 'Lista', x.errores.length ? 's-peligro' : 's-disco', x.errores.length ? 'aviso' : 'check')}</span>
+       <span class="meta">Fila ${x.fila} · ${esH(x.correo || 'sin correo')} · ${esH(x.rol ? D.rolDe(x.rol).rolTxt : 'sin rol')}</span>
+@@ -267,7 +314,7 @@
+     if (g === 'plantilla') return descargarPlantilla(b);
+     if (g === 'descartar') { previa = null; return pintar(); }
+     if (g === 'guardarinv') {
+-      const buenas = (previa || []).filter(x => !x.errores.length); if (!buenas.length) return;
++      const buenas = (previa || []).filter(x => !x.errores.length && !x.omitida); if (!buenas.length) return;
+       return hacer(async () => { await window.nube.invitar(buenas.map(x => ({ nombre: x.nombre, correo: x.correo, rol: x.rol, permisos: x.permisos, extras: x.extras })), yo().nombre); previa = null; },
+         `Listo: ${buenas.length} ${buenas.length === 1 ? 'invitación guardada' : 'invitaciones guardadas'}. Cada persona entra con su correo.`);
+     }
+diff --git a/index.html b/index.html
+index b8f914f..8fe2bcd 100644
+--- a/index.html
++++ b/index.html
+@@ -134,6 +134,7 @@
+     <div class="chips secciones" id="eqSecciones" role="group" aria-label="Partes de equipos"></div>
+     <div id="eqContenido" class="inv-contenido" tabindex="-1"></div>
+     <button class="btn ghost small" type="button" id="btnNuevoEq"><span data-ico="mas"></span>Registrar equipo nuevo</button>
++    <button class="btn ghost small" type="button" id="btnExcelEq"><span data-ico="excel"></span>Descargar Excel</button>
+     <button class="pagada" type="button" data-pagada="equipos"><span data-ico="pagada"></span>Versión pagada: las actas firmadas en un almacenamiento aparte y copia en PDF por correo</button>
+   </section>
+ 
+@@ -166,6 +167,7 @@
+     <div class="summary cuatro" id="sumReuniones"></div>
+     <div class="chips secciones" id="reuSecciones" role="group" aria-label="Partes de reuniones"></div>
+     <div id="reuContenido" class="inv-contenido" tabindex="-1"></div>
++    <button class="btn ghost small" type="button" id="btnExcelReu"><span data-ico="excel"></span>Descargar Excel</button>
+     <button class="pagada" type="button" data-pagada="reuniones"><span data-ico="pagada"></span>Versión pagada: el agente lee solo el buzón real de Outlook</button>
+   </section>
+ </main>
+@@ -312,17 +314,18 @@
+ 
+ <script src="iconos.js?v=3"></script>
+ <script src="comun.js?v=1"></script>
++<script src="excel.js?v=1"></script>
+ <script src="config.js?v=5"></script>
+ <script src="personas.js?v=12"></script>
+-<script src="datos-demo.js?v=10"></script>
++<script src="datos-demo.js?v=11"></script>
+ <script src="nube.js?v=11"></script>
+ <script src="push.js?v=2"></script>
+-<script src="inventario.js?v=12"></script>
++<script src="inventario.js?v=13"></script>
+ <script src="correos-demo.js?v=1"></script>
+-<script src="reuniones.js?v=10"></script>
+-<script src="vehiculos.js?v=3"></script>
+-<script src="equipos.js?v=2"></script>
+-<script src="gente.js?v=6"></script>
++<script src="reuniones.js?v=11"></script>
++<script src="vehiculos.js?v=4"></script>
++<script src="equipos.js?v=3"></script>
++<script src="gente.js?v=7"></script>
+ <script src="app.js?v=16"></script>
+ </body>
+ </html>
+diff --git a/inventario.js b/inventario.js
+index 522ed17..2bf4395 100644
+--- a/inventario.js
++++ b/inventario.js
+@@ -1010,11 +1010,10 @@
+   async function descargarKardex(b, a) {
+     b.disabled = true;
+     try {
+-      const X = await cargarXlsx(), libro = X.utils.book_new();
++      const hojas = [];
+       const filas = movsDe(a).reverse().map(m => ({ Fecha: fechaLocal(m.fecha, true), Movimiento: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: signoMov(m), Quedó: num(m.saldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota }));
+-      X.utils.book_append_sheet(libro, X.utils.json_to_sheet(filas.length ? filas : [{ Nota: 'Sin movimientos' }]), 'Kárdex');
+-      // Nombre del archivo sin tildes ni símbolos (algunos navegadores lo cambian por «download» si los trae).
+-      X.writeFile(libro, `Kardex ${String(a.nombre).normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\w -]/g, '').slice(0, 40)} ${A().hoyISO()}.xlsx`);
++      hojas.push(window.Excel.deObjetos('Kárdex', `Kárdex: ${a.nombre}`, `Cada entrada y salida con lo que quedó. Hoy hay ${cantTxt(a.cantidad, a.unidad)}. Generado el ${A().hoyISO()}.`, filas));
++      await window.Excel.descargar({ archivo: `Kardex ${String(a.nombre).slice(0, 40)} ${A().hoyISO()}`, hojas });
+       A().toast('Listo: Excel descargado');
+     } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
+     finally { b.disabled = false; }
+@@ -1057,13 +1056,15 @@
+   async function descargarExcel(b) {
+     b.disabled = true;
+     try {
+-      const X = await cargarXlsx(), d = D(), libro = X.utils.book_new();
+-      const hoja = (nombre, filas) => X.utils.book_append_sheet(libro, X.utils.json_to_sheet(filas.length ? filas : [{ Nota: 'Sin datos' }]), nombre);
++      const d = D(), hojas = [], gen = `Generado el ${A().hoyISO()}.`;
++      const TIT = { Existencias: ['Existencias de la bodega', 'Cuánto hay de cada artículo, su estado y su valor.'], Movimientos: ['Movimientos de la bodega', 'Cada entrada, salida y ajuste, del más nuevo al más viejo.'],
++        Compras: ['Compras', 'Todas las compras: quién pidió, quién autorizó, cuánto costó y en qué va.'], 'Pedidos de material': ['Pedidos de material', 'Lo que pidió cada persona a la bodega y si se entregó.'] };
++      const hoja = (nombre, filas) => hojas.push(window.Excel.deObjetos(nombre, TIT[nombre][0], `${TIT[nombre][1]} ${gen}`, filas));
+       hoja('Existencias', articulos().map(a => ({ Artículo: a.nombre, Categoría: a.categoria, Cantidad: num(a.cantidad), Unidad: a.unidad, Mínimo: num(a.minimo), Máximo: num(a.maximo), Estado: EST_ART[estadoArt(a)][0], Ubicación: a.ubicacion, 'Precio aprox.': num(a.costo), 'Valor en bodega': num(a.cantidad) * num(a.costo), Proveedor: a.proveedor })));
+       hoja('Movimientos', d.movimientos.slice().sort((x, y) => String(y.fecha).localeCompare(String(x.fecha))).map(m => ({ Fecha: fechaLocal(m.fecha, true), Artículo: m.articulo, Tipo: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: num(m.cantidad), Saldo: num(m.saldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota })));
+       hoja('Compras', d.compras.map(c => ({ Qué: c.que, Cantidad: num(c.cantidad), Unidad: c.unidad, Categoría: c.categoria, Estado: (EST_CO[c.estado] || [c.estado])[0], Pidió: c.pide, Autoriza: c.autoriza, 'Valor aprox.': num(c.valorAprox), 'Valor pagado': num(c.valorReal), Proveedor: c.proveedor, 'Fecha pedido': c.fechaPedido, 'Fecha compra': c.fechaCompra, 'Para qué': c.paraQue })));
+       hoja('Pedidos de material', d.solicitudes.map(s => ({ Fecha: fechaLocal(s.fecha, false), Artículo: s.articulo, Cantidad: num(s.cantidad), Pidió: s.pide, 'Para qué': s.paraQue, Proyecto: s.proyecto, Estado: (EST_SOL[s.estado] || [s.estado])[0], Entregó: s.entregadaPor, Motivo: s.motivo })));
+-      X.writeFile(libro, `Inventario demo ${A().hoyISO()}.xlsx`);
++      await window.Excel.descargar({ archivo: `Inventario ${A().hoyISO()}`, hojas });
+       A().toast('Listo: Excel descargado');
+     } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
+     finally { b.disabled = false; }
+diff --git a/lib/exceljs/LEEME.txt b/lib/exceljs/LEEME.txt
+new file mode 100644
+index 0000000..66acc45
+--- /dev/null
++++ b/lib/exceljs/LEEME.txt
+@@ -0,0 +1 @@
++ExcelJS 4.4.0, licencia MIT (ver LICENSE.txt). Se usa para armar los archivos de Excel con formato (títulos, negrillas, cuadros y listas desplegables) que se descargan desde la app. Se carga solo al tocar un botón de descargar, no al abrir la app. Bajado de https://registry.npmjs.org/exceljs/-/exceljs-4.4.0.tgz
+diff --git a/lib/exceljs/LICENSE.txt b/lib/exceljs/LICENSE.txt
+new file mode 100644
+index 0000000..f7a2241
+--- /dev/null
++++ b/lib/exceljs/LICENSE.txt
+@@ -0,0 +1,22 @@
++The MIT License (MIT)
++
++Copyright (c) 2014-2019 Guyon Roche
++
++Permission is hereby granted, free of charge, to any person obtaining a copy
++of this software and associated documentation files (the "Software"), to deal
++in the Software without restriction, including without limitation the rights
++to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++copies of the Software, and to permit persons to whom the Software is
++furnished to do so, subject to the following conditions:
++
++The above copyright notice and this permission notice shall be included in all
++copies or substantial portions of the Software.
++
++THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++SOFTWARE.
++
+diff --git a/pruebas/prueba.mjs b/pruebas/prueba.mjs
+index 4258c99..b0d6bd6 100644
+--- a/pruebas/prueba.mjs
++++ b/pruebas/prueba.mjs
+@@ -76,6 +76,21 @@ try {
+ 
+   console.log('2. Entrada y datos de prueba (Jefe)');
+   const t = await telefono();
++  /** Abre un Excel ya descargado y dice cómo quedó: hojas, título, títulos en negrilla con fondo y bordes, primera fila fija, listas y filas. */
++  const excelInfo = ruta => t.page.evaluate(async b64 => {
++    const E = await window.Excel.cargar(), wb = new E.Workbook();
++    await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer);
++    const hojas = wb.worksheets.map(ws => {
++      const a1 = ws.getCell(1, 1), enc = ws.getRow(4), c1 = enc.getCell(1), d1 = ws.getCell(5, 1);
++      const titulos = []; enc.eachCell(c => titulos.push(String(c.value)));
++      const filas = []; for (let i = 5; i <= ws.rowCount; i++) { const f = ws.getRow(i), v = []; for (let j = 1; j <= titulos.length; j++) v.push(f.getCell(j).value == null ? '' : String(f.getCell(j).value)); filas.push(v); }
++      return { nombre: ws.name, oculta: ws.state !== 'visible', titulo: String(a1.value), tituloNegrilla: !!(a1.font && a1.font.bold), tituloTam: a1.font && a1.font.size, fuente: a1.font && a1.font.name,
++        titulos, encNegrilla: !!(c1.font && c1.font.bold), encFondo: !!(c1.fill && c1.fill.fgColor && c1.fill.fgColor.argb), encBorde: !!(c1.border && c1.border.top && c1.border.top.style), datoBorde: !!(d1.border && d1.border.left && d1.border.left.style),
++        congelada: ws.views && ws.views[0] && ws.views[0].ySplit, filtro: !!ws.autoFilter, lista: ws.getCell(5 + 0, 3).dataValidation ? ws.getCell(5, 3).dataValidation.type : '', filas };
++    });
++    return hojas;
++  }, fs.readFileSync(ruta).toString('base64'));
++  const bienFormado = h => h.tituloNegrilla && h.tituloTam >= 14 && h.fuente === 'Arial' && h.encNegrilla && h.encFondo && h.encBorde && h.congelada === 4 && h.filtro;
+   await t.page.goto(URL);
+   log('muestra las 46 personas del organigrama agrupadas en 6 unidades, con un buscador y el aviso de qué es real y qué inventado', await hasta(t.page, () => document.querySelectorAll('#entradaLista .persona-card').length === 46 && document.querySelectorAll('#entradaLista details.grupo-personas').length === 6 && !!document.querySelector('#entradaLista .filtro-personas') && /nombres y cargos son los del organigrama/.test(document.getElementById('notaDemo').textContent) && !!document.querySelector('img.logo-empresa')));
+   await t.page.screenshot({ path: path.join(CAPTURAS, '01b-entrada-organigrama.png'), fullPage: true });
+@@ -142,7 +157,8 @@ try {
+   }
+   log('la Jefe puede descargar el Excel del resumen', !!(await t.page.$('#invContenido [data-accion="excel"]')));
+   const [descarga] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#invContenido [data-accion="excel"]')]);
+-  log('el Excel se descarga con 4 hojas', !!descarga && /Inventario demo .*\.xlsx$/.test(descarga.suggestedFilename()), descarga ? descarga.suggestedFilename() : 'sin descarga');
++  if (descarga) { const ruta = path.join(CAPTURAS, 'excel-inventario.xlsx'); await descarga.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del inventario trae título, columnas en negrilla con cuadros y la primera fila fija (4 hojas)', hs.length === 4 && hs.every(bienFormado) && hs.every(h => h.filas.length >= 1), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); log('los valores de plata salen en pesos y no como texto', await t.page.evaluate(async b64 => { const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer); const ws = wb.getWorksheet('Existencias'); let ok = false; ws.getRow(4).eachCell((c, j) => { if (/Precio/.test(String(c.value))) { const x = ws.getRow(5).getCell(j); ok = typeof x.value === 'number' && /\$/.test(x.numFmt || ''); } }); return ok; }, fs.readFileSync(ruta).toString('base64'))); }
++  log('el Excel se descarga con 4 hojas', !!descarga && /^Inventario .*\.xlsx$/.test(descarga.suggestedFilename()), descarga ? descarga.suggestedFilename() : 'sin descarga');
+   await t.page.click('#invSecciones [data-sec="compras"]');
+   await t.page.click('#invContenido .chip[data-val="todas"]');
+   await t.page.click('#invContenido [data-accion="vercompra"][data-id="co-007"]');
+@@ -227,7 +243,19 @@ try {
+   log('Reportes del Gerente: por carro (4), por conductor y salidas con km recorridos', await hasta(t.page, () => { const x = document.getElementById('vehContenido').textContent; return document.querySelectorAll('#vehContenido .card[data-accion="ver"]').length === 4 && /Por conductor/.test(x) && /Oscar Farfán/.test(x) && /Salidas y llegadas \(2\)/.test(x) && /100 km en/.test(x) && /todavía no llega/.test(x); }), await texto(t.page, '#vehContenido'));
+   await t.page.screenshot({ path: path.join(CAPTURAS, '06b-reportes-gerente.png'), fullPage: true });
+   const [excelVeh] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#vehContenido [data-accion="excelveh"]')]);
+-  log('el Gerente descarga el Excel de vehículos', !!excelVeh && /^Vehiculos demo .*\.xlsx$/.test(excelVeh.suggestedFilename()), excelVeh ? excelVeh.suggestedFilename() : 'sin descarga');
++  if (excelVeh) { const ruta = path.join(CAPTURAS, 'excel-vehiculos.xlsx'); await excelVeh.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel de vehículos tiene el mismo formato (título, negrillas, cuadros)', hs.length === 4 && hs.every(bienFormado), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); }
++  log('el Gerente descarga el Excel de vehículos', !!excelVeh && /^Vehiculos .*\.xlsx$/.test(excelVeh.suggestedFilename()), excelVeh ? excelVeh.suggestedFilename() : 'sin descarga');
++  await t.page.click('.tab[data-vista="equipos"]'); await esp(300);
++  const [excelEq] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#btnExcelEq')]);
++  if (excelEq) { const ruta = path.join(CAPTURAS, 'excel-equipos.xlsx'); await excelEq.saveAs(ruta); const hs = await excelInfo(ruta);
++    log('el Excel de Equipos trae equipos y actas con el mismo formato, y sin cédulas ni firmas', /^Equipos .*\.xlsx$/.test(excelEq.suggestedFilename()) && hs.length === 2 && hs.every(bienFormado) && hs[0].filas.length >= 5 && !JSON.stringify(hs).match(/\b\d{7,10}\b|data:image/), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h), h.filas.length]))); }
++  else log('el Excel de Equipos se descarga', false);
++  await t.page.click('.tab[data-vista="reuniones"]'); await esp(300);
++  const [excelReu] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#btnExcelReu')]);
++  if (excelReu) { const ruta = path.join(CAPTURAS, 'excel-reuniones.xlsx'); await excelReu.saveAs(ruta); const hs = await excelInfo(ruta);
++    log('el Excel de Reuniones trae reuniones y tareas con el mismo formato', /^Reuniones .*\.xlsx$/.test(excelReu.suggestedFilename()) && hs.length === 2 && hs.every(bienFormado) && hs[0].filas.length >= 4 && hs[1].filas.length >= 10, JSON.stringify(hs.map(h => [h.nombre, bienFormado(h), h.filas.length]))); }
++  else log('el Excel de Reuniones se descarga', false);
++  await t.page.click('.tab[data-vista="vehiculos"]'); await esp(200);
+   await t.page.click('#vehSecciones [data-sec="novedades"]');
+   log('el Gerente ve las novedades con su foto pero no puede revisarlas ni reportar', await hasta(t.page, () => document.querySelectorAll('#vehContenido .nov-foto').length === 3 && !document.querySelector('#vehContenido [data-accion="revisar"], #vehContenido [data-accion="novedad"]')));
+   await t.page.click('.tab[data-vista="inventario"]');
+@@ -425,6 +453,7 @@ try {
+   await t.page.click('#acCampos [data-accion="kardex"]');
+   log('el kárdex lista cada movimiento con lo que quedó, incluida la entrada de 8', await hasta(t.page, () => /Kárdex: Cinta aislante/.test(document.getElementById('acT').textContent) && /Compra recibida/.test(document.getElementById('acCampos').textContent) && document.querySelectorAll('#acCampos .lineas-tabla tbody tr').length >= 1 && /\+8/.test(document.getElementById('acCampos').textContent)));
+   const [descK] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#acCampos [data-accion="excelkardex"]')]);
++  if (descK) { const ruta = path.join(CAPTURAS, 'excel-kardex.xlsx'); await descK.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del kárdex tiene formato y su título dice el artículo', hs.length === 1 && bienFormado(hs[0]) && /Cinta aislante/.test(hs[0].titulo), JSON.stringify(hs.map(h => [h.nombre, h.titulo]))); }
+   log('descarga el Excel de ese artículo', !!descK && /^Kardex Cinta aislante .*\.xlsx$/.test(descK.suggestedFilename()), descK && descK.suggestedFilename());
+   await t.page.keyboard.press('Escape');
+   await t.page.locator('#invContenido [data-accion="verart"][data-id="ar-004"]').click();
+@@ -671,9 +700,17 @@ try {
+   log('el panel trae el Excel, las personas, los códigos y la seguridad', await t.page.evaluate(() => { const x = document.getElementById('genteCuerpo').textContent; return /Descargar plantilla/.test(x) && /Subir Excel/.test(x) && /Personas registradas/.test(x) && /Códigos por rol/.test(x) && /Personas de prueba: encendidas/.test(x); }));
+ 
+   // --- Excel: plantilla y subida con filas buenas y malas ---
++  let plantillaBajada = '';
+   const [descPlantilla] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#genteCuerpo [data-g="plantilla"]')]);
+   log('descPlantilla la plantilla de Excel con personas inventadas', !!descPlantilla && descPlantilla.suggestedFilename() === 'Plantilla personas.xlsx', descPlantilla && descPlantilla.suggestedFilename());
+-  if (descPlantilla) { const ruta = path.join(CAPTURAS, 'plantilla-descPlantillada.xlsx'); await descPlantilla.saveAs(ruta); const l = await xlsxLeer(ruta); log('la plantilla trae 3 ejemplos con el correo example.com y una hoja de ayuda', l.filas.length === 3 && l.filas.every(x => /@example\.com$/.test(x.Correo)) && l.hojas.includes('Ayuda')); }
++  if (descPlantilla) {
++    const ruta = path.join(CAPTURAS, 'plantilla-descPlantillada.xlsx'); await descPlantilla.saveAs(ruta); const hs = await excelInfo(ruta), p = hs.find(h => h.nombre === 'Personas');
++    log('la plantilla trae las hojas Personas, Ayuda, Roles y una de listas oculta', ['Personas', 'Ayuda', 'Roles', 'Listas'].every(n => hs.some(h => h.nombre === n)) && hs.find(h => h.nombre === 'Listas').oculta && !p.oculta, JSON.stringify(hs.map(h => h.nombre)));
++    log('la hoja Personas tiene título en negrilla, columnas en negrilla con color y cuadros, y la primera fila fija', !!p && bienFormado(p) && p.titulo === 'Plantilla de personas' && p.titulos.join() === 'Nombre,Correo,Rol,Equipos,Inventario,Vehículos,Reuniones,Permisos extra,Estado', JSON.stringify(p && p.titulos));
++    log('trae a la Jefe que ya está (Ya registrada) y 2 filas de ejemplo, y debajo filas vacías con cuadros', !!p && p.filas.some(f => /jefa\.real@ejemplo\.test/.test(f[1]) && f[8] === 'Ya registrada') && p.filas.filter(f => /^Ejemplo/.test(f[8])).length === 2 && p.filas.filter(f => f.every(x => x === '')).length >= 10);
++    log('Rol, Equipos, Inventario, Vehículos, Reuniones y Permisos extra tienen lista desplegable', await t.page.evaluate(async b64 => { const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer); const ws = wb.getWorksheet('Personas'), fila = ws.rowCount; return [3, 4, 5, 6, 7, 8].every(c => { const v = ws.getCell(fila, c).dataValidation; return v && v.type === 'list'; }) && !ws.getCell(fila, 1).dataValidation; }, fs.readFileSync(ruta).toString('base64')));
++    plantillaBajada = ruta;
++  }
+   const rutaXlsx = path.join(CAPTURAS, 'personas-de-prueba.xlsx');
+   await xlsxCrear([
+     { Nombre: ' Gina   Gerente ', 'Correo electrónico': 'GINA.Gerente@ejemplo.test', Cargo: 'Profesional' },
+@@ -766,6 +803,22 @@ try {
+   await t.page.screenshot({ path: path.join(CAPTURAS, '07b-permisos-por-persona.png'), fullPage: true });
+   await t.page.click(`#genteCuerpo [data-g="pausar"][data-id="${uidMario}"]`); await t.page.click('#cfSi');
+   log('la Jefe pausa el acceso de Mario', await hasta(t.page, i => JSON.parse(localStorage.getItem('__fb_datos')).usuarios[i].activo === false, uidMario));
++  // --- La misma plantilla, con una persona nueva agregada, se vuelve a subir: solo se guarda lo nuevo ---
++  const rutaIda = path.join(CAPTURAS, 'plantilla-con-nueva.xlsx');
++  fs.writeFileSync(rutaIda, Buffer.from(await t.page.evaluate(async b64 => {
++    const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer);
++    const ws = wb.getWorksheet('Personas'); let fila = 5; while (ws.getCell(fila, 1).value) fila++;
++    [['Nueva Persona Plantilla', 'nueva.plantilla@ejemplo.test', 'Logística', '', '', '', '', '', ''], ['Fila Con Error', 'sin-arroba', 'Presidente', '', '', '', '', '', '']].forEach((v, k) => v.forEach((x, c) => { ws.getCell(fila + k, c + 1).value = x; }));
++    const buf = await wb.xlsx.writeBuffer(); let s = ''; new Uint8Array(buf).forEach(c => { s += String.fromCharCode(c); }); return btoa(s);
++  }, fs.readFileSync(plantillaBajada).toString('base64')), 'base64'));
++  await t.page.setInputFiles('#genteArchivo', rutaIda);
++  log('al subir la plantilla con una persona nueva: 1 lista, 1 con problema, y lo que ya estaba y los ejemplos se omiten', await hasta(t.page, () => { const x = document.getElementById('genteCuerpo').textContent; return /1 lista para guardar/.test(x) && /1 con problema/.test(x) && /ya estaba(n)? en la app \(no se tocan\)/.test(x) && /2 filas de ejemplo \(se ignoran\)/.test(x); }), await texto(t.page, '#genteCuerpo'));
++  log('las filas ya registradas no salen como error ni como lista nueva', await t.page.evaluate(() => !/Esa persona ya tiene cuenta/.test(document.getElementById('genteCuerpo').textContent) && !/Jefa Real/.test(document.querySelector('#genteCuerpo .persona-reg.pausada, #genteCuerpo .persona-reg') ? [...document.querySelectorAll('#genteCuerpo .persona-reg')].filter(c => /Fila \d+/.test(c.textContent)).map(c => c.textContent).join(' ') : '')));
++  await t.page.click('#genteCuerpo [data-g="guardarinv"]');
++  log('«Guardar» deja solo la invitación nueva', await hasta(t.page, () => { const i = JSON.parse(localStorage.getItem('__fb_datos')).invitaciones || {}; return !!i['nueva.plantilla@ejemplo.test'] && i['nueva.plantilla@ejemplo.test'].rol === 'logistica' && !i['jefa.real@ejemplo.test'] && !i['persona.uno@example.com']; }));
++  await t.page.setInputFiles('#genteArchivo', rutaIda);
++  log('si sube la misma plantilla otra vez, la invitación que ya estaba tampoco se repite', await hasta(t.page, () => /0 listas para guardar/.test(document.getElementById('genteCuerpo').textContent) && /ya estaba(n)? en la app/.test(document.getElementById('genteCuerpo').textContent)));
++  await t.page.click('#genteCuerpo [data-g="descartar"]');
+   await t.page.evaluate(() => { document.getElementById('genteCodigos').open = true; });
+   await t.page.click('#genteCuerpo [data-g="crear"][data-rol="logistica"]');
+   const codLog = await (async () => (await hasta(t.page, () => !!document.querySelector('#genteCuerpo [data-g="copiar"][data-id^="LOG-"]'))) ? t.page.evaluate(() => document.querySelector('#genteCuerpo [data-g="copiar"][data-id^="LOG-"]').dataset.id) : '')();
+diff --git a/reuniones.js b/reuniones.js
+index 3b43649..32d57cb 100644
+--- a/reuniones.js
++++ b/reuniones.js
+@@ -84,6 +84,23 @@
+     if (esJefe() || esEncargada()) s.splice(1, 0, ['correos', 'Correos']), s.push(['resumen', 'Resumen']);
+     return s;
+   }
++  /** Excel de Reuniones: las reuniones y todas sus tareas, con quién le tocaba y quién la hizo. */
++  async function descargarExcel(b) {
++    b.disabled = true;
++    try {
++      const gen = `Generado el ${A().hoyISO()}.`, E = window.Excel;
++      const reuniones = D().reuniones.slice().sort(ordenFecha).map(r => ({ Comunidad: r.comunidad, Fecha: r.fecha, Hora: r.hora, Lugar: r.lugar || 'Falta el lugar', Personas: num(r.asistentes), Estado: (EST_RE[r.estado] || [r.estado])[0], Jefe: r.jefe || '',
++        'Falta': (r.faltan || []).join(', ') }));
++      const tareas = D().necesidades.slice().sort((a, c) => String(a.fechaReunion).localeCompare(String(c.fechaReunion)) || String(a.comunidad).localeCompare(String(c.comunidad))).map(n => ({ Comunidad: n.comunidad, 'Fecha de la reunión': n.fechaReunion,
++        Tarea: (TIPO[n.tipo] || [n.tipo])[0], Detalle: n.detalle, 'Le toca a': n.responsableNombre || nombreRol(n.responsableRol), Estado: (EST_NE[n.estado] || [n.estado])[0], 'Lo hizo': n.por || '', Nota: n.motivo || '' }));
++      await E.descargar({ archivo: `Reuniones ${A().hoyISO()}`, hojas: [
++        E.deObjetos('Reuniones', 'Reuniones', `Cada reunión con su fecha, lugar y estado. ${gen}`, reuniones),
++        E.deObjetos('Tareas', 'Tareas de las reuniones', `Lo que le toca a cada persona en cada reunión, y quién ya lo hizo. ${gen}`, tareas)] });
++      A().toast('Listo: Excel descargado');
++    } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
++    finally { b.disabled = false; }
++  }
++  $('btnExcelReu').addEventListener('click', e => descargarExcel(e.currentTarget));
+   function pintar() {
+     const App = A(), S = App.S;
+     if (!S.persona) return;
+diff --git a/vehiculos.js b/vehiculos.js
+index d469ca3..213ae88 100644
+--- a/vehiculos.js
++++ b/vehiculos.js
+@@ -274,13 +274,15 @@
+   async function excelVehiculos(b) {
+     b.disabled = true;
+     try {
+-      const X = await window.Inventario.cargarXlsx(), f = window.Inventario.fechaLocal, r = datosReporte(), libro = X.utils.book_new();
+-      const hoja = (nombre, filas) => X.utils.book_append_sheet(libro, X.utils.json_to_sheet(filas.length ? filas : [{ Nota: 'Sin datos' }]), nombre);
++      const f = window.Inventario.fechaLocal, r = datosReporte(), hojas = [], gen = `Generado el ${A().hoyISO()}.`;
++      const TIT = { Carros: ['Carros', 'Estado, kilometraje y salidas de cada carro.'], 'Salidas y llegadas': ['Salidas y llegadas', 'Cada salida con su llegada, kilómetros y revisión.'],
++        Novedades: ['Novedades', 'Lo que reportaron los conductores, con su costo y si ya se revisó.'], 'Por conductor': ['Por conductor', 'Resumen de cada conductor.'] };
++      const hoja = (nombre, filas) => hojas.push(window.Excel.deObjetos(nombre, TIT[nombre][0], `${TIT[nombre][1]} ${gen}`, filas));
+       hoja('Carros', r.porCarro.map(x => ({ Placa: x.v.placa, Carro: `${x.v.marca} ${x.v.modelo} ${x.v.anio}`, Estado: (EST[x.v.estado] || [x.v.estado])[0], Conductor: x.v.conductor, Kilometraje: num(x.v.km), Salidas: x.salidas, 'Km recorridos': x.km, 'Con problemas': x.problemas, Novedades: x.novedades, 'Costo novedades': x.costo, 'SOAT vence': x.v.soat, 'Técnico-mecánica vence': x.v.tecno })));
+       hoja('Salidas y llegadas', r.vs.map(x => ({ Placa: x.v.placa, Conductor: x.salida.conductor, Reunión: x.reunion, Salió: f(x.salida.fecha, true), 'Km salida': num(x.salida.km), 'Combustible salida': x.salida.combustible, Entregó: x.salida.con, Llegó: x.llegada ? f(x.llegada.fecha, true) : 'Todavía no', 'Km llegada': x.llegada ? num(x.llegada.km) : '', 'Combustible llegada': x.llegada ? x.llegada.combustible : '', Recibió: x.llegada ? x.llegada.con : '', 'Km recorridos': x.km, Horas: x.horas, Revisión: x.problemas ? 'Con problemas' : 'Bien', Observaciones: [x.salida.observaciones, x.llegada && x.llegada.observaciones].filter(Boolean).join(' · ') })));
+       hoja('Novedades', r.ns.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).map(n => ({ Fecha: f(n.fecha, true), Placa: n.placa, Tipo: TIPO_NOV[n.tipo] || n.tipo, Qué: n.descripcion, Km: num(n.km), Reportó: n.reporta, Costo: num(n.costo), Revisada: n.revisada ? 'Sí' : 'No', 'Revisó': n.revisadaPor, Nota: n.nota })));
+       hoja('Por conductor', r.porConductor.map(x => ({ Conductor: x.c, Salidas: x.salidas, 'Km recorridos': x.km, 'Con problemas': x.problemas, 'Novedades reportadas': x.novedades })));
+-      X.writeFile(libro, `Vehiculos demo ${A().hoyISO()}.xlsx`);
++      await window.Excel.descargar({ archivo: `Vehiculos ${A().hoyISO()}`, hojas });
+       A().toast('Listo: Excel descargado');
+     } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
+     finally { b.disabled = false; }
