@@ -500,7 +500,8 @@
     $('btnPersona').onclick = abrirPersona;
     $('btnAvisos').onclick = abrirAvisos;
     $('btnSalir').onclick = async () => { cerrarHoja('shPersona'); await nube.salir(); };
-    $('btnGente').onclick = () => { cerrarHoja('shPersona'); window.Gente.abrir(); };
+    // «Personas y permisos» (gente.js, 34 KB) solo lo usa la Jefe: se descarga la primera vez que lo abre.
+    $('btnGente').onclick = () => { cerrarHoja('shPersona'); UI.cargarScript('gente.js?v=8').then(() => window.Gente.abrir(), () => toast('No se pudo abrir el panel. Revisa la conexión y vuelve a intentar.')); };
     $('entradaModo').addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return; modoEntrada = b.dataset.modo; $('entradaErr').hidden = true; pintarModoEntrada(); });
     $('ctCambiar').onclick = () => { modoCuenta = modoCuenta === 'crear' ? 'entrar' : 'crear'; $('ctErr').hidden = true; pintarModoEntrada(); };
     $('ctForm').addEventListener('submit', e => { e.preventDefault(); enviarCuenta(); });

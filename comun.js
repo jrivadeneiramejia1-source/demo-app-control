@@ -236,6 +236,12 @@
       : Array.from({ length: n || 3 }, (_, i) => `<div class="card esq" aria-hidden="true">
         <div class="esq-cab">${conIcono === false ? '' : '<b></b>'}<span><i style="width:${46 + (i * 17) % 30}%"></i><i style="width:${62 + (i * 11) % 25}%"></i></span></div>
         <i style="width:${34 + (i * 23) % 40}%"></i></div>`).join('')),
+    /** Carga un script propio la primera vez que hace falta (una sola vez, aunque se pida varias). Devuelve una promesa. */
+    cargarScript: (() => { const hechos = {}; return src => hechos[src] || (hechos[src] = new Promise((ok, mal) => {
+      const s = document.createElement('script'); s.src = src; s.onload = ok;
+      s.onerror = () => { delete hechos[src]; s.remove(); mal(new Error('No se pudo cargar ' + src)); };
+      document.head.appendChild(s);
+    })); })(),
     /** Deja pasar solo la última llamada si no hay otra en `ms` milisegundos (buscadores: no repintar en cada tecla). */
     retardar: (fn, ms) => { let id = 0; const f = (...a) => { clearTimeout(id); id = setTimeout(() => { id = 0; fn(...a); }, ms == null ? 300 : ms); }; f.cancelar = () => { clearTimeout(id); id = 0; }; return f; },
     /** Cuadritos fantasma del tablero de cifras mientras cargan los datos (así no se ve un «0» falso). */

@@ -696,7 +696,9 @@ try {
   log('al confirmar el correo, el código de Jefe la deja entrar como Jefe', await enApp('Jefe'));
   log('el código de Jefe se gastó (sirve una sola vez)', !((await fb()).codigosDireccion || {})['JEF-PRUE-BA23']);
   log('la Jefe con cuenta propia no tiene «Reiniciar los datos de prueba»', await (async () => { await t.page.click('#btnPersona'); await t.page.waitForSelector('#shPersona:not([hidden])'); const r = !(await visible(t.page, '#ajustesJefe')); await t.page.keyboard.press('Escape'); return r; })());
+  log('el panel «Personas y permisos» no se descarga hasta que la Jefe lo abre', await t.page.evaluate(() => !window.Gente && ![...document.scripts].some(s => /gente\.js/.test(s.src))));
   log('la Jefe abre «Personas y permisos»', await abrirPanel());
+  log('al abrirlo se descarga una sola vez y queda listo', await t.page.evaluate(() => !!window.Gente && [...document.scripts].filter(s => /gente\.js/.test(s.src)).length === 1));
   log('el panel trae el Excel, las personas, los códigos y la seguridad', await t.page.evaluate(() => { const x = document.getElementById('genteCuerpo').textContent; return /Descargar plantilla/.test(x) && /Subir Excel/.test(x) && /Personas registradas/.test(x) && /Códigos por rol/.test(x) && /Personas de prueba: encendidas/.test(x); }));
 
   // --- Excel: plantilla y subida con filas buenas y malas ---
