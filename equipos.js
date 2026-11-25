@@ -37,7 +37,7 @@
   const OTROS = ['Base portátil', 'Base monitor', 'Mouse', 'Teclado', 'Pad mouse', 'Pad teclado', 'Descansapiés', 'Morral', 'Diadema', 'Cargador'];
   const PROYECTOS = [['Proyecto Costa Norte', 'PCN-01'], ['Proyecto Ruta Alta', 'PRA-02']];
   const MAX_FIRMA = 79000;
-  let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], buscar = '';
+  let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], buscar = '', tipoEq = '', buscarActa = '', buscarPers = '', hechasAbiertas = false;
 
   /* ---------- datos derivados ---------- */
   const equipos = () => D().equipos.slice().sort((a, b) => String(a.serial).localeCompare(String(b.serial)));
@@ -111,7 +111,7 @@
   function pintar() {
     const App = A(), S = App.S;
     if (!S.persona) return;
-    if (rolPintado !== S.persona.rol) { rolPintado = S.persona.rol; seccion = secciones()[0][0]; }
+    if (rolPintado !== S.persona.rol) { rolPintado = S.persona.rol; seccion = secciones()[0][0]; tipoEq = buscarActa = buscarPers = ''; }
     const f = S.filtro.equipos;
     if (['asignado', 'bodega', 'recibido'].includes(f)) seccion = 'equipos';
     if (f === 'actas') seccion = 'actas';
@@ -196,13 +196,22 @@
   const quienTiene = e => (e.estado === 'bodega' ? 'En bodega' : e.estado === 'recibido' ? `En Recibidos (lo trajo ${e.asignadoA || 'alguien'})` : e.asignadoA || 'Sin asignar');
 
   /* --- Equipos --- */
+  const buscador = (id, valor, ph, aria) => `<input class="search" id="${id}" type="search" placeholder="${esH(ph)}" autocomplete="off" aria-label="${esH(aria)}" value="${esH(valor)}">`;
   function htmlEquipos(f) {
     const App = A(), q = buscar.trim().toLowerCase();
-    const vis = equipos().filter(e => (!['asignado', 'bodega', 'recibido'].includes(f) || e.estado === f) && (!q || [e.serial, e.asignadoA, e.marca, e.modelo, e.tipo, e.proyecto].join(' ').toLowerCase().includes(q)));
+    const base = equipos().filter(e => (!['asignado', 'bodega', 'recibido'].includes(f) || e.estado === f) && (!q || [e.serial, e.asignadoA, e.marca, e.modelo, e.tipo, e.proyecto].join(' ').toLowerCase().includes(q)));
+    const vis = tipoEq ? base.filter(e => e.tipo === tipoEq) : base;
+    // Chips por tipo: solo los tipos que hay (con su número), más el escogido aunque ya no tenga equipos.
+    const tipos = Array.from(new Set(base.map(e => e.tipo).concat(tipoEq ? [tipoEq] : []))).sort((a, b) => String(a).localeCompare(String(b)));
+    const chipTipo = (t, txt, n) => `<button type="button" class="chip" data-accion="tipoeq" data-id="${esH(t)}" aria-pressed="${tipoEq === t}">${esH(txt)} <span class="n">${n}</span></button>`;
+    const rotuloEstado = { asignado: 'Asignados', bodega: 'En bodega', recibido: 'En Recibidos' }[f];
+    const filtros = [rotuloEstado, tipoEq].filter(Boolean);
     let h = `<div class="con-scan"><input class="search" id="qEq" type="search" placeholder="Buscar serial, persona o modelo" autocomplete="off" aria-label="Buscar equipo" value="${esH(buscar)}"><button type="button" class="btn-scan" data-accion="escanear" data-id="" aria-label="Escanear el serial con la cámara" title="Escanear el serial"><span data-ico="codigo"></span></button></div>`;
     h += window.ExcelBD.html(cfgEquipos());
+    if (tipos.length > 1 || tipoEq) h += `<div class="chips" role="group" aria-label="Filtrar por tipo de equipo">${chipTipo('', 'Todos', base.length)}${tipos.map(t => chipTipo(t, t, base.filter(e => e.tipo === t).length)).join('')}</div>`;
+    if (filtros.length) h += `<div class="filtro-activo"><span>Filtro: <b>${esH(filtros.join(' · '))}</b></span>${boton('quitarfiltro', 'Quitar', 'x', '', 'ghost small')}</div>`;
     h += `<div class="count" aria-live="polite">${vis.length} de ${D().equipos.length} equipos</div>`;
-    if (!vis.length) return h + UI.vacio('equipos', 'No hay equipos con ese filtro', '');
+    if (!vis.length) return h + UI.vacio('equipos', 'No hay equipos con ese filtro', '') + (filtros.length || q ? `<div class="barra-botones">${boton('quitarfiltro', 'Quitar filtro', 'x', '', 'primary', ' data-modo="todo"')}</div>` : '');
     return h + `<div class="list">${vis.map(e => {
       const st = EST[e.estado] || ['Sin estado', 'none', 'pend'];
       return `<button type="button" class="card st-${st[2]}" data-accion="ver" data-id="${esH(e.id)}">
@@ -216,24 +225,37 @@
   }
   /* --- Actas --- */
   function htmlActas(f) {
-    const hs = D().hojas.slice().sort((a, b) => String(b.en).localeCompare(String(a.en)));
+    const q = buscarActa.trim().toLowerCase();
+    const hs = D().hojas.slice().sort((a, b) => String(b.en).localeCompare(String(a.en))).filter(h => !q || [numActa(h), h.persona, h.cedula, seriales(h), h.proyecto].join(' ').toLowerCase().includes(q));
     const ps = hs.filter(h => h.revision !== 'ok'), ok = hs.filter(h => h.revision === 'ok');
-    let h = f === 'actas' ? '<p class="meta">Mostrando primero las actas por revisar.</p>' : '';
+    let h = buscador('qAc', buscarActa, 'Buscar persona, serial o número de acta', 'Buscar acta');
+    if (q && !hs.length) return h + UI.vacio('hojas', 'No hay actas con esa búsqueda', '') + `<div class="barra-botones">${boton('quitarfiltro', 'Quitar búsqueda', 'x', '', 'primary', ' data-modo="actas"')}</div>`;
+    h += f === 'actas' ? '<p class="meta">Mostrando primero las actas por revisar.</p>' : '';
     h += `<div class="section-label">Por revisar o con problema (${ps.length})</div>` + (ps.length ? `<div class="list">${ps.map(tarjetaActa).join('')}</div>` : '<p class="meta">Ninguna.</p>');
     h += `<div class="section-label">Revisadas (${ok.length})</div>` + (ok.length ? `<div class="list">${ok.map(tarjetaActa).join('')}</div>` : '<p class="meta">Todavía no hay actas revisadas.</p>');
     return h;
   }
   /* --- Agenda --- */
   function htmlAgenda() {
-    const ts = D().tareasEq.slice().sort((a, b) => (a.estado === b.estado ? String(a.fecha).localeCompare(String(b.fecha)) : a.estado === 'pendiente' ? -1 : 1));
     const h = programa() ? `<div class="barra-botones">${boton('programar', 'Programar mantenimiento o backup', 'programar', '', 'primary')}</div>` : '';
-    return h + (ts.length ? `<div class="list">${ts.map(tarjetaTarea).join('')}</div>` : UI.vacio('calendario', 'No hay tareas', 'Soporte o la Jefe le programan al Encargado los mantenimientos y backups.'));
+    if (!D().tareasEq.length) return h + UI.vacio('calendario', 'No hay tareas', 'Soporte o la Jefe le programan al Encargado los mantenimientos y backups.');
+    // Pendientes en tres grupos: atrasadas, las de esta semana (hasta el domingo) y las de después. Las hechas, al final y plegadas.
+    const ps = tareasPend(), hechas = D().tareasEq.filter(t => t.estado !== 'pendiente').sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    const domingo = (7 - new Date().getDay()) % 7;
+    const atras = ps.filter(t => String(t.fecha) < hoy()), semana = ps.filter(t => String(t.fecha) >= hoy() && dias(t.fecha) <= domingo);
+    const despues = ps.filter(t => !atras.includes(t) && !semana.includes(t));
+    const grupo = (rotulo, ts, vacio, clase) => `<div class="section-label${clase || ''}">${rotulo} (${ts.length})</div>` + (ts.length ? `<div class="list">${ts.map(tarjetaTarea).join('')}</div>` : `<p class="meta">${vacio}</p>`);
+    return h + (atras.length ? grupo('Atrasadas', atras, '', ' atrasadas') : '') + grupo('Esta semana', semana, 'Nada para esta semana.') + grupo('Después', despues, 'Nada programado más adelante.')
+      + (hechas.length ? `<div class="barra-botones">${boton('verhechas', hechasAbiertas ? 'Ocultar hechas' : `Ver hechas (${hechas.length})`, hechasAbiertas ? 'arriba' : 'abajo', '', 'ghost small')}</div>` + (hechasAbiertas ? `<div class="list">${hechas.map(tarjetaTarea).join('')}</div>` : '') : '');
   }
   /* --- Personas --- */
   function htmlPersonas() {
-    const ps = personas();
-    if (!ps.length) return UI.vacio('persona', 'Nadie tiene equipos todavía', '');
-    return `<div class="list">${ps.map(p => `<button type="button" class="card" data-accion="persona" data-clave="${esH(p.clave)}">
+    const todas = personas(), q = buscarPers.trim().toLowerCase();
+    if (!todas.length) return UI.vacio('persona', 'Nadie tiene equipos todavía', '');
+    const ps = todas.filter(p => !q || [p.nombre, p.cedula, p.equipos.map(e => e.serial).join(' ')].join(' ').toLowerCase().includes(q));
+    const caja = buscador('qPe', buscarPers, 'Buscar nombre, cédula o serial', 'Buscar persona');
+    if (!ps.length) return caja + UI.vacio('persona', 'No hay nadie con esa búsqueda', '') + `<div class="barra-botones">${boton('quitarfiltro', 'Quitar búsqueda', 'x', '', 'primary', ' data-modo="personas"')}</div>`;
+    return caja + `<div class="list">${ps.map(p => `<button type="button" class="card" data-accion="persona" data-clave="${esH(p.clave)}">
       <span class="card-head"><span class="card-title">${esH(p.nombre)}</span>${A().pill(`${p.equipos.length} ${p.equipos.length === 1 ? 'equipo' : 'equipos'}`, p.equipos.length ? 's-disco' : 'none', 'equipos')}</span>
       <span class="meta">${p.cedula ? 'C.C. ' + esH(p.cedula) + ' · ' : ''}${p.hojas.length} ${p.hojas.length === 1 ? 'acta' : 'actas'}${p.equipos.length ? ' · ' + esH(p.equipos.map(e => e.serial).join(', ')) : ''}</span>
     </button>`).join('')}</div>`;
@@ -668,6 +690,13 @@
       abodega: () => (eq && esEncargado() && eq.estado === 'recibido' && !pend(eq).mtto && !pend(eq).backup ? aBodega(eq) : null),
       revisar: () => (h && puedeRevisar(h) ? revisar(h) : null), corregir: () => (h && h.revision === 'problema' && esEncargado() ? corregir(h) : null),
       escanear: () => escanear(b.dataset.modo || ''),
+      tipoeq: () => { tipoEq = tipoEq === id ? '' : id; pintar(); return true; },
+      verhechas: () => { hechasAbiertas = !hechasAbiertas; pintar(); return true; },
+      quitarfiltro: () => {
+        const m = b.dataset.modo;
+        if (m === 'actas') buscarActa = ''; else if (m === 'personas') buscarPers = ''; else { tipoEq = ''; A().S.filtro.equipos = ''; if (m === 'todo') buscar = ''; }
+        A().pintarTodo(); return true;
+      },
       programar: () => (programa() ? programar(eq) : null), hecha: () => (t && t.estado === 'pendiente' && esEncargado() ? hecha(t) : null)
     };
     const fn = mapa[b.dataset.accion]; if (!fn) return;
@@ -678,8 +707,13 @@
   const ponerCC = () => { const cc = $('ehFirmaPCC'); if (cc && $('ehCedula')) cc.textContent = $('ehCedula').value.replace(/\D/g, '') || '—'; };
   $('eqContenido').addEventListener('click', alTocar);
   // Lo escrito se guarda al instante, pero la lista se repinta 300 ms después de la última tecla.
-  const buscarLuego = UI.retardar(() => { const q = $('qEq'), pos = q ? q.selectionStart : 0; pintar(); const n = $('qEq'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} } }, 300);
-  $('eqContenido').addEventListener('input', e => { if (e.target.id === 'qEq') { buscar = e.target.value; buscarLuego(); } });
+  let cajaBuscando = 'qEq';
+  const buscarLuego = UI.retardar(() => { const q = $(cajaBuscando), pos = q ? q.selectionStart : 0; pintar(); const n = $(cajaBuscando); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} } }, 300);
+  $('eqContenido').addEventListener('input', e => {
+    const id = e.target.id;
+    if (id === 'qEq') buscar = e.target.value; else if (id === 'qAc') buscarActa = e.target.value; else if (id === 'qPe') buscarPers = e.target.value; else return;
+    cajaBuscando = id; buscarLuego();
+  });
   $('eqCampos').addEventListener('click', e => { if (e.target.closest('[data-accion]')) alTocar(e); });
   $('eqCampos').addEventListener('input', e => { if (e.target.id === 'ehCedula' && $('ehQuien') === null) ponerCC(); });
   $('eqCampos').addEventListener('change', e => {

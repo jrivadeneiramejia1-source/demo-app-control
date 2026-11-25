@@ -342,3 +342,8 @@ button.card .card-title { text-align: left; }
   body.imprimiendo #impresion { display: block; }
   #impresion .acta-doc { border: 0; font-size: 10pt; }
 }
+
+/* Equipos: línea «Filtro: …» con su botón Quitar, y las tareas atrasadas de la Agenda */
+.filtro-activo { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .9rem; color: var(--muted); }
+.filtro-activo b { color: var(--fg); }
+.section-label.atrasadas { color: var(--danger); }

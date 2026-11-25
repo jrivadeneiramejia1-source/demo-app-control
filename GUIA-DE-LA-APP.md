@@ -439,10 +439,10 @@ Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin au
 
 ### 9.2 Las pestañas de Equipos
 - **Lo que me toca:** tareas pendientes de la persona.
-- **Equipos:** la lista de equipos con su estado.
-- **Actas:** las actas de entrega con su revisión.
-- **Agenda:** mantenimientos y backups programados.
-- **Personas:** quién tiene qué equipo.
+- **Equipos:** la lista de equipos con su estado. Arriba del listado hay **botones por tipo** (Portátil, Monitor, GPS…) con cuántos hay de cada uno; se pueden sumar al filtro de las cifras de arriba (por ejemplo «En bodega · Portátil»). La línea **«Filtro: …»** dice qué filtro está puesto y tiene su botón **Quitar**. Si no hay resultados, sale **«Quitar filtro»**.
+- **Actas:** las actas de entrega con su revisión, con **buscador** (persona, serial o número de acta).
+- **Agenda:** mantenimientos y backups programados, en grupos: **Atrasadas** (en rojo, solo si hay), **Esta semana** (hasta el domingo) y **Después**. Las ya hechas están plegadas en **«Ver hechas»**.
+- **Personas:** quién tiene qué equipo, con **buscador** (nombre, cédula o serial).
 - **Resumen:** solo la Jefe (y el Gerente en su versión).
 
 ### 9.3 El acta virtual
