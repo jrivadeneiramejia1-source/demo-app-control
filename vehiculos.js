@@ -28,10 +28,24 @@
   const TIPO_NOV = { llanta: 'Llanta', choque: 'Choque', rayon: 'Rayón', mantenimiento: 'Mantenimiento', otro: 'Otro' };
   const COMBUSTIBLE = [['vacio', 'Vacío'], ['1/4', '1/4'], ['1/2', '1/2'], ['3/4', '3/4'], ['lleno', 'Lleno']];
   const LADOS = [['frente', 'Frente'], ['atras', 'Atrás'], ['izquierda', 'Lado izquierdo'], ['derecha', 'Lado derecho'], ['llantas', 'Llantas']];
-  const REVISION = [['luces', 'Luces'], ['llantas', 'Llantas'], ['documentos', 'Documentos'], ['herramienta', 'Herramienta y kit']];
+  // Revisión antes de salir (preoperacional). Los «críticos» impiden salir si alguno está mal; el resto pide contar el problema.
+  // La lista es la del plan (no hay formato oficial único: cada empresa arma el suyo); si Transporte da el suyo, se cambia aquí.
+  const REV_CRITICOS = [['frenos', 'Frenos'], ['llantas', 'Llantas'], ['luces', 'Luces'], ['direccion', 'Dirección']];
+  const REV_OTROS = [['aceite', 'Nivel de aceite'], ['agua', 'Nivel de agua (refrigerante)'], ['liquidoFrenos', 'Líquido de frenos'], ['cinturones', 'Cinturones'], ['pito', 'Pito'], ['espejos', 'Espejos'],
+    ['limpiabrisas', 'Limpiabrisas'], ['extintor', 'Extintor (vigente)'], ['botiquin', 'Botiquín'], ['kit', 'Kit de carretera'], ['repuesto', 'Llanta de repuesto']];
+  const REVISION = REV_CRITICOS.concat(REV_OTROS);
+  // Las salidas guardadas antes de esta lista traían 4 casillas (luces, llantas, documentos, herramienta): se siguen leyendo.
+  const NOMBRE_REV = Object.assign(Object.fromEntries(REVISION), { documentos: 'Documentos', herramienta: 'Herramienta y kit' });
+  const esCritico = k => REV_CRITICOS.some(([x]) => x === k);
+  /** Resumen de una revisión guardada: «bien», «2 mal (pito, botiquín)» o «sin revisar», por grupo. */
+  function textoRevision(rev) {
+    rev = rev && typeof rev === 'object' ? rev : {};
+    const grupo = pred => { const ks = Object.keys(rev).filter(pred); if (!ks.length) return 'sin revisar'; const mal = ks.filter(k => !rev[k]); return mal.length ? `${mal.length} mal (${mal.map(k => (NOMBRE_REV[k] || k).toLowerCase()).join(', ')})` : 'bien'; };
+    return { criticos: grupo(esCritico), otros: grupo(k => !esCritico(k)) };
+  }
   const CONDUCTORES = ['Oscar Farfán', 'Rafael Ospino', 'Hernán Brito'];
   const QUIEN_ENTREGA = ['Wilson Muñoz', 'Andrés Beltrán'];
-  let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], fotos = {}, fotoNov = '', periodo = 'mes';
+  let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], fotos = {}, fotoNov = '', periodo = 'mes', buscar = '';
 
   /* ---------- datos derivados ---------- */
   const vehPorId = id => D().vehiculos.find(v => v.id === id) || null;
@@ -105,7 +119,7 @@
     if (!S.persona) return;
     if (rolPintado !== S.persona.rol) { rolPintado = S.persona.rol; seccion = secciones()[0][0]; }
     const f = S.filtro.vehiculos;
-    if (['disponible', 'docs', 'uso'].includes(f)) seccion = 'carros';
+    if (['disponible', 'docs', 'uso', 'taller'].includes(f)) seccion = 'carros';
     if (f === 'novedad') seccion = 'novedades';
     if (!secciones().some(x => x[0] === seccion)) seccion = secciones()[0][0];
     const n = resumen();
@@ -172,12 +186,16 @@
   /* --- Carros --- */
   function htmlCarros(f) {
     const App = A();
-    let vs = D().vehiculos.slice().sort((a, b) => String(a.placa).localeCompare(String(b.placa)));
-    if (f === 'disponible') vs = vs.filter(v => v.estado === 'disponible');
-    if (f === 'uso') vs = vs.filter(v => v.estado === 'en-uso');
-    if (f === 'docs') vs = vs.filter(v => docsMal(v).length);
-    const bd = window.ExcelBD.html(cfgVehiculos());
-    if (!vs.length) return bd + UI.vacio('carro', 'No hay carros con ese filtro', '');
+    const q = buscar.trim().toLowerCase();
+    const base = D().vehiculos.slice().sort((a, b) => String(a.placa).localeCompare(String(b.placa)))
+      .filter(v => !q || [v.placa, v.marca, v.modelo, v.conductor, v.color].join(' ').toLowerCase().includes(q));
+    const FILTROS = { disponible: v => v.estado === 'disponible', uso: v => v.estado === 'en-uso', taller: v => v.estado === 'en-taller', docs: v => docsMal(v).length > 0 };
+    const vs = FILTROS[f] ? base.filter(FILTROS[f]) : base;
+    const chip = (k, txt, n) => `<button type="button" class="chip" data-accion="filtroveh" data-id="${k}" aria-pressed="${(f || '') === k}">${esH(txt)} <span class="n">${n}</span></button>`;
+    const bd = `<input class="search" id="qVeh" type="search" placeholder="Buscar placa, marca, modelo o conductor" autocomplete="off" aria-label="Buscar carro" value="${esH(buscar)}">`
+      + window.ExcelBD.html(cfgVehiculos())
+      + `<div class="chips" role="group" aria-label="Filtrar carros">${chip('', 'Todos', base.length)}${chip('disponible', 'Disponible', base.filter(FILTROS.disponible).length)}${chip('uso', 'En uso', base.filter(FILTROS.uso).length)}${chip('taller', 'En taller', base.filter(FILTROS.taller).length)}${chip('docs', 'Documentos', base.filter(FILTROS.docs).length)}</div>`;
+    if (!vs.length) return bd + UI.vacio('carro', 'No hay carros con ese filtro', '') + (f || q ? `<div class="barra-botones">${boton('filtroveh', 'Quitar filtro', 'x', '', 'primary', ' data-modo="todo"')}</div>` : '');
     return bd + `<div class="list">${vs.map(v => {
       const st = EST[v.estado] || ['Sin estado', 'none', 'pend'], pend = novDe(v.id).filter(n => !n.revisada).length;
       return `<button type="button" class="card st-${pend ? 'org' : st[2]}" data-accion="ver" data-id="${esH(v.id)}">
@@ -279,7 +297,7 @@
         Novedades: ['Novedades', 'Lo que reportaron los conductores, con su costo y si ya se revisó.'], 'Por conductor': ['Por conductor', 'Resumen de cada conductor.'] };
       const hoja = (nombre, filas) => hojas.push(window.Excel.deObjetos(nombre, TIT[nombre][0], `${TIT[nombre][1]} ${gen}`, filas));
       hoja('Carros', r.porCarro.map(x => ({ Placa: x.v.placa, Carro: `${x.v.marca} ${x.v.modelo} ${x.v.anio}`, Estado: (EST[x.v.estado] || [x.v.estado])[0], Conductor: x.v.conductor, Kilometraje: num(x.v.km), Salidas: x.salidas, 'Km recorridos': x.km, 'Con problemas': x.problemas, Novedades: x.novedades, 'Costo novedades': x.costo, 'SOAT vence': x.v.soat, 'Técnico-mecánica vence': x.v.tecno })));
-      hoja('Salidas y llegadas', r.vs.map(x => ({ Placa: x.v.placa, Conductor: x.salida.conductor, Reunión: x.reunion, Salió: f(x.salida.fecha, true), 'Km salida': num(x.salida.km), 'Combustible salida': x.salida.combustible, Entregó: x.salida.con, Llegó: x.llegada ? f(x.llegada.fecha, true) : 'Todavía no', 'Km llegada': x.llegada ? num(x.llegada.km) : '', 'Combustible llegada': x.llegada ? x.llegada.combustible : '', Recibió: x.llegada ? x.llegada.con : '', 'Km recorridos': x.km, Horas: x.horas, Revisión: x.problemas ? 'Con problemas' : 'Bien', Observaciones: [x.salida.observaciones, x.llegada && x.llegada.observaciones].filter(Boolean).join(' · ') })));
+      hoja('Salidas y llegadas', r.vs.map(x => ({ Placa: x.v.placa, Conductor: x.salida.conductor, Reunión: x.reunion, Salió: f(x.salida.fecha, true), 'Km salida': num(x.salida.km), 'Combustible salida': x.salida.combustible, Entregó: x.salida.con, Llegó: x.llegada ? f(x.llegada.fecha, true) : 'Todavía no', 'Km llegada': x.llegada ? num(x.llegada.km) : '', 'Combustible llegada': x.llegada ? x.llegada.combustible : '', Recibió: x.llegada ? x.llegada.con : '', 'Km recorridos': x.km, Horas: x.horas, Revisión: x.problemas ? 'Con problemas' : 'Bien', 'Críticos (salida)': textoRevision(x.salida.revision).criticos, 'Otros (salida)': textoRevision(x.salida.revision).otros, 'Críticos (llegada)': x.llegada ? textoRevision(x.llegada.revision).criticos : '', 'Otros (llegada)': x.llegada ? textoRevision(x.llegada.revision).otros : '', Observaciones: [x.salida.observaciones, x.llegada && x.llegada.observaciones].filter(Boolean).join(' · ') })));
       hoja('Novedades', r.ns.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).map(n => ({ Fecha: f(n.fecha, true), Placa: n.placa, Tipo: TIPO_NOV[n.tipo] || n.tipo, Qué: n.descripcion, Km: num(n.km), Reportó: n.reporta, Costo: num(n.costo), Revisada: n.revisada ? 'Sí' : 'No', 'Revisó': n.revisadaPor, Nota: n.nota })));
       hoja('Por conductor', r.porConductor.map(x => ({ Conductor: x.c, Salidas: x.salidas, 'Km recorridos': x.km, 'Con problemas': x.problemas, 'Novedades reportadas': x.novedades })));
       await window.Excel.descargar({ archivo: `Vehiculos ${A().hoyISO()}`, hojas });
@@ -293,6 +311,17 @@
   const campoNum = (id, lbl, v, min, max) => `<div class="field"><label for="${id}">${lbl}</label><input id="${id}" type="number" inputmode="numeric" min="${min}" max="${max}" step="1" value="${esH(v)}"></div>`;
   const campoSel = (id, lbl, ops, v) => `<div class="field"><label for="${id}">${lbl}</label><select id="${id}">${ops.map(([val, t]) => `<option value="${esH(val)}"${val === v ? ' selected' : ''}>${esH(t)}</option>`).join('')}</select></div>`;
   const marca = (id, lbl, ok) => `<label class="marca-fila"><input type="checkbox" id="${id}"${ok ? ' checked' : ''}><span>${esH(lbl)}</span></label>`;
+  // Cada punto de la revisión se marca «Bien» o «Mal» (dos botones). Empiezan sin marcar para que nadie pase de largo sin mirar.
+  const filaRev = ([k, t]) => `<div class="rev-fila"><span class="rev-t" id="vrt_${k}">${esH(t)}</span><div class="seg" role="radiogroup" aria-labelledby="vrt_${k}"><label><input type="radio" name="vr_${k}" value="bien"><span>Bien</span></label><label><input type="radio" name="vr_${k}" value="mal"><span>Mal</span></label></div></div>`;
+  const revisionMarcada = () => { const r = {}; REVISION.forEach(([k]) => { const x = document.querySelector(`#veCampos input[name="vr_${k}"]:checked`); if (x) r[k] = x.value === 'bien'; }); return r; };
+  /** En una salida, si un punto crítico está mal: aviso «no debe salir» y el botón pasa a «Reportar y no salir». */
+  function alCambiarRevision() {
+    if (!accion || !accion.esSalida) return;
+    const mal = REV_CRITICOS.filter(([k]) => revisionMarcada()[k] === false).map(([, t]) => t.toLowerCase());
+    const al = $('vsAlerta'), pri = $('vePrimario');
+    if (al) al.innerHTML = mal.length ? `<div class="aviso peligro" role="alert"><span><b>Este carro no debe salir:</b> ${esH(mal.join(', '))} ${mal.length === 1 ? 'está mal' : 'están mal'}. Cuenta qué falla en observaciones y toma una foto del problema: se le avisa a Transporte, Bodega y la Jefe.</span></div>` : '';
+    pri.innerHTML = mal.length ? window.ico('aviso') + 'Reportar y no salir' : (accion.icono ? window.ico(accion.icono) : '') + esH(accion.primario);
+  }
   const campoFoto = (id, lbl) => `<div class="field foto-campo"><span class="lbl">${esH(lbl)}</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="${id}Txt">Tomar foto</span><input id="${id}" class="archivo-oculto" type="file" accept="image/*" capture="environment" data-foto="${id}"></label><img id="${id}Ver" class="nov-foto" alt="${esH(lbl)}" hidden></div>`;
   const valor = id => ($(id) ? $(id).value.trim() : '');
   const entero = id => { const v = valor(id); return /^\d+$/.test(v) ? Number(v) : NaN; };
@@ -432,11 +461,27 @@
         `<div class="fields cols">${campoNum('vsKm', 'Kilometraje', '', 0, 2000000)}${campoSel('vsComb', 'Combustible', COMBUSTIBLE, salida ? 'lleno' : '1/2')}</div>` +
         `<div class="field"><label for="vsCon">${salida ? 'Quién entrega el carro' : 'Quién recibe el carro'}</label><input id="vsCon" list="vsConLista" maxlength="60" autocomplete="off" value="${esH(miRol() === 'conductor' ? QUIEN_ENTREGA[0] : persona().nombre)}"><datalist id="vsConLista">${QUIEN_ENTREGA.map(x => `<option value="${esH(x)}">`).join('')}</datalist></div>` +
         `<div class="field"><span class="lbl">Fotos (todas obligatorias)</span><div class="fotos-grid">${LADOS.map(([k, t]) => campoFoto('vf_' + k, t)).join('')}</div></div>` +
-        `<div class="field"><span class="lbl">Revisión</span>${REVISION.map(([k, t]) => marca('vr_' + k, t, true)).join('')}</div>` +
+        (salida ? '' : '<p class="meta">Revisión al llegar: marca solo lo que notes (los puntos que no marques no se cuentan).</p>') +
+        `<div class="field"><span class="lbl">${salida ? 'Revisión antes de salir: lo más importante' : 'Revisión: lo más importante'}</span>${REV_CRITICOS.map(filaRev).join('')}</div>` +
+        `<div class="field"><span class="lbl">${salida ? 'Revisión antes de salir: lo demás' : 'Revisión: lo demás'}</span>${REV_OTROS.map(filaRev).join('')}</div><div id="vsAlerta"></div>` +
         `<div class="field"><label for="vsObs">Observaciones</label><textarea id="vsObs" rows="2" maxlength="300" placeholder="Ej: llegó con poco combustible"></textarea></div>`,
       primario: salida ? 'Registrar salida' : 'Registrar llegada', icono: 'llave', listo: salida ? 'Listo: salida registrada. Transporte y Bodega ya saben.' : 'Listo: llegada registrada. El carro quedó disponible.',
-      base: Object.assign({}, v),
+      base: Object.assign({}, v), esSalida: salida,
       ops: () => {
+        // Salida con un punto crítico mal: no sale. Se reporta el problema (con una foto) y se avisa; no hacen falta el kilometraje ni las 5 fotos.
+        if (salida) {
+          const rev0 = revisionMarcada(), criticos = REV_CRITICOS.filter(([k]) => rev0[k] === false).map(([, t]) => t);
+          if (criticos.length) {
+            const obs0 = valor('vsObs'), f0 = LADOS.map(([k]) => fotos['vf_' + k]).find(Boolean);
+            if (obs0.length < 5) return fallar(`Este carro no debe salir (${criticos.join(', ').toLowerCase()}). Cuenta qué falla en observaciones.`, 'vsObs');
+            if (!f0) return fallar('Toma al menos una foto del problema (cualquiera de las 5).');
+            const desc = `Revisión antes de salir: ${criticos.join(', ').toLowerCase()} mal. ${obs0}`.slice(0, 300);
+            accion.listo = 'Listo: problema reportado. El carro no salió y ya les llegó el aviso.';
+            return [['set', 'novedades', window.nube.idNuevo('no'), { vehiculoId: v.id, placa: v.placa, tipo: 'mantenimiento', fecha: ahora(), km: num(v.km), descripcion: desc, foto: f0,
+              reporta: persona().nombre, reportaRol: miRol(), costo: 0, revisada: false, revisadaPor: '', revisadaEn: '', nota: '' }]]
+              .concat(['jefe', 'carros', 'asistente', 'gerente'].map(rol => aviso(rol, 'Un carro no debe salir', `${persona().nombre} no sacó el ${v.placa}: ${desc.slice(0, 120)}`)));
+          }
+        }
         const kmv = entero('vsKm'), cond = $('vsCond') ? valor('vsCond') : (viaje && viaje.conductor) || persona().nombre, con = valor('vsCon');
         if (!(kmv >= num(v.km))) return fallar(`El kilometraje no puede ser menor que el último registrado (${km(v.km)}).`, 'vsKm');
         if (!salida && ultima && kmv < num(ultima.km)) return fallar(`El kilometraje no puede ser menor que el de la salida (${km(ultima.km)}).`, 'vsKm');
@@ -445,8 +490,10 @@
         if (con.length < 3) return fallar(salida ? 'Escribe quién entrega el carro.' : 'Escribe quién recibe el carro.', 'vsCon');
         const faltan = LADOS.filter(([k]) => !fotos['vf_' + k]).map(([, t]) => t.toLowerCase());
         if (faltan.length) return fallar(`Faltan fotos: ${faltan.join(', ')}.`);
-        const revision = {}; REVISION.forEach(([k]) => { revision[k] = !!$('vr_' + k).checked; });
-        const malos = REVISION.filter(([k]) => !revision[k]).map(([, t]) => t.toLowerCase());
+        const revision = revisionMarcada();
+        const sinMarcar = REVISION.filter(([k]) => !(k in revision)).map(([, t]) => t.toLowerCase());
+        if (salida && sinMarcar.length) return fallar(`Falta marcar Bien o Mal en la revisión: ${sinMarcar.slice(0, 4).join(', ')}${sinMarcar.length > 4 ? ' y ' + (sinMarcar.length - 4) + ' más' : ''}.`);
+        const malos = REVISION.filter(([k]) => revision[k] === false).map(([, t]) => t.toLowerCase());
         const obs = valor('vsObs');
         if (malos.length && obs.length < 5) return fallar(`Marcaste un problema (${malos.join(', ')}): cuéntalo en observaciones.`, 'vsObs');
         const ent = { vehiculoId: v.id, placa: v.placa, tipo, fecha: ahora(), km: kmv, combustible: valor('vsComb'), conductor: cond, con,
@@ -487,7 +534,7 @@
         <div class="docs">${docPill('SOAT', v.soat)}${docPill('Técnico-mecánica', v.tecno)}</div>
         ${bts.length ? `<div class="tarea-pie">${bts.join('')}</div>` : ''}
         <div class="section-label">Novedades (${ns.length})</div>${ns.length ? `<div class="list">${ns.map(tarjetaNovedad).join('')}</div>` : '<p class="meta">Sin novedades.</p>'}
-        <div class="section-label">Salidas y llegadas</div>${es.length ? `<ul class="necesidades-l">${es.map(e => `<li><span class="nf-cab"><span class="nf-t"><b>${e.tipo === 'salida' ? 'Salida' : 'Llegada'} · ${esH(km(e.km))}</b><span class="meta">${esH(e.conductor)} · ${e.tipo === 'salida' ? 'entregó' : 'recibió'} ${esH(e.con)} · ${esH(App.hace(e.fecha))} · combustible ${esH(e.combustible)}</span>${e.observaciones ? `<span class="meta">${esH(e.observaciones)}</span>` : ''}</span>${Object.values(e.revision || {}).every(Boolean) ? App.pill('Revisión bien', 's-disco', 'check') : App.pill('Con problemas', 's-peligro', 'aviso')}</span><div class="fotos-fila">${fotosDe(e)}</div></li>`).join('')}</ul>` : '<p class="meta">Todavía no hay salidas registradas.</p>'}
+        <div class="section-label">Salidas y llegadas</div>${es.length ? `<ul class="necesidades-l">${es.map(e => `<li><span class="nf-cab"><span class="nf-t"><b>${e.tipo === 'salida' ? 'Salida' : 'Llegada'} · ${esH(km(e.km))}</b><span class="meta">${esH(e.conductor)} · ${e.tipo === 'salida' ? 'entregó' : 'recibió'} ${esH(e.con)} · ${esH(App.hace(e.fecha))} · combustible ${esH(e.combustible)}</span>${e.observaciones ? `<span class="meta">${esH(e.observaciones)}</span>` : ''}</span>${Object.values(e.revision || {}).every(Boolean) ? App.pill('Revisión bien', 's-disco', 'check') : App.pill('Con problemas', 's-peligro', 'aviso')}</span><span class="meta rev-res">Críticos: ${esH(textoRevision(e.revision).criticos)} · Otros: ${esH(textoRevision(e.revision).otros)}</span><div class="fotos-fila">${fotosDe(e)}</div></li>`).join('')}</ul>` : '<p class="meta">Todavía no hay salidas registradas.</p>'}
         <div class="section-label">Historial</div><ol class="linea">${hist.map(x => `<li><b>${esH(x.texto)}</b><span class="meta">${esH(x.por || '')} · ${esH(App.hace(x.fecha))}</span></li>`).join('') || '<li><span class="meta">Sin historial.</span></li>'}</ol>` });
     accion.volverA = v.id;
   }
@@ -507,6 +554,7 @@
     const desde = $('veCampos').contains(b) && accion ? accion.volverA : '';
     const mapa = {
       ver: () => v && ver(v),
+      filtroveh: () => { const s = A().S; s.filtro.vehiculos = !id || s.filtro.vehiculos === id ? '' : id; if (b.dataset.modo === 'todo') buscar = ''; A().pintarTodo(); return true; },
       novedad: () => puedeReportar() ? novedad(v) : null,
       revisar: () => n && !n.revisada && esAdmin() ? revisar(n) : null,
       docs: () => v && esAdmin() ? docs(v) : null,
@@ -523,6 +571,10 @@
   $('vehContenido').addEventListener('click', alTocar);
   $('veCampos').addEventListener('click', e => { if (e.target.closest('[data-accion]')) alTocar(e); });
   $('veCampos').addEventListener('change', alEscogerFoto);
+  $('veCampos').addEventListener('change', e => { if (e.target.matches && e.target.matches('input[type="radio"][name^="vr_"]')) alCambiarRevision(); });
+  // El buscador repinta 300 ms después de la última tecla y deja el cursor donde estaba.
+  const buscarLuego = UI.retardar(() => { const q = $('qVeh'), pos = q ? q.selectionStart : 0; pintar(); const n = $('qVeh'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} } }, 300);
+  $('vehContenido').addEventListener('input', e => { if (e.target.id === 'qVeh') { buscar = e.target.value; buscarLuego(); } });
   $('veForm').addEventListener('submit', e => { e.preventDefault(); guardar(); });
 
   /* ---------- base de datos en Excel (excel-bd.js): solo la Jefe agrega, cambia y elimina carros ---------- */

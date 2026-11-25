@@ -319,8 +319,27 @@ try {
   log('Vehículos: al entrar la Jefe se crea el aviso de cada documento para Jefe, Transporte y Bodega (una sola vez)', await hasta(t.page, () => Object.keys(JSON.parse(localStorage.getItem('__fb_datos')).avisos).filter(k => k.startsWith('doc-')).length === 6));
   await t.page.click('#vehSecciones [data-sec="carros"]');
   log('Vehículos: 4 carros con placa, el SOAT por vencer y la técnico-mecánica vencida', await hasta(t.page, () => { const x = document.getElementById('vehContenido').textContent; return document.querySelectorAll('#vehContenido .card .placa').length === 4 && /SOAT: vence en 12 días/.test(x) && /Técnico-mecánica: venció hace 5 días/.test(x) && /En taller/.test(x); }), await texto(t.page, '#vehContenido'));
+  // Buscador y filtros de Carros (Fase 8)
+  const vehs = Object.values((await datosApp()).vehiculos), nEstado = e => vehs.filter(v => v.estado === e).length;
+  const tarjetasCarros = () => t.page.evaluate(() => [...document.querySelectorAll('#vehContenido .card .placa')].map(x => x.textContent));
+  log('Carros: hay un buscador y chips Todos, Disponible, En uso, En taller y Documentos, cada uno con su número', await hasta(t.page, ([n, d, u, ta]) => { const c = [...document.querySelectorAll('#vehContenido .chip[data-accion="filtroveh"]')].map(x => [x.firstChild.textContent.trim(), Number(x.querySelector('.n').textContent)]); return !!document.getElementById('qVeh') && c.map(x => x[0]).join() === 'Todos,Disponible,En uso,En taller,Documentos' && c[0][1] === n && c[1][1] === d && c[2][1] === u && c[3][1] === ta; }, [vehs.length, nEstado('disponible'), nEstado('en-uso'), nEstado('en-taller')]));
+  await t.page.click('#vehContenido .chip[data-id="uso"]');
+  log('Carros: el chip «En uso» deja solo esos carros y también marca la cifra de arriba', await hasta(t.page, n => document.querySelectorAll('#vehContenido .card .placa').length === n && [...document.querySelectorAll('#vehContenido .card')].every(c => /En uso/.test(c.textContent)) && document.querySelector('#vehContenido .chip[data-id="uso"]').getAttribute('aria-pressed') === 'true' && document.querySelector('#sumVehiculos button.sum[data-filtro="uso"]').getAttribute('aria-pressed') === 'true', nEstado('en-uso')));
+  await t.page.click('#vehContenido .chip[data-id="docs"]');
+  log('Carros: el chip «Documentos» deja los de SOAT o técnico-mecánica por vencer o vencidos', await hasta(t.page, () => { const c = [...document.querySelectorAll('#vehContenido .card')]; return c.length >= 1 && c.every(x => /vence en|venció hace/.test(x.textContent)); }));
+  await t.page.click('#vehContenido .chip[data-id=""]');
+  log('Carros: «Todos» quita el filtro', await hasta(t.page, n => document.querySelectorAll('#vehContenido .card .placa').length === n, vehs.length));
+  await t.page.fill('#qVeh', 'jkl');
+  log('Carros: el buscador encuentra por la placa (aunque se escriba en minúscula)', await hasta(t.page, () => { const p = [...document.querySelectorAll('#vehContenido .card .placa')].map(x => x.textContent); return p.length === 1 && /JKL 012/.test(p[0]); }));
+  await t.page.fill('#qVeh', 'farf');
+  log('Carros: también por el conductor', await hasta(t.page, n => { const p = [...document.querySelectorAll('#vehContenido .card .placa')].map(x => x.textContent); return p.length >= 1 && p.length <= n; }, vehs.length - 1));
+  await t.page.fill('#qVeh', 'jkl'); await t.page.click('#vehContenido .chip[data-id="uso"]');
+  log('Carros: buscador y chip se suman; sin resultados dice «No hay carros con ese filtro» y ofrece «Quitar filtro»', await hasta(t.page, () => /No hay carros con ese filtro/.test(document.getElementById('vehContenido').textContent) && !!document.querySelector('#vehContenido [data-accion="filtroveh"][data-modo="todo"]')));
+  await t.page.click('#vehContenido [data-accion="filtroveh"][data-modo="todo"]');
+  log('Carros: «Quitar filtro» limpia el chip y la búsqueda', await hasta(t.page, n => document.querySelectorAll('#vehContenido .card .placa').length === n && document.getElementById('qVeh').value === '', vehs.length));
   await t.page.click('#vehContenido [data-accion="ver"][data-id="ve-abc123"]');
   log('la hoja de vida muestra la novedad, la salida con sus 5 fotos y el historial', await hasta(t.page, () => !document.getElementById('shVeh').hidden && document.querySelectorAll('#veCampos .ent-foto').length === 5 && /Rayón/.test(document.getElementById('veCampos').textContent) && /Salió con Oscar Farfán/.test(document.getElementById('veCampos').textContent)));
+  log('la hoja de vida dice cómo salió la revisión por grupos (las salidas viejas, de 4 casillas, también se leen)', await hasta(t.page, () => /Críticos: bien · Otros: bien/.test(document.getElementById('veCampos').textContent)));
   await t.page.screenshot({ path: path.join(CAPTURAS, '06-hoja-de-vida.png'), fullPage: true });
   await t.page.keyboard.press('Escape');
   await t.page.click('#vehSecciones [data-sec="hacer"]');
@@ -392,6 +411,7 @@ try {
   const [excelVeh] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#vehContenido [data-accion="excelveh"]')]);
   if (excelVeh) { const ruta = path.join(CAPTURAS, 'excel-vehiculos.xlsx'); await excelVeh.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel de vehículos tiene el mismo formato (título, negrillas, cuadros)', hs.length === 4 && hs.every(bienFormado), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); }
   log('el Gerente descarga el Excel de vehículos', !!excelVeh && /^Vehiculos .*\.xlsx$/.test(excelVeh.suggestedFilename()), excelVeh ? excelVeh.suggestedFilename() : 'sin descarga');
+  if (excelVeh) { const hs2 = await excelInfo(path.join(CAPTURAS, 'excel-vehiculos.xlsx')); log('el Excel de salidas y llegadas trae la revisión por grupos (críticos y otros, de la salida y de la llegada)', hs2.some(h => ['Críticos (salida)', 'Otros (salida)', 'Críticos (llegada)', 'Otros (llegada)'].every(c => h.titulos.includes(c))), JSON.stringify(hs2.map(h => h.titulos.join('|'))).slice(0, 300)); }
   await t.page.click('.tab[data-vista="equipos"]'); await esp(300);
   const [excelEq] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#btnExcelEq')]);
   if (excelEq) { const ruta = path.join(CAPTURAS, 'excel-equipos.xlsx'); await excelEq.saveAs(ruta); const hs = await excelInfo(ruta);
@@ -759,6 +779,7 @@ try {
   const errVeh = re => hasta(t.page, r => !document.getElementById('veErr').hidden && new RegExp(r).test(document.getElementById('veErr').textContent), re.source);
   const cincoFotos = async () => { for (const k of ['frente', 'atras', 'izquierda', 'derecha', 'llantas']) await t.page.setInputFiles('#vf_' + k, IMG); return hasta(t.page, () => { const im = [...document.querySelectorAll('#veCampos .fotos-grid img')]; return im.length === 5 && im.every(i => !i.hidden); }); };
   const LLANTA = 'La llanta delantera derecha está baja';
+  const marcarRev = malos => t.page.evaluate(m => { document.querySelectorAll('#veCampos input[type="radio"]').forEach(r => { const k = r.name.replace('vr_', ''); if (r.value === (m.includes(k) ? 'mal' : 'bien')) r.click(); }); }, malos);
   log('cambia a Carlos (Conductor)', await cambiar(t.page, 'conductor'));
   await t.page.click('.tab[data-vista="vehiculos"]');
   log('el Conductor ve sus 2 viajes: el ABC 123 espera la llegada y el JKL 012 está listo para salir', await hasta(t.page, () => /Viajes de reuniones \(2\)/.test(document.getElementById('vehContenido').textContent) && /El carro está en uso/.test(document.getElementById('vehContenido').textContent) && !!document.querySelector('#vehContenido [data-accion="salida"][data-viaje="ne-025"]')), await texto(t.page, '#vehContenido'));
@@ -772,15 +793,38 @@ try {
   log('con la foto, la novedad queda sin revisar, en 0 pesos y con aviso para Jefe, Transporte, Bodega y Gerente', await guardarVeh() && await (async () => { const d = await dat(); const n = Object.values(d.novedades).find(x => x.descripcion === LLANTA); return !!n && n.reportaRol === 'conductor' && n.costo === 0 && !n.revisada && /^data:image\/jpeg;base64,/.test(n.foto) && n.foto.length < 400000 && ['jefe', 'carros', 'asistente', 'gerente'].every(r => Object.values(d.avisos).some(a => a.para === r && /Novedad/.test(a.titulo))); })());
   await t.page.click('#vehContenido [data-accion="salida"][data-viaje="ne-025"]'); await abiertaVeh();
   log('la salida del viaje es con Rafael (el conductor que escogió la Jefe)', /Comunidad Ejemplo Norte/.test(await texto(t.page, '#veSub')) && !(await t.page.$('#vsCond')));
+  log('la revisión antes de salir trae 15 puntos con «Bien» y «Mal» (4 críticos y 11 más), todos sin marcar', await t.page.evaluate(() => { const g = [...document.querySelectorAll('#veCampos .seg')]; return g.length === 15 && g.every(x => x.getAttribute('role') === 'radiogroup' && !x.querySelector('input:checked')) && document.querySelectorAll('#veCampos .seg input[name="vr_frenos"]').length === 2 && /Extintor \(vigente\)/.test(document.getElementById('veCampos').textContent) && /Llanta de repuesto/.test(document.getElementById('veCampos').textContent); }));
+  await t.page.evaluate(() => { const s = document.querySelector('#shVeh .sheet'); s.scrollTop = 1250; }); await esp(200);
+  await t.page.screenshot({ path: path.join(CAPTURAS, '20-revision-salida.png') });
+  await t.page.evaluate(() => { document.querySelector('#shVeh .sheet').scrollTop = 0; });
+  await marcarRev(['frenos']);
+  log('con los frenos mal sale «Este carro no debe salir» y el botón pasa a «Reportar y no salir»', await hasta(t.page, () => /Este carro no debe salir/.test(document.getElementById('vsAlerta').textContent) && /frenos/.test(document.getElementById('vsAlerta').textContent) && /Reportar y no salir/.test(document.getElementById('vePrimario').textContent)));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '20b-no-debe-salir.png'), fullPage: true });
+  await t.page.click('#vePrimario');
+  log('para reportar pide contar qué falla', await errVeh(/Cuenta qué falla/));
+  await t.page.fill('#vsObs', 'Al frenar el pedal baja hasta el fondo');
+  await t.page.click('#vePrimario');
+  log('y pide al menos una foto del problema', await errVeh(/al menos una foto/));
+  await t.page.setInputFiles('#vf_frente', IMG); await hasta(t.page, () => !document.getElementById('vf_frenteVer').hidden);
+  const entregas0 = Object.keys((await dat()).entregas).length;
+  log('con una foto y la observación, reporta el problema y la hoja se cierra', await guardarVeh());
+  log('el carro NO salió (sigue disponible y no hay salida nueva) y quedó una novedad sin revisar con la foto y lo que falla', await (async () => { const d = await dat(); const n = Object.values(d.novedades).find(x => /Revisión antes de salir: frenos mal/.test(x.descripcion)); return !!n && d.vehiculos['ve-jkl012'].estado === 'disponible' && Object.keys(d.entregas).length === entregas0 && !n.revisada && n.tipo === 'mantenimiento' && /pedal baja/.test(n.descripcion) && /^data:image\/jpeg/.test(n.foto) && n.costo === 0; })());
+  log('le avisa a la Jefe, Transporte, Bodega y Gerente que el carro no debe salir', await (async () => { const d = await dat(); return ['jefe', 'carros', 'asistente', 'gerente'].every(r => Object.values(d.avisos).some(a => a.para === r && /no debe salir/.test(a.titulo))); })());
+  // Se quita lo que se creó para esta prueba y se vuelve a abrir la salida.
+  await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return window.nube.lote(Object.entries(d.novedades).filter(([, n]) => /Revisión antes de salir/.test(n.descripcion)).map(([id]) => ['borrar', 'novedades', id]).concat(Object.entries(d.avisos).filter(([, a]) => /no debe salir/.test(a.titulo)).map(([id]) => ['borrar', 'avisos', id]))); });
+  await t.page.click('#vehContenido [data-accion="salida"][data-viaje="ne-025"]'); await abiertaVeh();
   await t.page.fill('#vsKm', '21300'); await t.page.click('#vePrimario');
   log('un kilometraje menor que el último no deja guardar', await errVeh(/no puede ser menor/));
   await t.page.fill('#vsKm', '21350'); await t.page.click('#vePrimario');
   log('sin las 5 fotos no deja guardar', await errVeh(/Faltan fotos/));
   log('se cargan las 5 fotos (frente, atrás, lados y llantas)', await cincoFotos());
-  await t.page.evaluate(() => { document.getElementById('vr_luces').checked = false; }); await t.page.click('#vePrimario');
+  await t.page.click('#vePrimario');
+  log('sin marcar Bien o Mal en cada punto de la revisión no deja registrar la salida', await errVeh(/Falta marcar Bien o Mal/));
+  await marcarRev(['pito']); await t.page.click('#vePrimario');
   log('si marca un problema y no lo cuenta, pide la observación', await errVeh(/observaciones/));
-  await t.page.fill('#vsObs', 'Una luz trasera no prende');
-  log('la salida queda: JKL 012 en uso con Rafael, ligada a la reunión, con sus fotos, y la Jefe sabe del problema', await guardarVeh() && await (async () => { const d = await dat(); const e = Object.values(d.entregas).find(x => x.vehiculoId === 've-jkl012' && x.tipo === 'salida'); const v = d.vehiculos['ve-jkl012']; return !!e && e.reunionId === 're-001' && e.conductor === 'Rafael Ospino' && e.revision.luces === false && Object.values(e.fotos).length === 5 && Object.values(e.fotos).every(f => /^data:image\/jpeg/.test(f) && f.length < 200000) && v.estado === 'en-uso' && v.km === 21350 && v.conductor === 'Rafael Ospino' && Object.values(d.avisos).some(a => a.para === 'jefe' && /problemas/.test(a.titulo)); })());
+  log('un punto que no es crítico (el pito) no bloquea la salida: el botón sigue diciendo «Registrar salida»', /Registrar salida/.test(await texto(t.page, '#vePrimario')) && !(await texto(t.page, '#vsAlerta')).trim());
+  await t.page.fill('#vsObs', 'El pito no suena');
+  log('la salida queda: JKL 012 en uso con Rafael, ligada a la reunión, con sus fotos, y la Jefe sabe del problema', await guardarVeh() && await (async () => { const d = await dat(); const e = Object.values(d.entregas).find(x => x.vehiculoId === 've-jkl012' && x.tipo === 'salida'); const v = d.vehiculos['ve-jkl012']; return !!e && e.reunionId === 're-001' && e.conductor === 'Rafael Ospino' && e.revision.pito === false && e.revision.frenos === true && Object.keys(e.revision).length === 15 && Object.values(e.fotos).length === 5 && Object.values(e.fotos).every(f => /^data:image\/jpeg/.test(f) && f.length < 200000) && v.estado === 'en-uso' && v.km === 21350 && v.conductor === 'Rafael Ospino' && Object.values(d.avisos).some(a => a.para === 'jefe' && /problemas/.test(a.titulo)); })());
   log('el viaje ahora pide registrar la llegada', await hasta(t.page, () => !!document.querySelector('#vehContenido [data-accion="llegada"][data-viaje="ne-025"]')));
   await t.page.click('#vehContenido [data-accion="llegada"][data-viaje="ne-025"]'); await abiertaVeh();
   await t.page.fill('#vsKm', '21420'); await cincoFotos();

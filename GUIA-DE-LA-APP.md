@@ -495,11 +495,18 @@ El **Encargado de equipos** puede tocar el botón de **códigos de barras** que 
 
 ### 10.2 Las pestañas de Vehículos
 - **Lo que me toca**, **Carros**, **Novedades**.
+- En **Carros** hay un **buscador** (placa, marca, modelo o conductor) y botones **Todos · Disponible · En uso · En taller · Documentos**, cada uno con cuántos hay. Se suman al buscador y a las cifras de arriba (tocar «En uso» arriba o en los botones es lo mismo). Si no hay resultados, sale **«Quitar filtro»**.
 - **Resumen** y **Reportes** (solo Transporte, Bodega, Jefe y, en su versión, el Gerente).
 
 ### 10.3 Reglas que se cumplen
 - **Novedad:** siempre con **foto**. Tipos: llanta, choque, rayón, mantenimiento, otro. El conductor **no puede poner costo**; lo pone quien la revisa.
 - **Salida y llegada:** 5 fotos (frente, atrás, izquierda, derecha, llantas). El **kilometraje nunca baja** (y no puede subir más de 3.000 km de una vez).
+- **Revisión antes de salir (preoperacional).** Son **15 puntos** y cada uno se marca **«Bien» o «Mal»** (empiezan sin marcar, para que nadie pase de largo): **lo más importante** (frenos, llantas, luces, dirección) y **lo demás** (nivel de aceite, nivel de agua, líquido de frenos, cinturones, pito, espejos, limpiabrisas, extintor vigente, botiquín, kit de carretera, llanta de repuesto). Sin marcar todos no se puede registrar la salida.
+  - Si **algo de lo más importante está «Mal»**, sale el aviso **«Este carro no debe salir»** y el botón pasa a **«Reportar y no salir»**: se cuenta qué falla, se toma **una foto** del problema y queda una **novedad** sin revisar; se avisa a la Jefe, Transporte, Bodega y Gerente. El carro **no sale** (no hacen falta el kilometraje ni las 5 fotos).
+  - Si es algo de **lo demás** (por ejemplo, el pito), la salida se puede registrar, pero hay que **contarlo en observaciones** y se avisa a la Jefe y al Gerente.
+  - **En la llegada** la misma lista es **opcional**: se marca solo lo que se note.
+  - La hoja de vida y el Excel de «Salidas y llegadas» dicen cómo salió y cómo llegó cada carro por grupo («Críticos: bien», «Otros: 2 mal (pito, botiquín)»). Las salidas viejas, que solo traían 4 casillas, se siguen leyendo.
+  - La lista es la del plan: **no hay un formato oficial único** (el PESV de la Resolución 40595 de 2022 deja que cada empresa arme el suyo, y los extintores, botiquines, kit de carretera y llanta de repuesto salen del Código de Tránsito, sin confirmar con el texto de la ley). Si Transporte entrega su formato, se cambia la lista en `vehiculos.js` (`REV_CRITICOS` y `REV_OTROS`).
 - Un carro **solo sale** si no está en el taller y tiene el **SOAT y la técnico-mecánica al día**.
 - **Avisos de documentos:** cuando un documento está por vencer o vencido, avisan la Jefe, Transporte y Bodega.
 - Las salidas y llegadas **no se cambian después**.
