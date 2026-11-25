@@ -186,29 +186,28 @@
     });
 
     // ---------- ARTÍCULOS DE BODEGA ----------
-    function articulo(nombre, categoria, unidad, cantidad, minimo, maximo, ubicacion, costo, proveedor) {
-      return { nombre, categoria, unidad, cantidad, minimo, maximo, ubicacion, costo, proveedor };
+    function articulo(nombre, categoria, unidad, cantidad, minimo, maximo, ubicacion, costo, proveedor, bodega) {
+      return { nombre, categoria, unidad, cantidad, minimo, maximo, ubicacion, costo, proveedor, bodega };
     }
-    const BOD = 'Bodega Riohacha · ';
     const articulos = {
-      'ar-001': articulo('Botas de seguridad talla 40', 'EPP', 'pares', 0, 4, 16, BOD + 'Estante A1', 85000, 'Ferretería El Faro'),
-      'ar-002': articulo('Botas de seguridad talla 42', 'EPP', 'pares', 6, 4, 16, BOD + 'Estante A1', 85000, 'Ferretería El Faro'),
-      'ar-003': articulo('Chalecos reflectivos', 'EPP', 'unidades', 15, 5, 25, BOD + 'Estante A2', 35000, 'Ferretería El Faro'),
-      'ar-004': articulo('Guantes de vaqueta', 'EPP', 'pares', 10, 6, 30, BOD + 'Estante A2', 12000, 'Ferretería El Faro'),
-      'ar-005': articulo('Cascos de seguridad', 'EPP', 'unidades', 9, 4, 15, BOD + 'Estante A3', 28000, 'Ferretería El Faro'),
-      'ar-006': articulo('Tapabocas', 'EPP', 'cajas', 7, 3, 12, BOD + 'Estante A3', 18000, 'Distribuidora Costa Salud'),
-      'ar-007': articulo('Extensión eléctrica de 5 m', 'Eléctricos', 'unidades', 8, 3, 12, BOD + 'Estante B1', 32000, 'Tecnoguajira Suministros'),
-      'ar-008': articulo('Multitoma de 6 puestos', 'Eléctricos', 'unidades', 5, 2, 10, BOD + 'Estante B1', 25000, 'Tecnoguajira Suministros'),
-      'ar-009': articulo('Cinta aislante', 'Eléctricos', 'rollos', 12, 5, 30, BOD + 'Estante B2', 4000, 'Tecnoguajira Suministros'),
-      'ar-010': articulo('Cable HDMI de 2 m', 'Cómputo', 'unidades', 2, 3, 10, BOD + 'Estante C1', 28000, 'Tecnoguajira Suministros'),
-      'ar-011': articulo('Mouse inalámbrico', 'Cómputo', 'unidades', 7, 3, 15, BOD + 'Estante C1', 30000, 'Tecnoguajira Suministros'),
-      'ar-012': articulo('Tóner para impresora', 'Papelería', 'unidades', 1, 2, 6, BOD + 'Estante C2', 185000, 'Papelería Central'),
-      'ar-013': articulo('Resmas de papel carta', 'Papelería', 'resmas', 3, 5, 20, BOD + 'Estante C3', 28000, 'Papelería Central'),
-      'ar-014': articulo('Jabón líquido', 'Aseo', 'galones', 4, 2, 8, BOD + 'Estante D1', 22000, 'Distribuidora Agua Clara'),
-      'ar-015': articulo('Papel higiénico', 'Aseo', 'paquetes', 10, 4, 20, BOD + 'Estante D1', 24000, 'Distribuidora Agua Clara'),
-      'ar-016': articulo('Café molido', 'Cafetería', 'paquetes', 0, 4, 12, BOD + 'Estante D2', 16000, 'Distribuidora Agua Clara'),
-      'ar-017': articulo('Vasos desechables', 'Cafetería', 'paquetes', 8, 3, 15, BOD + 'Estante D2', 7000, 'Distribuidora Agua Clara'),
-      'ar-018': articulo('Linterna recargable', 'Herramientas', 'unidades', 5, 2, 8, BOD + 'Estante E1', 38000, 'Ferretería El Faro')
+      'ar-001': articulo('Botas de seguridad talla 40', 'EPP', 'pares', 0, 4, 16, 'Estante A1', 85000, 'Ferretería El Faro', 'Riohacha'),
+      'ar-002': articulo('Botas de seguridad talla 42', 'EPP', 'pares', 6, 4, 16, 'Estante A1', 85000, 'Ferretería El Faro', 'Riohacha'),
+      'ar-003': articulo('Chalecos reflectivos', 'EPP', 'unidades', 15, 5, 25, 'Estante A2', 35000, 'Ferretería El Faro', 'Riohacha'),
+      'ar-004': articulo('Guantes de vaqueta', 'EPP', 'pares', 10, 6, 30, 'Estante A2', 12000, 'Ferretería El Faro', 'Riohacha'),
+      'ar-005': articulo('Cascos de seguridad', 'EPP', 'unidades', 9, 4, 15, 'Estante A3', 28000, 'Ferretería El Faro', 'Riohacha'),
+      'ar-006': articulo('Tapabocas', 'EPP', 'cajas', 7, 3, 12, 'Estante A3', 18000, 'Distribuidora Costa Salud', 'Riohacha'),
+      'ar-007': articulo('Extensión eléctrica de 5 m', 'Eléctricos', 'unidades', 8, 3, 12, 'Estante B1', 32000, 'Tecnoguajira Suministros', 'Riohacha'),
+      'ar-008': articulo('Multitoma de 6 puestos', 'Eléctricos', 'unidades', 5, 2, 10, 'Estante B1', 25000, 'Tecnoguajira Suministros', 'Riohacha'),
+      'ar-009': articulo('Cinta aislante', 'Eléctricos', 'rollos', 12, 5, 30, 'Estante B2', 4000, 'Tecnoguajira Suministros', 'Riohacha'),
+      'ar-010': articulo('Cable HDMI de 2 m', 'Cómputo', 'unidades', 2, 3, 10, 'Estante C1', 28000, 'Tecnoguajira Suministros', 'Riohacha'),
+      'ar-011': articulo('Mouse inalámbrico', 'Cómputo', 'unidades', 7, 3, 15, 'Estante C1', 30000, 'Tecnoguajira Suministros', 'Riohacha'),
+      'ar-012': articulo('Tóner para impresora', 'Papelería', 'unidades', 1, 2, 6, 'Estante C2', 185000, 'Papelería Central', 'Riohacha'),
+      'ar-013': articulo('Resmas de papel carta', 'Papelería', 'resmas', 3, 5, 20, 'Estante C3', 28000, 'Papelería Central', 'Guamal'),
+      'ar-014': articulo('Jabón líquido', 'Aseo', 'galones', 4, 2, 8, 'Estante D1', 22000, 'Distribuidora Agua Clara', 'Guamal'),
+      'ar-015': articulo('Papel higiénico', 'Aseo', 'paquetes', 10, 4, 20, 'Estante D1', 24000, 'Distribuidora Agua Clara', 'Guamal'),
+      'ar-016': articulo('Café molido', 'Cafetería', 'paquetes', 0, 4, 12, 'Estante D2', 16000, 'Distribuidora Agua Clara', 'Bogotá'),
+      'ar-017': articulo('Vasos desechables', 'Cafetería', 'paquetes', 8, 3, 15, 'Estante D2', 7000, 'Distribuidora Agua Clara', 'Bogotá'),
+      'ar-018': articulo('Linterna recargable', 'Herramientas', 'unidades', 5, 2, 8, 'Estante E1', 38000, 'Ferretería El Faro', 'Bogotá')
     };
 
     // ---------- MOVIMIENTOS DE BODEGA ----------
@@ -383,5 +382,5 @@
     return { equipos, hojas, tareasEq, compras, vehiculos, novedades, entregas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 9, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 10, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

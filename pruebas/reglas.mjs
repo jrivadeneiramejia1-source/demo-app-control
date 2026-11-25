@@ -52,7 +52,7 @@ console.log('Bodega');
 await limpiar();
 await prueba('el Conductor no crea artículos', () => assertFails(setDoc(doc(prueba_('conductor'), 'articulos', 'ar-9'), { nombre: 'X', cantidad: 1 })));
 await prueba('Bodega no deja la cantidad en negativo', () => assertFails(setDoc(doc(prueba_('asistente'), 'articulos', 'ar-9'), { nombre: 'X', cantidad: -1 })));
-await prueba('Bodega crea un artículo con cantidad válida (empieza en 0; con más, trae su movimiento: ver paso 6)', () => assertSucceeds(setDoc(doc(prueba_('asistente'), 'articulos', 'ar-9'), { nombre: 'X', cantidad: 0 })));
+await prueba('Bodega crea un artículo con cantidad válida (empieza en 0; con más, trae su movimiento: ver paso 6)', () => assertSucceeds(setDoc(doc(prueba_('asistente'), 'articulos', 'ar-9'), { nombre: 'X', cantidad: 0, bodega: 'Riohacha' })));
 
 console.log('Compras');
 await limpiar();
@@ -111,7 +111,7 @@ await prueba('Bodega con «Equipos: solo ver» lee pero no cambia nada', async (
 await prueba('Bodega sin ese permiso no lee Equipos', async () => assertFails(getDoc(doc(await cuenta('bod3', 'asistente'), 'equipos', 'eq-1'))));
 await prueba('Pedir material con «Equipos: encargado» sí crea equipos', async () => assertSucceeds(setDoc(doc(await cuenta('prof1', 'profesional', { permisos: { equipos: 'encargado' } }), 'equipos', 'eq-nuevo2'), equipoNuevo)));
 await prueba('Bodega con «Inventario: solo ver» no crea artículos', async () => assertFails(setDoc(doc(await cuenta('bod4', 'asistente', { permisos: { inventario: 'ver' } }), 'articulos', 'ar-77'), { nombre: 'X', cantidad: 1 })));
-await prueba('Conductor con «Inventario: bodega» sí crea artículos', async () => assertSucceeds(setDoc(doc(await cuenta('con1', 'conductor', { permisos: { inventario: 'bodega' } }), 'articulos', 'ar-78'), { nombre: 'X', cantidad: 0 })));
+await prueba('Conductor con «Inventario: bodega» sí crea artículos', async () => assertSucceeds(setDoc(doc(await cuenta('con1', 'conductor', { permisos: { inventario: 'bodega' } }), 'articulos', 'ar-78'), { nombre: 'X', cantidad: 0, bodega: 'Guamal' })));
 await prueba('«Sin acceso» a Inventario quita hasta la lectura', async () => assertFails(getDoc(doc(await cuenta('bod5', 'asistente', { permisos: { inventario: 'no' } }), 'articulos', 'ar-9'))));
 await prueba('Persona con Reuniones «solo ver» no cambia una tarea', async () => {
   await sembrar(db => setDoc(doc(db, 'necesidades', 'ne-1'), { tipo: 'viaje', responsableRol: 'conductor', estado: 'pendiente', reunionId: 're-1' }));
@@ -409,7 +409,7 @@ await limpiar();
 const movDe = (o = {}) => Object.assign({ articuloId: 'ar-m', articulo: 'Guantes', tipo: 'entrada', motivo: 'compra', cantidad: 2, saldo: 7, persona: '', proyecto: '', nota: '', compraId: '', solicitudId: '', por: 'Bodega', porRol: 'asistente', fecha: '2026-11-20T10:00:00Z' }, o);
 const lote = (db, escribir) => { const b = writeBatch(db); escribir(b); return b.commit(); };
 const bodegaR = await cuenta('bodR', 'asistente');
-const sembrarArt = (id = 'ar-m', extra = {}) => sembrar(db => setDoc(doc(db, 'articulos', id), Object.assign({ nombre: 'Guantes', categoria: 'EPP', unidad: 'pares', cantidad: 5, minimo: 2, maximo: 10, ubicacion: 'A1', costo: 100, proveedor: 'X' }, extra)));
+const sembrarArt = (id = 'ar-m', extra = {}) => sembrar(db => setDoc(doc(db, 'articulos', id), Object.assign({ nombre: 'Guantes', categoria: 'EPP', unidad: 'pares', cantidad: 5, minimo: 2, maximo: 10, ubicacion: 'A1', costo: 100, proveedor: 'X', bodega: 'Riohacha' }, extra)));
 await prueba('Bodega no cambia la cantidad sin dejar el movimiento (ni con la prueba pública ni con cuenta propia)', async () => { await sembrarArt();
   await assertFails(updateDoc(doc(prueba_('asistente'), 'articulos', 'ar-m'), { cantidad: 99 }));
   await assertFails(updateDoc(doc(bodegaR, 'articulos', 'ar-m'), { cantidad: 99 }));
@@ -429,9 +429,30 @@ await prueba('Bodega edita datos del artículo (sin cambiar la cantidad) y no pu
   await assertSucceeds(updateDoc(doc(bodegaR, 'articulos', 'ar-m'), { ubicacion: 'B2', costo: 150, minimo: 3 }));
   await assertFails(updateDoc(doc(bodegaR, 'articulos', 'ar-m'), { extraRaro: 'x' })); });
 await prueba('un artículo nuevo con cantidad trae su movimiento; sin cantidad no hace falta', async () => {
-  await assertFails(setDoc(doc(bodegaR, 'articulos', 'ar-n1'), { nombre: 'Nuevo', cantidad: 8 }));
-  await assertSucceeds(setDoc(doc(bodegaR, 'articulos', 'ar-n2'), { nombre: 'Nuevo', cantidad: 0 }));
-  await assertSucceeds(lote(bodegaR, b => { b.set(doc(bodegaR, 'articulos', 'ar-n3'), { nombre: 'Nuevo', cantidad: 8, ultimoMov: 'mo-n3' }); b.set(doc(bodegaR, 'movimientos', 'mo-n3'), movDe({ articuloId: 'ar-n3', motivo: 'inicial', cantidad: 8, saldo: 8 })); })); });
+  await assertFails(setDoc(doc(bodegaR, 'articulos', 'ar-n1'), { nombre: 'Nuevo', cantidad: 8, bodega: 'Riohacha' }));
+  await assertSucceeds(setDoc(doc(bodegaR, 'articulos', 'ar-n2'), { nombre: 'Nuevo', cantidad: 0, bodega: 'Riohacha' }));
+  await assertSucceeds(lote(bodegaR, b => { b.set(doc(bodegaR, 'articulos', 'ar-n3'), { nombre: 'Nuevo', cantidad: 8, ultimoMov: 'mo-n3', bodega: 'Bogotá' }); b.set(doc(bodegaR, 'movimientos', 'mo-n3'), movDe({ articuloId: 'ar-n3', motivo: 'inicial', cantidad: 8, saldo: 8 })); })); });
+await prueba('las 3 bodegas: un artículo nuevo solo nace en Riohacha, Guamal o Bogotá (sin bodega o con otra, no)', async () => {
+  for (const b of ['Riohacha', 'Guamal', 'Bogotá']) await assertSucceeds(setDoc(doc(bodegaR, 'articulos', 'ar-b-' + b), { nombre: 'Nuevo ' + b, cantidad: 0, bodega: b }));
+  await assertFails(setDoc(doc(bodegaR, 'articulos', 'ar-b-sin'), { nombre: 'Sin bodega', cantidad: 0 }));
+  await assertFails(setDoc(doc(bodegaR, 'articulos', 'ar-b-otra'), { nombre: 'Otra', cantidad: 0, bodega: 'Medellín' }));
+  await assertFails(setDoc(doc(bodegaR, 'articulos', 'ar-b-min'), { nombre: 'Minúscula', cantidad: 0, bodega: 'riohacha' })); });
+await prueba('un artículo no cambia de bodega con una edición (para eso es el traslado)', async () => { await sembrarArt();
+  await assertFails(updateDoc(doc(bodegaR, 'articulos', 'ar-m'), { bodega: 'Guamal' }));
+  await assertSucceeds(updateDoc(doc(bodegaR, 'articulos', 'ar-m'), { ubicacion: 'Estante B2' })); });
+await prueba('traslado entre bodegas: sale de una (con su movimiento) y entra a la otra, en una sola escritura', async () => {
+  await sembrarArt('ar-t1', { cantidad: 10, bodega: 'Riohacha' }); await sembrarArt('ar-t2', { cantidad: 1, bodega: 'Guamal' });
+  await assertSucceeds(lote(bodegaR, b => {
+    b.update(doc(bodegaR, 'articulos', 'ar-t1'), { cantidad: 6, ultimoMov: 'mo-t1' }); b.set(doc(bodegaR, 'movimientos', 'mo-t1'), movDe({ articuloId: 'ar-t1', tipo: 'salida', motivo: 'traslado', cantidad: 4, saldo: 6, trasladoId: 'tr-1' }));
+    b.update(doc(bodegaR, 'articulos', 'ar-t2'), { cantidad: 5, ultimoMov: 'mo-t2' }); b.set(doc(bodegaR, 'movimientos', 'mo-t2'), movDe({ articuloId: 'ar-t2', tipo: 'entrada', motivo: 'traslado', cantidad: 4, saldo: 5, trasladoId: 'tr-1' })); }));
+  // Si en la bodega de destino no estaba, se crea ahí con su movimiento.
+  await assertSucceeds(lote(bodegaR, b => {
+    b.update(doc(bodegaR, 'articulos', 'ar-t1'), { cantidad: 4, ultimoMov: 'mo-t3' }); b.set(doc(bodegaR, 'movimientos', 'mo-t3'), movDe({ articuloId: 'ar-t1', tipo: 'salida', motivo: 'traslado', cantidad: 2, saldo: 4, trasladoId: 'tr-2' }));
+    b.set(doc(bodegaR, 'articulos', 'ar-t3'), { nombre: 'Guantes', categoria: 'EPP', unidad: 'pares', cantidad: 2, ultimoMov: 'mo-t4', minimo: 2, maximo: 10, ubicacion: '', costo: 100, proveedor: 'X', bodega: 'Bogotá' });
+    b.set(doc(bodegaR, 'movimientos', 'mo-t4'), movDe({ articuloId: 'ar-t3', tipo: 'entrada', motivo: 'traslado', cantidad: 2, saldo: 2, trasladoId: 'tr-2' })); }));
+  // No se puede sacar de una bodega más de lo que hay, ni sumar a la otra sin que salga de la primera.
+  await assertFails(lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-t1'), { cantidad: -1, ultimoMov: 'mo-t5' }); b.set(doc(bodegaR, 'movimientos', 'mo-t5'), movDe({ articuloId: 'ar-t1', tipo: 'salida', motivo: 'traslado', cantidad: 5, saldo: -1 })); }));
+  await assertFails(lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-t2'), { cantidad: 50, ultimoMov: 'mo-t6' }); b.set(doc(bodegaR, 'movimientos', 'mo-t6'), movDe({ articuloId: 'ar-t2', tipo: 'entrada', motivo: 'traslado', cantidad: 4, saldo: 50 })); })); });
 await prueba('recibir una compra de 5 artículos (cuenta propia de Bodega) cabe en los límites de las reglas', async () => {
   const ids = ['r1', 'r2', 'r3', 'r4', 'r5'];
   await sembrar(async db => { for (const i of ids) await setDoc(doc(db, 'articulos', 'ar-' + i), { nombre: i, cantidad: 1 });

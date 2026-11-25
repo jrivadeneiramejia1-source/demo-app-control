@@ -157,7 +157,7 @@ try {
   }
   log('la Jefe puede descargar el Excel del resumen', !!(await t.page.$('#invContenido [data-accion="excel"]')));
   const [descarga] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#invContenido [data-accion="excel"]')]);
-  if (descarga) { const ruta = path.join(CAPTURAS, 'excel-inventario.xlsx'); await descarga.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del inventario trae título, columnas en negrilla con cuadros y la primera fila fija (4 hojas)', hs.length === 4 && hs.every(bienFormado) && hs.every(h => h.filas.length >= 1), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); log('los valores de plata salen en pesos y no como texto', await t.page.evaluate(async b64 => { const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer); const ws = wb.getWorksheet('Existencias'); let ok = false; ws.getRow(4).eachCell((c, j) => { if (/Precio/.test(String(c.value))) { const x = ws.getRow(5).getCell(j); ok = typeof x.value === 'number' && /\$/.test(x.numFmt || ''); } }); return ok; }, fs.readFileSync(ruta).toString('base64'))); }
+  if (descarga) { const ruta = path.join(CAPTURAS, 'excel-inventario.xlsx'); await descarga.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del inventario trae título, columnas en negrilla con cuadros y la primera fila fija (4 hojas)', hs.length === 4 && hs.every(bienFormado) && hs.every(h => h.filas.length >= 1), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); log('los valores de plata salen en pesos y no como texto', await t.page.evaluate(async b64 => { const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer); const ws = wb.getWorksheet('Bodega'); let ok = false; ws.getRow(4).eachCell((c, j) => { if (/Precio/.test(String(c.value))) { const x = ws.getRow(5).getCell(j); ok = typeof x.value === 'number' && /\$/.test(x.numFmt || ''); } }); return ok; }, fs.readFileSync(ruta).toString('base64'))); }
   log('el Excel se descarga con 4 hojas', !!descarga && /^Inventario .*\.xlsx$/.test(descarga.suggestedFilename()), descarga ? descarga.suggestedFilename() : 'sin descarga');
 
   // --- Existencias como base de datos: bajar, cambiar en Excel, subir con vista previa y guardar ---
@@ -165,24 +165,24 @@ try {
   const xlsxEx = (filas, ruta) => t.page.evaluate(async f => { const X = await window.Inventario.cargarXlsx(), l = X.utils.book_new(); X.utils.book_append_sheet(l, X.utils.json_to_sheet(f), 'Existencias'); return X.write(l, { type: 'base64', bookType: 'xlsx' }); }, filas).then(b => fs.writeFileSync(ruta, Buffer.from(b, 'base64')));
   const datosApp = () => t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos')));
   await t.page.click('#invSecciones [data-sec="existencias"]');
-  log('Existencias trae «Descargar base de datos» y «Subir Excel»', await hasta(t.page, () => !!document.querySelector('#invContenido [data-accion="bdexcel"]') && !!document.getElementById('invArchivo')));
+  log('Bodega trae «Descargar base de datos» y «Subir Excel»', await hasta(t.page, () => !!document.querySelector('#invContenido [data-accion="bdexcel"]') && !!document.getElementById('invArchivo')));
   const [descBd] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#invContenido [data-accion="bdexcel"]')]);
-  log('la base de datos se baja con nombre «Base de datos Existencias …xlsx»', !!descBd && /^Base de datos Existencias .*\.xlsx$/.test(descBd.suggestedFilename()), descBd && descBd.suggestedFilename());
+  log('la base de datos se baja con nombre «Base de datos Bodega …xlsx»', !!descBd && /^Base de datos Bodega .*\.xlsx$/.test(descBd.suggestedFilename()), descBd && descBd.suggestedFilename());
   if (descBd) {
-    const ruta = path.join(CAPTURAS, 'base-existencias.xlsx'); await descBd.saveAs(ruta); const hs = await excelInfo(ruta), e = hs.find(h => h.nombre === 'Existencias');
-    log('trae las hojas Existencias, Ayuda y una de listas oculta', ['Existencias', 'Ayuda', 'Listas'].every(n => hs.some(h => h.nombre === n)) && hs.find(h => h.nombre === 'Listas').oculta && !e.oculta, JSON.stringify(hs.map(h => h.nombre)));
-    log('Existencias tiene el formato (título, negrillas, cuadros, fila fija, filtros) y las columnas de una base de datos', !!e && bienFormado(e) && e.titulos.join() === 'ID,Acción,Artículo,Categoría,Unidad,Cantidad hoy,Cantidad real (conteo),Mínimo,Máximo,Ubicación,Precio aprox.,Proveedor,Estado,Valor en bodega', JSON.stringify(e && e.titulos));
-    log('trae los 18 artículos con su código, una fila de ejemplo y filas vacías para agregar', !!e && e.filas.filter(f => /^ar-\d+$/.test(f[0])).length === 18 && e.filas.filter(f => /^Ejemplo/.test(f[1])).length === 1 && e.filas.filter(f => f.slice(0, 12).every(x => x === '')).length >= 15, JSON.stringify(e && e.filas.slice(17, 21)));
-    log('tiene listas desplegables (acción, categoría, unidad), solo enteros desde 0 y fórmulas de Estado y Valor', await t.page.evaluate(async b64 => {
+    const ruta = path.join(CAPTURAS, 'base-existencias.xlsx'); await descBd.saveAs(ruta); const hs = await excelInfo(ruta), e = hs.find(h => h.nombre === 'Bodega');
+    log('trae las hojas Bodega, Ayuda y una de listas oculta', ['Bodega', 'Ayuda', 'Listas'].every(n => hs.some(h => h.nombre === n)) && hs.find(h => h.nombre === 'Listas').oculta && !e.oculta, JSON.stringify(hs.map(h => h.nombre)));
+    log('Bodega tiene el formato (título, negrillas, cuadros, fila fija, filtros) y las columnas de una base de datos', !!e && bienFormado(e) && e.titulos.join() === 'ID,Acción,Bodega,Artículo,Categoría,Unidad,Cantidad hoy,Cantidad real (conteo),Mínimo,Máximo,Ubicación,Precio aprox.,Proveedor,Estado,Valor en bodega', JSON.stringify(e && e.titulos));
+    log('trae los 18 artículos con su código, una fila de ejemplo y filas vacías para agregar', !!e && e.filas.filter(f => /^ar-\d+$/.test(f[0])).length === 18 && e.filas.filter(f => /^Ejemplo/.test(f[1])).length === 1 && ['Riohacha', 'Guamal', 'Bogotá'].every(b => e.filas.some(f => f[2] === b)) && e.filas.filter(f => f.slice(0, 13).every(x => x === '')).length >= 15, JSON.stringify(e && e.filas.slice(17, 21)));
+    log('tiene listas desplegables (acción, bodega, categoría, unidad), solo enteros desde 0 y fórmulas de Estado y Valor', await t.page.evaluate(async b64 => {
       const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer);
-      const ws = wb.getWorksheet('Existencias'), fila = ws.rowCount, dv = c => (ws.getCell(fila, c).dataValidation || {}).type;
-      const f5 = ws.getCell(5, 13).value, v5 = ws.getCell(5, 14).value;
-      return dv(2) === 'list' && dv(4) === 'list' && dv(5) === 'list' && dv(7) === 'whole' && dv(8) === 'whole' && dv(11) === 'whole' && !dv(3) && !!f5 && /IF\(/.test(f5.formula || '') && !!v5 && /\*/.test(v5.formula || '');
+      const ws = wb.getWorksheet('Bodega'), fila = ws.rowCount, dv = c => (ws.getCell(fila, c).dataValidation || {}).type;
+      const f5 = ws.getCell(5, 14).value, v5 = ws.getCell(5, 15).value;
+      return dv(2) === 'list' && dv(3) === 'list' && dv(5) === 'list' && dv(6) === 'list' && dv(8) === 'whole' && dv(9) === 'whole' && dv(10) === 'whole' && dv(12) === 'whole' && !dv(4) && !!f5 && /IF\(/.test(f5.formula || '') && !!v5 && /\*/.test(v5.formula || '');
     }, fs.readFileSync(ruta).toString('base64')));
   }
   // Un Excel con cambios buenos (precio, conteo, artículo nuevo, eliminar) y filas malas.
   const rutaBd = path.join(CAPTURAS, 'base-existencias-cambiada.xlsx');
-  const nuevaFila = { Artículo: 'Pilas AA', Categoría: 'Eléctricos', Unidad: 'paquetes', 'Cantidad real (conteo)': 7, Mínimo: 3, Máximo: 12, 'Precio aprox.': '$9.500', Ubicación: 'Bodega Riohacha · Estante B3', Proveedor: 'Tecnoguajira Suministros' };
+  const nuevaFila = { Bodega: 'Riohacha', Artículo: 'Pilas AA', Categoría: 'Eléctricos', Unidad: 'paquetes', 'Cantidad real (conteo)': 7, Mínimo: 3, Máximo: 12, 'Precio aprox.': '$9.500', Ubicación: 'Bodega Riohacha · Estante B3', Proveedor: 'Tecnoguajira Suministros' };
   await xlsxEx([
     { ID: 'ar-002', 'Precio aprox.': 90000 },
     { ID: 'ar-003', 'Cantidad real (conteo)': 12 },
@@ -191,29 +191,33 @@ try {
     { ID: 'ar-004', Artículo: 'Guantes de vaqueta' },
     { Acción: 'Ejemplo (se ignora)', Artículo: 'Artículo de ejemplo', Categoría: 'EPP', Unidad: 'unidades', Mínimo: 2, Máximo: 10, 'Precio aprox.': 12000 },
     { ID: 'ar-999', Acción: 'Cambiar' },
-    { Artículo: 'Botas de seguridad talla 40', Categoría: 'EPP', Unidad: 'pares', Mínimo: 1, Máximo: 5, 'Precio aprox.': 1000 },
-    { Artículo: '=1+1', Categoría: 'EPP', Unidad: 'pares', Mínimo: 1, Máximo: 5, 'Precio aprox.': 1000 },
-    { Artículo: 'Cable raro', Categoría: 'Cosas', Unidad: 'unidades', Mínimo: 1, Máximo: 5, 'Precio aprox.': 1000 },
-    { Artículo: 'Mal máximo', Categoría: 'EPP', Unidad: 'pares', Mínimo: 5, Máximo: 2, 'Precio aprox.': 1 }
+    { Bodega: 'Riohacha', Artículo: 'Botas de seguridad talla 40', Categoría: 'EPP', Unidad: 'pares', Mínimo: 1, Máximo: 5, 'Precio aprox.': 1000 },
+    { Bodega: 'Guamal', Artículo: 'Botas de seguridad talla 40', Categoría: 'EPP', Unidad: 'pares', Mínimo: 2, Máximo: 8, 'Precio aprox.': 85000 },
+    { Bodega: 'Riohacha', Artículo: '=1+1', Categoría: 'EPP', Unidad: 'pares', Mínimo: 1, Máximo: 5, 'Precio aprox.': 1000 },
+    { Bodega: 'Riohacha', Artículo: 'Cable raro', Categoría: 'Cosas', Unidad: 'unidades', Mínimo: 1, Máximo: 5, 'Precio aprox.': 1000 },
+    { Bodega: 'Riohacha', Artículo: 'Mal máximo', Categoría: 'EPP', Unidad: 'pares', Mínimo: 5, Máximo: 2, 'Precio aprox.': 1 },
+    { Bodega: 'Medellín', Artículo: 'En otra ciudad', Categoría: 'EPP', Unidad: 'pares', Mínimo: 1, Máximo: 5, 'Precio aprox.': 1000 },
+    { ID: 'ar-001', Bodega: 'Guamal' },
+    { Artículo: 'Sin bodega', Categoría: 'EPP', Unidad: 'pares', Mínimo: 1, Máximo: 5, 'Precio aprox.': 1000 }
   ], rutaBd);
   const antesBd = await datosApp();
   await t.page.setInputFiles('#invArchivo', rutaBd);
-  log('al subir el Excel muestra lo que entendió: 1 para agregar, 2 para cambiar, 1 para eliminar, 5 con problema', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return /1 para agregar · 2 para cambiar · 1 para eliminar/.test(x) && /5 con problema/.test(x) && /1 ya estaba igual/.test(x) && /1 fila de ejemplo/.test(x); }), (await texto(t.page, '#invContenido')).slice(0, 400));
+  log('al subir el Excel muestra lo que entendió: 2 para agregar, 2 para cambiar, 1 para eliminar, 8 con problema', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return /2 para agregar · 2 para cambiar · 1 para eliminar/.test(x) && /8 con problema/.test(x) && /1 ya estaba igual/.test(x) && /1 fila de ejemplo/.test(x); }), (await texto(t.page, '#invContenido')).slice(0, 400));
   log('explica cada cambio: el precio, el ajuste de cantidad, el artículo nuevo y que se elimina', await t.page.evaluate(() => { const x = document.getElementById('invContenido').textContent; return /Precio: \$\s?85\.000 → \$\s?90\.000/.test(x) && /Cantidad: 15 → 12 \(ajuste por conteo\)/.test(x) && /Cantidad inicial: 7/.test(x) && /Se elimina el artículo/.test(x) && /Pilas AA/.test(x); }), (await texto(t.page, '#invContenido')).slice(0, 900));
-  log('marca el código que no existe, el nombre repetido, la fórmula, la categoría mala y el máximo menor', await t.page.evaluate(() => { const x = document.getElementById('invContenido').textContent; return /El código ar-999 no está en la app/.test(x) && /Ya hay un artículo con ese nombre/.test(x) && /no puede empezar con/.test(x) && /No entendí la categoría «Cosas»/.test(x) && /El máximo debe ser mayor que el mínimo/.test(x); }));
+  log('marca el código que no existe, el nombre repetido en la misma bodega (en otra bodega sí se puede), la fórmula, la categoría mala, el máximo menor, la bodega que no existe, el cambio de bodega y la bodega que falta', await t.page.evaluate(() => { const x = document.getElementById('invContenido').textContent; return /El código ar-999 no está en la app/.test(x) && /Ya hay un artículo con ese nombre en la bodega de Riohacha/.test(x) && !/Ya hay un artículo con ese nombre en la bodega de Guamal/.test(x) && /No entendí la bodega «Medell/.test(x) && /no cambia un artículo de bodega/.test(x) && /Falta la bodega/.test(x) && /no puede empezar con/.test(x) && /No entendí la categoría «Cosas»/.test(x) && /El máximo debe ser mayor que el mínimo/.test(x); }));
   await t.page.screenshot({ path: path.join(CAPTURAS, '12-excel-existencias-vista-previa.png'), fullPage: true });
   const duranteVista = await datosApp();
   log('mientras se ve la vista previa no se guarda nada', Object.keys(duranteVista.articulos).length === Object.keys(antesBd.articulos).length && duranteVista.articulos['ar-002'].costo === antesBd.articulos['ar-002'].costo && !!duranteVista.articulos['ar-015']);
   await t.page.click('#invContenido [data-accion="exguardar"]');
   log('al haber algo que eliminar, la app pregunta antes', await hasta(t.page, () => !document.getElementById('cfSi').closest('[hidden]') && /Eliminar 1 artículo/.test(document.body.textContent)));
   await t.page.click('#cfSi');
-  log('se guarda y avisa qué quedó hecho', await hasta(t.page, () => !document.querySelector('#invContenido [data-accion="exguardar"]') && /1 agregado, 2 cambiados, 1 eliminado/.test(document.body.textContent)), await texto(t.page, '#toast'));
+  log('se guarda y avisa qué quedó hecho', await hasta(t.page, () => !document.querySelector('#invContenido [data-accion="exguardar"]') && /2 agregados, 2 cambiados, 1 eliminado/.test(document.body.textContent)), await texto(t.page, '#toast'));
   const despBd = await datosApp(), pilas = Object.entries(despBd.articulos).find(([, a]) => a.nombre === 'Pilas AA');
   log('el precio cambió y los demás datos de ese artículo quedaron igual', despBd.articulos['ar-002'].costo === 90000 && despBd.articulos['ar-002'].nombre === antesBd.articulos['ar-002'].nombre && despBd.articulos['ar-002'].cantidad === antesBd.articulos['ar-002'].cantidad);
   log('el conteo ajustó la cantidad a 12 y dejó su movimiento de ajuste (-3, saldo 12)', (() => { const a = despBd.articulos['ar-003'], m = despBd.movimientos[a.ultimoMov]; return a.cantidad === 12 && !!m && m.tipo === 'ajuste' && m.cantidad === -3 && m.saldo === 12 && m.articuloId === 'ar-003'; })());
   log('el artículo nuevo quedó con 7, precio 9500 y su movimiento de cantidad inicial', !!pilas && pilas[1].cantidad === 7 && pilas[1].costo === 9500 && pilas[1].categoria === 'Eléctricos' && despBd.movimientos[pilas[1].ultimoMov].motivo === 'inicial' && despBd.movimientos[pilas[1].ultimoMov].articuloId === pilas[0]);
   log('se eliminó Papel higiénico y no se borró ningún movimiento (solo se sumaron el ajuste y la cantidad inicial)', !despBd.articulos['ar-015'] && Object.keys(despBd.movimientos).length === Object.keys(antesBd.movimientos).length + 2);
-  log('las filas con problema no guardaron nada (sigue 1 sola «Botas de seguridad talla 40», no hay «Cable raro»)', Object.values(despBd.articulos).filter(a => a.nombre === 'Botas de seguridad talla 40').length === 1 && !Object.values(despBd.articulos).some(a => /Cable raro|Mal máximo|^=/.test(a.nombre)));
+  log('las filas con problema no guardaron nada (sigue 1 sola «Botas de seguridad talla 40» en Riohacha y otra nueva en Guamal, no hay «Cable raro»)', Object.values(despBd.articulos).filter(a => a.nombre === 'Botas de seguridad talla 40' && a.bodega === 'Riohacha').length === 1 && Object.values(despBd.articulos).filter(a => a.nombre === 'Botas de seguridad talla 40' && a.bodega === 'Guamal').length === 1 && !Object.values(despBd.articulos).some(a => /Cable raro|Mal máximo|^=/.test(a.nombre)));
   // Volver a subir el mismo Excel no repite nada.
   await t.page.setInputFiles('#invArchivo', rutaBd);
   log('al subir el mismo Excel otra vez no hay nada nuevo que guardar (el artículo nuevo no se duplica)', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return /nada para guardar/.test(x) && !!document.querySelector('#invContenido [data-accion="exguardar"][disabled]'); }), (await texto(t.page, '#invContenido')).slice(0, 300));
@@ -224,6 +228,41 @@ try {
   fs.writeFileSync(rutaMal, Buffer.from(await t.page.evaluate(() => { const X = window.__x, l = X.utils.book_new(); X.utils.book_append_sheet(l, X.utils.json_to_sheet([{ Color: 'rojo', Peso: 3 }]), 'Otra'); return X.write(l, { type: 'base64', bookType: 'xlsx' }); }), 'base64'));
   await t.page.setInputFiles('#invArchivo', rutaMal);
   log('un Excel que no es de existencias se explica en español y no guarda nada', await hasta(t.page, () => /No encontré los títulos \(Artículo, Categoría, Unidad…\)/.test(document.getElementById('invContenido').textContent)));
+  console.log('2c. Las 3 bodegas y los traslados (Jefe)');
+  await t.page.click('#invSecciones [data-sec="existencias"]');
+  await t.page.click('#invContenido [data-accion="exdescartar"]').catch(() => {});
+  log('la sección se llama «Bodega» y trae el filtro de las 3 bodegas (Todas, Riohacha, Guamal y Bogotá)', await hasta(t.page, () => document.querySelector('#invSecciones [data-sec="existencias"]').textContent.trim() === 'Bodega' && [...document.querySelectorAll('#invContenido .chip[data-sub="bodega"]')].map(c => c.dataset.val).join() === 'todas,Riohacha,Guamal,Bogotá'));
+  await t.page.click('#invContenido .chip[data-sub="bodega"][data-val="Guamal"]');
+  log('al escoger Guamal solo salen los artículos de esa bodega', await hasta(t.page, () => { const c = [...document.querySelectorAll('#invContenido .card.art')]; return c.length >= 3 && c.every(x => /Bodega Guamal/.test(x.textContent)); }));
+  await t.page.click('#invContenido [data-accion="nuevoart"]');
+  log('«Agregar artículo» pide la bodega (3 opciones) y propone la que está filtrada', await hasta(t.page, () => { const s = document.getElementById('acBod'); return !!s && [...s.options].map(o => o.value).join() === 'Riohacha,Guamal,Bogotá' && s.value === 'Guamal'; }));
+  await t.page.fill('#acNom', 'Extintor de 10 libras'); await t.page.fill('#acCosto', '95000'); await t.page.click('#acPrimario');
+  log('el artículo nuevo se guarda en la bodega de Guamal', await hasta(t.page, () => !document.getElementById('shAccion') || document.getElementById('shAccion').hidden) && Object.values((await datosApp()).articulos).some(a => a.nombre === 'Extintor de 10 libras' && a.bodega === 'Guamal'));
+  await t.page.click('#invContenido [data-accion="nuevoart"]');
+  await t.page.fill('#acNom', 'extintor de 10 libras'); await t.page.fill('#acCosto', '95000'); await t.page.click('#acPrimario');
+  log('el mismo nombre en la misma bodega no se deja', await hasta(t.page, () => !document.getElementById('acErr').hidden && /Ya hay un artículo con ese nombre en la bodega de Guamal/.test(document.getElementById('acErr').textContent)));
+  await t.page.selectOption('#acBod', 'Bogotá'); await t.page.click('#acPrimario');
+  log('en otra bodega el mismo nombre sí (Bogotá)', await hasta(t.page, () => !document.getElementById('shAccion') || document.getElementById('shAccion').hidden) && Object.values((await datosApp()).articulos).filter(a => a.nombre.toLowerCase() === 'extintor de 10 libras').map(a => a.bodega).sort().join() === 'Bogotá,Guamal');
+  await t.page.click('#invContenido .chip[data-sub="bodega"][data-val="todas"]');
+  // Traslado: Guantes de vaqueta (Riohacha, 10) -> Bogotá. Primero se crea allá; el segundo se suma al que ya está.
+  await t.page.click('#invContenido [data-accion="verart"][data-id="ar-004"]');
+  await t.page.click('#acCampos [data-accion="trasladar"]');
+  log('«Trasladar» ofrece solo las otras 2 bodegas', await hasta(t.page, () => { const s = document.getElementById('acDest'); return !!s && [...s.options].map(o => o.value).join() === 'Guamal,Bogotá'; }));
+  await t.page.selectOption('#acDest', 'Bogotá'); await t.page.fill('#acCant', '99'); await t.page.click('#acPrimario');
+  log('no deja trasladar más de lo que hay', await hasta(t.page, () => !document.getElementById('acErr').hidden && /Solo hay 10 pares en Riohacha/.test(document.getElementById('acErr').textContent)));
+  await t.page.fill('#acCant', '3'); await t.page.fill('#acNota', 'Para el proyecto de Bogotá'); await t.page.click('#acPrimario');
+  await hasta(t.page, () => !document.getElementById('shAccion') || document.getElementById('shAccion').hidden);
+  const d1 = await datosApp(), origen = d1.articulos['ar-004'], destino = Object.entries(d1.articulos).find(([, a]) => a.nombre === 'Guantes de vaqueta' && a.bodega === 'Bogotá');
+  log('el traslado restó 3 en Riohacha y creó el artículo en Bogotá con 3 (mismos datos)', origen.cantidad === 7 && !!destino && destino[1].cantidad === 3 && destino[1].categoria === origen.categoria && destino[1].costo === origen.costo && destino[1].unidad === origen.unidad);
+  const mSale = d1.movimientos[origen.ultimoMov], mEntra = destino && d1.movimientos[destino[1].ultimoMov];
+  log('cada bodega dejó su movimiento (salida y entrada), unidos por el mismo traslado y con la nota', !!mSale && !!mEntra && mSale.tipo === 'salida' && mSale.motivo === 'traslado' && mSale.cantidad === 3 && mEntra.tipo === 'entrada' && mEntra.motivo === 'traslado' && mEntra.cantidad === 3 && !!mSale.trasladoId && mSale.trasladoId === mEntra.trasladoId && /Bogotá: Para el proyecto/.test(mSale.nota) && /desde Riohacha/.test(mEntra.nota));
+  await t.page.click('#invContenido [data-accion="verart"][data-id="ar-004"]');
+  await t.page.click('#acCampos [data-accion="trasladar"]');
+  await t.page.selectOption('#acDest', 'Bogotá'); await t.page.fill('#acCant', '2'); await t.page.click('#acPrimario');
+  await hasta(t.page, () => !document.getElementById('shAccion') || document.getElementById('shAccion').hidden);
+  const d2 = await datosApp(), enBogota = Object.values(d2.articulos).filter(a => a.nombre === 'Guantes de vaqueta' && a.bodega === 'Bogotá');
+  log('un segundo traslado se suma al que ya estaba en Bogotá (no crea otro): 5 allá y 5 en Riohacha', enBogota.length === 1 && enBogota[0].cantidad === 5 && d2.articulos['ar-004'].cantidad === 5);
+  log('el detalle del artículo dice en qué bodega está y el Resumen suma el valor de cada bodega', await t.page.evaluate(async () => { document.querySelector('#invSecciones [data-sec="resumen"]').click(); await new Promise(r => setTimeout(r, 300)); const x = document.getElementById('invContenido').textContent; return /Riohacha: \$[\s\d.]+ · Guamal: \$[\s\d.]+ · Bogotá: \$[\s\d.]+/.test(x); }), (await texto(t.page, '#invContenido')).slice(0, 400));
   await t.page.click('#invSecciones [data-sec="resumen"]');
   await t.page.click('#invSecciones [data-sec="compras"]');
   await t.page.click('#invContenido .chip[data-val="todas"]');
@@ -293,7 +332,7 @@ try {
   await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
   log('el Gerente autoriza el mouse de Ana: pasa a Compras con aviso a Luis y a Ana', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const c = d.compras['co-002']; return c.estado === 'autorizado' && c.autoriza === 'Oscar Muñoz' && c.historial.some(h => h.texto === 'Autorizó la compra' && h.por === 'Oscar Muñoz') && Object.values(d.avisos).some(a => a.para === 'compras' && /autorizó comprar/.test(a.texto)) && Object.values(d.avisos).some(a => a.para === 'jefe' && /autorizó tu compra/.test(a.texto)); }));
   await t.page.click('#invSecciones [data-sec="existencias"]');
-  log('el Gerente ve las existencias sin botones de bodega', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.art').length === 18 && !document.querySelector('#invContenido [data-accion="nuevoart"], #invContenido [data-accion="entrada"]')));
+  log('el Gerente ve las existencias sin botones de bodega', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.art').length === Object.keys(JSON.parse(localStorage.getItem('__fb_datos')).articulos).length && !document.querySelector('#invContenido [data-accion="nuevoart"], #invContenido [data-accion="entrada"]')));
   await t.page.click('#invContenido [data-accion="verart"][data-id="ar-004"]');
   log('el detalle del artículo no muestra movimientos sueltos ni botones', await hasta(t.page, () => !document.getElementById('shAccion').hidden && /Hay/.test(document.getElementById('acCampos').textContent) && !/Últimos movimientos/.test(document.getElementById('acCampos').textContent) && !document.querySelector('#acCampos [data-accion]')));
   await t.page.keyboard.press('Escape');

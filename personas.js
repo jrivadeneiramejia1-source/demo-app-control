@@ -43,6 +43,8 @@
     { rol: 'consulta', area: 'General', rolTxt: 'Consulta', cargo: 'Solo consulta (revisoría y cumplimiento)', pref: 'CNS',
       permisos: { equipos: 'no', inventario: 'ver', vehiculos: 'ver', reuniones: 'no' } }
   ];
+  // Las 3 bodegas de la empresa: siempre estas (la app, el Excel y las reglas de Firebase las exigen). Debe coincidir con firestore.rules (bodegaOk).
+  const BODEGAS = ['Riohacha', 'Guamal', 'Bogotá'];
   const AREAS = ['Dirección', 'Equipos', 'Inventario', 'Vehículos', 'Reuniones', 'General'];
   // Permisos extra: además del rol (que da el código), el Gerente o la Jefe le marcan a cada persona lo que hace de más.
   // Cada uno sirve solo para los roles de la lista. Debe coincidir con firestore.rules (función extraDe).
@@ -125,6 +127,7 @@
     CLAVE: CLAVE_DEMO,
     ROLES: Object.freeze(ROLES.map(r => Object.freeze(r))),
     AREAS: Object.freeze(AREAS),
+    BODEGAS: Object.freeze(BODEGAS),
     UNIDADES: Object.freeze(UNIDADES),
     correoPrueba,
     PERSONAS: Object.freeze(PERSONAS),

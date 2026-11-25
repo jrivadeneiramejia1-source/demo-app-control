@@ -362,11 +362,14 @@ service cloud.firestore {
         && getAfter(rutaMov(nuevo().ultimoMov)).data.articuloId == artId
         && nuevo().cantidad - cantAntes == (getAfter(rutaMov(nuevo().ultimoMov)).data.tipo == 'salida' ? 0 - getAfter(rutaMov(nuevo().ultimoMov)).data.cantidad : getAfter(rutaMov(nuevo().ultimoMov)).data.cantidad);
     }
+    // Las 3 bodegas de la empresa (deben coincidir con personas.js): todo artículo nace en una de ellas y no cambia de bodega
+    // (para moverlo se hace un traslado: sale de una y entra a la otra, cada una con su movimiento).
+    function bodegaOk() { return nuevo().get('bodega', '') in ['Riohacha', 'Guamal', 'Bogotá']; }
     match /articulos/{id} {
       allow read: if veInventario();
       // La cantidad nunca queda negativa (si dos personas sacan al tiempo lo último, la segunda recibe un error).
-      allow create: if (esJefe() && esPrueba())
-        || (esBodega() && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == 0 || movOk(id, 0)));
+      allow create: if (esJefe() && esPrueba() && bodegaOk())
+        || (esBodega() && bodegaOk() && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == 0 || movOk(id, 0)));
       allow update: if (esJefe() && esPrueba())
         || (esBodega() && soloCambia(['cantidad', 'ultimoMov', 'nombre', 'categoria', 'unidad', 'minimo', 'maximo', 'ubicacion', 'costo', 'proveedor'])
             && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == antes().cantidad || movOk(id, antes().cantidad)));
