@@ -5,6 +5,8 @@
    Uso: Excel.descargar({ archivo: 'Plantilla personas', hojas: [hoja, ...] })
    hoja = { nombre, titulo, subtitulo, columnas: [{ t, ancho, tipo, lista }], filas: [[...] o { celdas: [...], estilo }], vacias: 10, oculta }
      tipo: 'texto' (por defecto), 'numero', 'dinero'.  lista: { hoja, rango } = menú desplegable que toma sus opciones de otra hoja.
+     validar: { min } = solo deja escribir números enteros desde ese mínimo.  gris: true = columna que solo se mira (código, fórmulas).
+     formula: fila => '=...' = columna que se calcula sola en Excel (también en las filas vacías de abajo).  resaltar: [{ texto, fondo, letra }] = colorea la celda si dice ese texto.
      estilo de fila: 'gris' (ya está en la app), 'ejemplo' (de ejemplo: se ignora al subirlo).
    Excel.deObjetos(nombre, titulo, subtitulo, objetos) arma una hoja a partir de filas {Columna: valor}. */
 (function () {
@@ -57,7 +59,8 @@
       cols.forEach((c, i) => {
         const x = fx.getCell(i + 1);
         let v = fila.celdas[i]; v = v === undefined || v === null ? '' : limpio(v);
-        x.value = c.tipo === 'texto' || !c.tipo ? seguro(v) : v;
+        const filaExcel = FILA_TITULOS + 1 + r;
+        x.value = c.formula ? { formula: c.formula(filaExcel).replace(/^=/, ''), result: v } : (c.tipo === 'texto' || !c.tipo ? seguro(v) : v);
         x.font = { name: FUENTE, size: 10 };
         x.alignment = { vertical: 'top', wrapText: true, horizontal: c.tipo === 'numero' || c.tipo === 'dinero' ? 'right' : 'left' };
         x.border = bordes;
@@ -65,6 +68,8 @@
         if (fila.estilo === 'gris') { x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.gris } }; x.font = { name: FUENTE, size: 10, italic: true, color: { argb: 'FF555555' } }; }
         else if (fila.estilo === 'ejemplo') { x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.ejemplo } }; x.font = { name: FUENTE, size: 10, italic: true, color: { argb: 'FF7A5C00' } }; }
         else if (r % 2 === 1) x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.cebra } };
+        if (c.gris && fila.estilo !== 'ejemplo') { x.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR.gris } }; x.font = { name: FUENTE, size: 10, color: { argb: 'FF555555' } }; }
+        if (c.validar) x.dataValidation = { type: 'whole', operator: 'greaterThanOrEqual', allowBlank: true, formulae: [c.validar.min || 0], showErrorMessage: true, errorStyle: 'stop', errorTitle: c.t, error: `Escribe un número entero, ${c.validar.min || 0} o más, sin puntos ni comas.` };
         if (c.lista) x.dataValidation = { type: 'list', allowBlank: true, formulae: [`${c.lista.hoja}!${c.lista.rango}`], showErrorMessage: true, errorStyle: 'warning', errorTitle: c.t, error: 'Escoge una opción de la lista (también puedes dejarla vacía).' };
       });
     }
@@ -73,6 +78,12 @@
       let w = c.ancho;
       if (!w) { w = Math.max(String(c.t).length + 4, ...filas.slice(0, 200).map(f => String(f.celdas[i] == null ? '' : f.celdas[i]).length + 2)); w = Math.min(48, Math.max(12, w)); }
       ws.getColumn(i + 1).width = w;
+    });
+    cols.forEach((c, i) => {
+      if (!c.resaltar || !total) return;
+      const col = letra(i + 1), ref = `${col}${FILA_TITULOS + 1}:${col}${FILA_TITULOS + total}`;
+      ws.addConditionalFormatting({ ref, rules: c.resaltar.map((q, k) => ({ type: 'containsText', operator: 'containsText', text: q.texto, priority: k + 1,
+        style: { font: { color: { argb: q.letra || 'FF000000' }, bold: true }, fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: q.fondo } } } })) });
     });
     ws.views = [{ state: 'frozen', ySplit: FILA_TITULOS, showGridLines: false }];
     if (total) ws.autoFilter = { from: { row: FILA_TITULOS, column: 1 }, to: { row: FILA_TITULOS + Math.max(1, total), column: n } };

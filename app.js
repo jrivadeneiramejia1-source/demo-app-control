@@ -371,14 +371,14 @@
     sum.className = 'summary' + (todas.length === 2 || todas.length === 4 ? ' dos' : '');
     sum.innerHTML = algoCargando ? UI.esqueletoCifras(todas.length) : todas.map(c => UI.cifra({ k: c.k, n: c.n, lbl: c.lbl, icono: c.icono, tono: c.tono, filtro: c.mod, activo: false })).join('');
     UI.contar(sum);
-    $('modulosLista').innerHTML = MODULOS.map(m => {
+    UI.poner($('modulosLista'), MODULOS.map(m => {
       const ok = puedeVer(m.k);
       return `<button type="button" class="card modulo ${ok ? '' : 'bloqueado'}" data-ir="${m.k}" ${ok ? '' : 'aria-disabled="true"'}>
         <span class="ico">${ico(ok ? m.ico : 'candado')}</span><b>${esH(m.n)}</b>
         <span class="meta">${ok ? esH(m.txt) : 'Sin permiso con esta persona'}</span>
         ${pill(window.DEMO.PERMISO_TXT[permiso(m.k)], ok ? 's-disco' : 'none')}
       </button>`;
-    }).join('');
+    }).join(''));
   }
 
   /** Tablero con filtro: al tocar una cifra filtra la lista; tocarla otra vez quita el filtro. */

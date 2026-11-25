@@ -287,7 +287,10 @@
     const orden = { agotado: 0, bajo: 1, bien: 2 };
     const todos = articulos().slice().sort((a, b) => (orden[estadoArt(a)] - orden[estadoArt(b)]) || String(a.nombre).localeCompare(String(b.nombre)));
     const vis = todos.filter(a => (!['agotado', 'bajo'].includes(f) || f === estadoArt(a)) && (!q || texto(a.nombre, a.categoria, a.ubicacion, a.proveedor).includes(q)));
-    let h = barraBotones(esBodega() ? [boton('nuevoart', 'Agregar artículo', 'mas'), boton('entrada', 'Registrar entrada', 'importar'), boton('salida', 'Registrar salida', 'entrega')] : []);
+    let h = barraBotones(esBodega() ? [boton('nuevoart', 'Agregar artículo', 'mas'), boton('entrada', 'Registrar entrada', 'importar'), boton('salida', 'Registrar salida', 'entrega'),
+      boton('bdexcel', 'Descargar base de datos', 'excel'), `<label class="btn small foto-btn"><span data-ico="importar"></span>Subir Excel<input id="invArchivo" class="archivo-oculto" type="file" accept=".xlsx,.xls,.csv"></label>`] : []);
+    if (esBodega() && errorEx) h += `<div class="err" role="alert">${esH(errorEx)}</div>`;
+    if (esBodega() && previaEx) h += htmlPreviaEx();
     h += `<div class="count" aria-live="polite">${vis.length === todos.length ? todos.length + ' artículos' : vis.length + ' de ' + todos.length + ' artículos'}</div>`;
     if (!vis.length) return h + UI.vacio('vacio', 'No hay artículos con ese filtro', f ? 'Toca otra vez la cifra de arriba para ver todo.' : '');
     return h + `<div class="list">${vis.map(a => {
@@ -1069,6 +1072,226 @@
     finally { b.disabled = false; }
   }
 
+
+  /* ---------- Existencias como base de datos en Excel ----------
+     «Descargar base de datos» baja una fila por artículo con su código (ID). Se cambia en Excel y se sube con «Subir Excel»:
+     la app muestra primero qué agregaría, cambiaría o eliminaría, y solo guarda cuando se toca «Guardar».
+     Reglas: sin código = artículo nuevo · con código y datos distintos = cambio · «Eliminar» en la columna Acción = se elimina (solo la Jefe).
+     Lo que se deja vacío en un artículo que ya existe se queda como está. La cantidad solo cambia con «Cantidad real (conteo)» y deja su movimiento. */
+  const normEx = t => String(t == null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const COL_EX = [['id', 'id'], ['codigo', 'id'], ['accion', 'accion'], ['articulo', 'nombre'], ['nombre', 'nombre'], ['categoria', 'categoria'], ['unidad', 'unidad'], ['cantidad hoy', 'hoy'], ['cantidad real', 'real'],
+    ['minimo', 'minimo'], ['maximo', 'maximo'], ['ubicacion', 'ubicacion'], ['precio', 'costo'], ['proveedor', 'proveedor']];
+  const colEx = t => { const n = normEx(t), m = COL_EX.find(([k]) => n === k || n.startsWith(k + ' ')); return m ? m[1] : ''; };
+  // Texto limpio (sin caracteres raros); el apostrofo con que Excel protege un texto que empieza con = + - @ se quita.
+  const txtEx = (v, max) => String(v == null ? '' : v).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().replace(/^'(?=[=+\-@])/, '').slice(0, max);
+  /** Número entero de una celda: null si está vacía, NaN si no es un entero. Acepta $ y puntos o comas de miles. */
+  function numEx(v) {
+    if (typeof v === 'number') return Number.isInteger(v) ? v : NaN;
+    const t = String(v == null ? '' : v).replace(/[\s$]/g, '');
+    if (t === '') return null;
+    if (/^\d{1,3}(\.\d{3})+$/.test(t)) return Number(t.replace(/\./g, ''));
+    if (/^\d{1,3}(,\d{3})+$/.test(t)) return Number(t.replace(/,/g, ''));
+    return /^\d+$/.test(t) ? Number(t) : NaN;
+  }
+  const ETIQ_EX = { nombre: 'Nombre', categoria: 'Categoría', unidad: 'Unidad', minimo: 'Mínimo', maximo: 'Máximo', ubicacion: 'Ubicación', costo: 'Precio', proveedor: 'Proveedor' };
+  let previaEx = null, errorEx = '', aplicandoEx = false;   // previaEx: { crudas } = las filas del Excel, esperando el «Guardar»
+
+  /** Convierte las filas del Excel en filas ya revisadas: cada una trae lo que se haría o lo que está mal. Se vuelve a calcular con los datos de ahora. */
+  function entenderEx(crudas) {
+    const cop = A().cop, arts = articulos(), vistos = new Set();
+    const buscar = (lista, t) => lista.find(x => normEx(x) === normEx(t));
+    const filas = crudas.map((crudo, i) => {
+      const f = {};
+      Object.keys(crudo).forEach(k => { const c = colEx(k); if (c && String(f[c] == null ? '' : f[c]).trim() === '') f[c] = crudo[k]; });
+      const errores = [], avisos = [], cambios = [], acc = normEx(f.accion);
+      const r = { fila: crudo.__fila || i + 2, tipo: '', id: txtEx(f.id, 60), nombre: '', datos: {}, real: null, a: null, cambios, errores, avisos, omitida: '' };
+      if (acc.startsWith('ejemplo')) { r.omitida = 'ejemplo'; return r; }
+      const a = r.id ? artPorId(r.id) : null; r.a = a;
+      r.nombre = txtEx(f.nombre, 80) || (a ? a.nombre : '');
+      if (acc !== '' && !['agregar', 'cambiar', 'eliminar'].includes(acc)) { errores.push(`No entendí la acción «${txtEx(f.accion, 20)}». Usa Agregar, Cambiar o Eliminar (o déjala vacía).`); return r; }
+      if (r.id && !a) { errores.push(`El código ${r.id} no está en la app (¿lo eliminaron?). Para agregarlo como nuevo, deja el código vacío.`); return r; }
+      if (!r.id && (acc === 'cambiar' || acc === 'eliminar')) { errores.push(`«${acc === 'cambiar' ? 'Cambiar' : 'Eliminar'}» necesita el código de la fila (columna ID).`); return r; }
+      if (r.id && acc === 'agregar') { errores.push('Ese artículo ya está en la app (tiene código). Para cambiarlo, deja la acción vacía o escribe «Cambiar».'); return r; }
+      if (r.id && vistos.has(r.id)) { errores.push('El código está repetido en el Excel.'); return r; }
+      if (r.id) vistos.add(r.id);
+      if (acc === 'eliminar') {
+        r.tipo = 'eliminar';
+        if (!esJefe()) errores.push('Solo la Jefe puede eliminar artículos.');
+        else if (compraAbierta(r.id)) errores.push('Tiene una compra en curso. Termínala antes de eliminarlo.');
+        else if (D().solicitudes.some(s => s.estado === 'pendiente' && s.articuloId === r.id)) errores.push('Tiene pedidos de material esperando. Entrégalos o ciérralos antes.');
+        else avisos.push('Se elimina el artículo. Sus movimientos quedan en el historial.');
+        return r;
+      }
+      const nuevo = !a; r.tipo = nuevo ? 'agregar' : 'cambiar';
+      const v = nuevo ? { ubicacion: '', proveedor: '' } : { nombre: a.nombre, categoria: a.categoria, unidad: a.unidad, minimo: num(a.minimo), maximo: num(a.maximo), ubicacion: a.ubicacion || '', costo: num(a.costo), proveedor: a.proveedor || '' };
+      v.nombre = r.nombre;
+      if (!v.nombre) errores.push('Falta el nombre del artículo.');
+      else if (v.nombre !== (a && a.nombre) && /^[=+\-@]/.test(v.nombre)) errores.push('El nombre no puede empezar con = + - ni @.');
+      const lista = (k, opciones, rotulo) => {
+        const t = txtEx(f[k], 30);
+        if (t === '') { if (nuevo) errores.push(`Falta ${rotulo}.`); return; }
+        const ok = buscar(opciones, t);
+        if (ok) v[k] = ok; else errores.push(`No entendí ${rotulo} «${t.slice(0, 24)}». Usa una de la lista.`);
+      };
+      lista('categoria', CATEGORIAS, 'la categoría'); lista('unidad', UNIDADES, 'la unidad');
+      ['minimo', 'maximo', 'costo'].forEach(k => {
+        const n = numEx(f[k]), rotulo = { minimo: 'el mínimo', maximo: 'el máximo', costo: 'el precio' }[k];
+        if (n === null) { if (nuevo) errores.push(`Falta ${rotulo}.`); } else if (Number.isNaN(n)) errores.push(`${rotulo[0].toUpperCase() + rotulo.slice(1)} debe ser un número entero, 0 o más, sin letras.`); else v[k] = n;
+      });
+      const u = txtEx(f.ubicacion, 80); if (u) v.ubicacion = u;
+      const p = txtEx(f.proveedor, 60); if (p) v.proveedor = p;
+      const real = numEx(f.real);
+      if (Number.isNaN(real)) errores.push('La cantidad real debe ser un número entero, 0 o más.');
+      if (!errores.length && (nuevo || v.minimo !== num(a.minimo) || v.maximo !== num(a.maximo)) && !(v.maximo > v.minimo)) errores.push('El máximo debe ser mayor que el mínimo.');
+      if (errores.length) return r;
+      Object.keys(ETIQ_EX).forEach(k => {
+        if (nuevo) { r.datos[k] = v[k]; return; }
+        if (v[k] === (k === 'minimo' || k === 'maximo' || k === 'costo' ? num(a[k]) : (a[k] || ''))) return;
+        r.datos[k] = v[k];
+        cambios.push(`${ETIQ_EX[k]}: ${k === 'costo' ? cop(a.costo) : (a[k] == null || a[k] === '' ? '(vacío)' : a[k])} → ${k === 'costo' ? cop(v[k]) : v[k]}`);
+      });
+      if (nuevo) cambios.push(`${CATEGORIAS.includes(v.categoria) ? v.categoria : ''} · ${v.unidad} · mínimo ${v.minimo}, máximo ${v.maximo} · ${cop(v.costo)} c/u`);
+      if (real !== null && (nuevo ? real > 0 : real !== num(a.cantidad))) { r.real = real; cambios.push(nuevo ? `Cantidad inicial: ${real}` : `Cantidad: ${num(a.cantidad)} → ${real} (ajuste por conteo)`); }
+      if (!nuevo && !cambios.length) r.omitida = 'igual';
+      return r;
+    });
+    // Los nombres no se pueden repetir, contando lo que cambia el mismo Excel.
+    const quita = new Set(filas.filter(x => x.tipo === 'eliminar' && !x.errores.length).map(x => x.id));
+    const renombra = new Map(filas.filter(x => x.tipo === 'cambiar' && !x.errores.length && x.datos.nombre).map(x => [x.id, x.datos.nombre]));
+    const cuenta = new Map(), sumar = n => { const k = n.toLowerCase(); cuenta.set(k, (cuenta.get(k) || 0) + 1); };
+    arts.filter(a => !quita.has(a.id)).forEach(a => sumar(renombra.get(a.id) || String(a.nombre)));
+    filas.filter(x => x.tipo === 'agregar' && !x.errores.length).forEach(x => sumar(x.datos.nombre));
+    filas.forEach(x => { if (!x.errores.length && x.datos.nombre && cuenta.get(x.datos.nombre.toLowerCase()) > 1) x.errores.push('Ya hay un artículo con ese nombre (en la app o repetido en el Excel).'); });
+    return filas;
+  }
+
+  async function leerExcelExistencias(archivo) {
+    if (!archivo) return null;
+    if (archivo.size > 1048576) throw new Error('El archivo pesa mucho. Usa uno de menos de 1 MB.');
+    if (!/\.(xlsx|xls|csv)$/i.test(archivo.name)) throw new Error('Sube un archivo de Excel (.xlsx) o CSV.');
+    const X = await cargarXlsx(), libro = X.read(await archivo.arrayBuffer(), { type: 'array' });
+    const orden = libro.SheetNames.filter(n => normEx(n) === 'existencias').concat(libro.SheetNames);
+    for (const n of orden) {
+      // Los números se leen como números (raw) para no confundir «$85,000» con texto.
+      const m = X.utils.sheet_to_json(libro.Sheets[n], { header: 1, defval: '', raw: true, blankrows: true });
+      const h = m.slice(0, 20).findIndex(fila => { const c = fila.map(colEx); return c.includes('nombre') && c.includes('categoria') && c.filter(Boolean).length >= 4; });
+      if (h < 0) continue;
+      const titulos = m[h].map(c => String(c)), filas = [];
+      m.slice(h + 1).forEach((fila, k) => {
+        if (!fila.some(c => String(c == null ? '' : c).trim() !== '')) return;   // fila vacía: se salta
+        const o = { __fila: h + k + 2 };
+        titulos.forEach((t, j) => { if (t.trim() !== '') o[t] = fila[j] == null ? '' : fila[j]; });
+        filas.push(o);
+      });
+      if (!filas.length) throw new Error('No encontré filas con artículos. Escríbelos debajo de los títulos.');
+      if (filas.length > 300) throw new Error(`El Excel tiene ${filas.length} filas y el máximo es 300. Súbelo en partes.`);
+      return filas;
+    }
+    throw new Error('No encontré los títulos (Artículo, Categoría, Unidad…). Usa el Excel que baja el botón «Descargar base de datos».');
+  }
+
+  async function descargarBase(b) {
+    b.disabled = true;
+    try {
+      const hoy = A().hoyISO(), rango = (col, n) => ({ hoja: 'Listas', rango: `$${col}$5:$${col}$${4 + Math.max(1, n)}` });
+      const ACCIONES = ['Agregar', 'Cambiar', 'Eliminar'];
+      const arts = articulos().slice().sort((x, y) => String(x.categoria).localeCompare(String(y.categoria)) || String(x.nombre).localeCompare(String(y.nombre)));
+      const filas = arts.map(a => [a.id, '', a.nombre, a.categoria, a.unidad, num(a.cantidad), '', num(a.minimo), num(a.maximo), a.ubicacion, num(a.costo), a.proveedor, EST_ART[estadoArt(a)][0], num(a.cantidad) * num(a.costo)]);
+      filas.push({ estilo: 'ejemplo', celdas: ['', 'Ejemplo (se ignora)', 'Artículo de ejemplo', 'EPP', 'unidades', '', 5, 2, 10, 'Bodega Riohacha · Estante A1', 12000, 'Proveedor de ejemplo', '', ''] });
+      const base = { nombre: 'Existencias', titulo: 'Base de datos: existencias de la bodega', vacias: 20,
+        subtitulo: `Una fila por artículo (${hoy}). Cambia lo que quieras en las filas de siempre y escribe los artículos nuevos en las filas de abajo, sin código (ID). Luego sube este mismo archivo en la app (Inventario › Existencias › Subir Excel): la app te muestra qué cambia y tú confirmas. Las columnas grises solo se miran. Lo que dejes vacío en un artículo que ya existe se queda como está. La fila amarilla es de ejemplo y se ignora.`,
+        columnas: [{ t: 'ID', ancho: 12, gris: true }, { t: 'Acción', ancho: 14, lista: rango('C', ACCIONES.length) }, { t: 'Artículo', ancho: 34 }, { t: 'Categoría', ancho: 16, lista: rango('A', CATEGORIAS.length) },
+          { t: 'Unidad', ancho: 12, lista: rango('B', UNIDADES.length) }, { t: 'Cantidad hoy', ancho: 12, tipo: 'numero', gris: true }, { t: 'Cantidad real (conteo)', ancho: 15, tipo: 'numero', validar: { min: 0 } },
+          { t: 'Mínimo', ancho: 10, tipo: 'numero', validar: { min: 0 } }, { t: 'Máximo', ancho: 10, tipo: 'numero', validar: { min: 1 } }, { t: 'Ubicación', ancho: 32 }, { t: 'Precio aprox.', ancho: 14, tipo: 'dinero', validar: { min: 0 } },
+          { t: 'Proveedor', ancho: 26 },
+          { t: 'Estado', ancho: 17, gris: true, formula: r => `IF(OR(C${r}="",F${r}=""),"",IF(F${r}<=0,"Agotado",IF(F${r}<=H${r},"Bajo del mínimo","Bien")))`,
+            resaltar: [{ texto: 'Agotado', fondo: 'FFF8D3CF', letra: 'FF9B1C14' }, { texto: 'Bajo del mínimo', fondo: 'FFFDE7BF', letra: 'FF7A4B00' }] },
+          { t: 'Valor en bodega', ancho: 16, tipo: 'dinero', gris: true, formula: r => `IF(OR(F${r}="",K${r}=""),"",F${r}*K${r})` }],
+        filas };
+      const ayuda = { nombre: 'Ayuda', titulo: 'Cómo usar esta base de datos', subtitulo: 'Cada fila es un artículo de la bodega. Lo que cambies aquí se aplica en la app cuando subes el archivo y confirmas.', columnas: [{ t: 'Qué', ancho: 30 }, { t: 'Cómo', ancho: 100 }],
+        filas: [['Artículo nuevo', 'Escríbelo en las filas vacías de abajo, sin código (ID). Obligatorios: Artículo, Categoría, Unidad, Mínimo, Máximo y Precio. La Cantidad real es la que hay ahora (opcional).'],
+          ['Cambiar un artículo', 'Cambia la celda (nombre, categoría, unidad, mínimo, máximo, ubicación, precio o proveedor). La app lo detecta sola; la columna Acción puede quedar vacía.'],
+          ['Cambiar la cantidad', 'Escribe lo que contaste en «Cantidad real (conteo)». La app guarda un ajuste en Movimientos. «Cantidad hoy» no se usa al subir.'],
+          ['Eliminar un artículo', 'Escribe «Eliminar» en la columna Acción. Solo la Jefe puede, y solo si no tiene compras ni pedidos en curso. Borrar la fila NO elimina nada.'],
+          ['Código (ID)', 'No lo cambies: así la app sabe qué artículo es. Una fila sin código es un artículo nuevo.'],
+          ['Categorías', CATEGORIAS.join(', ')], ['Unidades', UNIDADES.join(', ')],
+          ['Estado y Valor en bodega', 'Se calculan solos en Excel (no se suben). Estado: Agotado, Bajo del mínimo o Bien.'],
+          ['Atajos de Excel', 'Los títulos tienen filtros (flecha), la primera fila queda fija al bajar, Ctrl+Shift+L activa o quita filtros y Ctrl+F busca un artículo.'],
+          ['Después de subir', 'La app te muestra qué agregaría, cambiaría o eliminaría. Nada se guarda hasta que toques «Guardar». Si subes el mismo archivo otra vez, lo que ya quedó guardado no se repite.']] };
+      const listas = { nombre: 'Listas', titulo: 'Listas de opciones (no tocar)', subtitulo: 'Alimentan los menús desplegables de la hoja Existencias.', oculta: true, columnas: [{ t: 'Categoría', ancho: 20 }, { t: 'Unidad', ancho: 16 }, { t: 'Acción', ancho: 16 }], filas: [] };
+      for (let k = 0; k < Math.max(CATEGORIAS.length, UNIDADES.length, ACCIONES.length); k++) listas.filas.push([CATEGORIAS[k] || '', UNIDADES[k] || '', ACCIONES[k] || '']);
+      await window.Excel.descargar({ archivo: `Base de datos Existencias ${hoy}`, hojas: [base, ayuda, listas] });
+      A().toast('Listo: base de datos descargada');
+    } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
+    finally { b.disabled = false; }
+  }
+
+  /** Las escrituras de una fila del Excel. El cambio de cantidad y su movimiento van en la misma escritura (lo piden las reglas). */
+  function opsEx(x) {
+    if (x.tipo === 'eliminar') return [['borrar', 'articulos', x.id]];
+    if (x.tipo === 'agregar') {
+      const id = window.nube.idNuevo('ar'), movId = window.nube.idNuevo('mo'), ini = x.real || 0;
+      return [['set', 'articulos', id, Object.assign({ cantidad: ini }, ini > 0 ? { ultimoMov: movId } : {}, x.datos)],
+        ini > 0 ? movimiento({ articuloId: id, articulo: x.datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo (desde el Excel)' }, movId) : null].filter(Boolean);
+    }
+    const a = x.a;
+    if (x.real === null) return Object.keys(x.datos).length ? [['mezclar', 'articulos', a.id, x.datos]] : [];
+    const dif = x.real - num(a.cantidad), movId = window.nube.idNuevo('mo');
+    return [['update', 'articulos', a.id, Object.assign({}, x.datos, { cantidad: window.nube.incremento(dif), ultimoMov: movId })],
+      movimiento({ articuloId: a.id, articulo: x.datos.nombre || a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: dif, saldo: x.real, nota: 'Ajuste desde el Excel' }, movId)];
+  }
+  const pl = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+  async function guardarExcelExistencias() {
+    if (aplicandoEx || !previaEx) return;
+    let buenas = entenderEx(previaEx.crudas).filter(x => !x.omitida && !x.errores.length);
+    if (!buenas.length) return;
+    const elim = buenas.filter(x => x.tipo === 'eliminar');
+    if (elim.length) {
+      const ok = await A().confirmar(`¿Eliminar ${pl(elim.length, 'artículo', 'artículos')}?`, `${elim.slice(0, 8).map(x => x.nombre).join(', ')}${elim.length > 8 ? '…' : ''}. Sus movimientos quedan en el historial.`, 'Eliminar');
+      if (!ok) return;
+      buenas = entenderEx(previaEx.crudas).filter(x => !x.omitida && !x.errores.length);   // los datos pudieron cambiar mientras se pensaba
+    }
+    aplicandoEx = true; errorEx = ''; pushPendientes = [];
+    const cuenta = t => buenas.filter(x => x.tipo === t).length, ajustes = buenas.filter(x => x.real !== null && x.tipo === 'cambiar').length;
+    const lotes = []; let cur = [], pesados = 0;
+    const cerrar = () => { if (cur.length) lotes.push(cur); cur = []; pesados = 0; };
+    buenas.forEach(x => {   // pocos artículos con movimiento por lote: así Firebase no se pasa de su límite al revisar las reglas
+      const ops = opsEx(x), pesado = x.tipo !== 'eliminar' && x.real !== null;
+      if (pesados + (pesado ? 1 : 0) > 6 || cur.length + ops.length > 150) cerrar();
+      cur.push(...ops); if (pesado) pesados++;
+    });
+    cerrar();
+    const resumen = [cuenta('agregar') ? pl(cuenta('agregar'), 'agregado', 'agregados') : '', cuenta('cambiar') ? pl(cuenta('cambiar'), 'cambiado', 'cambiados') : '', cuenta('eliminar') ? pl(cuenta('eliminar'), 'eliminado', 'eliminados') : ''].filter(Boolean).join(', ');
+    let hechos = 0;
+    try {
+      for (let k = 0; k < lotes.length; k++) {
+        if (k === lotes.length - 1 && (ajustes || cuenta('eliminar'))) lotes[k].push(aviso('jefe', 'Excel de existencias', `${persona().nombre} subió un Excel de existencias: ${resumen}${ajustes ? `; ${pl(ajustes, 'artículo ajustado', 'artículos ajustados')} por conteo` : ''}.`));
+        await window.nube.lote(lotes[k].filter(Boolean)); hechos += lotes[k].length;
+      }
+      previaEx = null;
+      A().toast(`Listo: ${resumen}.`);
+      notificar(pushPendientes.slice());
+    } catch (e) {
+      errorEx = `${window.nube.explicar(e)}${hechos ? ' Una parte ya se guardó: revisa abajo y vuelve a subir el mismo Excel (lo que ya quedó no se repite).' : ''}`;
+    } finally { aplicandoEx = false; pintar(); }
+  }
+
+  function htmlPreviaEx() {
+    const App = A(), todas = entenderEx(previaEx.crudas), act = todas.filter(x => !x.omitida), buenas = act.filter(x => !x.errores.length);
+    const n = t => buenas.filter(x => x.tipo === t).length, malas = act.length - buenas.length;
+    const iguales = todas.filter(x => x.omitida === 'igual').length, ejemplo = todas.filter(x => x.omitida === 'ejemplo').length;
+    const omit = [iguales ? `${pl(iguales, 'ya estaba igual', 'ya estaban iguales')} (no se tocan)` : '', ejemplo ? `${pl(ejemplo, 'fila de ejemplo', 'filas de ejemplo')} (se ignoran)` : ''].filter(Boolean).join(' · ');
+    const partes = [n('agregar') ? `${n('agregar')} para agregar` : '', n('cambiar') ? `${n('cambiar')} para cambiar` : '', n('eliminar') ? `${n('eliminar')} para eliminar` : ''].filter(Boolean).join(' · ') || 'nada para guardar';
+    let h = `<div class="card"><b>Esto entendí del Excel (${pl(todas.length, 'fila', 'filas')})</b><span class="meta">${esH(partes)}${malas ? ` · ${malas} con problema (no se guardan)` : ''}${omit ? ' · ' + esH(omit) : ''}. Revisa y toca «Guardar». Nada se guarda antes.</span></div>`;
+    h += `<div class="list">${act.map(x => {
+      const tono = x.errores.length ? ['Con problema', 's-peligro', 'aviso'] : x.tipo === 'agregar' ? ['Agregar', 's-disco', 'mas'] : x.tipo === 'eliminar' ? ['Eliminar', 's-peligro', 'aviso'] : ['Cambiar', 's-pend', 'lapiz'];
+      return `<div class="card persona-reg${x.errores.length ? ' pausada' : ''}"><span class="card-head"><span class="card-title">${esH(x.nombre || '(sin nombre)')}</span>${App.pill(tono[0], tono[1], tono[2])}</span>
+        <span class="meta">Fila ${x.fila}${x.id ? ' · ' + esH(x.id) : ' · artículo nuevo'}</span>
+        ${x.errores.map(e => `<span class="meta err-txt">${esH(e)}</span>`).join('')}${x.errores.length ? '' : x.cambios.map(c => `<span class="meta">${esH(c)}</span>`).join('')}${x.errores.length ? '' : x.avisos.map(c => `<span class="meta">${esH(c)}</span>`).join('')}</div>`;
+    }).join('')}</div>`;
+    return h + `<div class="row acciones-inv"><button class="btn primary" type="button" data-accion="exguardar"${buenas.length && !aplicandoEx ? '' : ' disabled'}>${window.ico('check')}Guardar ${pl(buenas.length, 'cambio', 'cambios')}</button><button class="btn ghost" type="button" data-accion="exdescartar">Descartar</button></div>`;
+  }
+
   /* ---------- eventos ---------- */
   $('invSecciones').addEventListener('click', e => {
     const b = e.target.closest('[data-sec]'); if (!b) return;
@@ -1090,7 +1313,7 @@
       entregar: () => s && entregar(s), noentregar: () => s && noEntregar(s), sinaut: () => registrarCompra(null, true),
       entrada: () => entradaSalida('entrada', a ? a.id : ''), salida: () => entradaSalida('salida', a ? a.id : ''),
       nuevoart: () => editarArticulo(null), editart: () => a && editarArticulo(a), verart: () => a && verArticulo(a), pedirmat: () => a && pedirMaterial(a.id),
-      conteo: () => conteo(), excel: () => descargarExcel(b), monto: () => cambiarMonto(), kardex: () => a && kardex(a), excelkardex: () => a && descargarKardex(b, a),
+      conteo: () => conteo(), excel: () => descargarExcel(b), bdexcel: () => descargarBase(b), exguardar: () => guardarExcelExistencias(), exdescartar: () => { previaEx = null; errorEx = ''; pintar(); }, monto: () => cambiarMonto(), kardex: () => a && kardex(a), excelkardex: () => a && descargarKardex(b, a),
       masLinea: () => masLinea(), quitarLinea: () => quitarLinea(b.dataset.n),
       ir: () => { seccion = b.dataset.sec; if (b.dataset.subk) sub[b.dataset.subk] = b.dataset.subv; A().S.filtro.inventario = b.dataset.filtro || ''; $('qInventario').value = ''; A().pintarTodo(); }
     };
@@ -1099,6 +1322,13 @@
     if (!fn || fn() === null) A().toast('Ese registro ya cambió. Revisa la lista otra vez.');
   }
   $('invContenido').addEventListener('click', alTocar);
+  $('invContenido').addEventListener('change', async e => {
+    const arch = e.target.closest('#invArchivo'); if (!arch || !esBodega()) return;
+    errorEx = '';
+    try { const filas = await leerExcelExistencias(arch.files && arch.files[0]); previaEx = filas ? { crudas: filas } : null; }
+    catch (er) { previaEx = null; errorEx = er && er.message === 'xlsx' ? 'No se pudo cargar el lector de Excel. Revisa la conexión y vuelve a intentar.' : (er && er.message) || 'No se pudo leer el archivo.'; }
+    pintar();
+  });
   $('acCampos').addEventListener('click', alTocar);
   $('acForm').addEventListener('submit', e => { e.preventDefault(); guardar(); });
   $('acSecundario').addEventListener('click', () => { if (accion && accion.alSecundario) accion.alSecundario(); });
