@@ -191,6 +191,54 @@ try {
   await t.page.fill('#qInventario', 'botas');
   log('Existencias: la búsqueda encuentra las 2 botas (se repinta 300 ms después de escribir)', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.art').length === 2));
   await t.page.fill('#qInventario', '');
+  // Código del artículo, clase ABC, tabla en pantalla ancha y «Te toca contar hoy» (Fase 13), con los datos de ejemplo todavía sin tocar
+  log('Existencias: las tarjetas dicen el código de los artículos que lo tienen («Cód. BOT040»)', await hasta(t.page, () => { const c = [...document.querySelectorAll('#invContenido .card.art')].find(x => /Botas de seguridad talla 40/.test(x.textContent)); return !!c && /Cód\. BOT040/.test(c.textContent); }));
+  log('en la pantalla angosta no sale el botón Tabla/Tarjetas, pero sí «Escanear código»', await hasta(t.page, () => !document.querySelector('#invContenido .vista-toggle') && !!document.querySelector('#invContenido [data-accion="escanear"]')));
+  await t.page.fill('#qInventario', 'bot042');
+  log('buscar por código: «bot042» encuentra solo las botas talla 42', await hasta(t.page, () => { const c = document.querySelectorAll('#invContenido .card.art'); return c.length === 1 && /talla 42/.test(c[0].textContent); }));
+  await t.page.fill('#qInventario', '7700000000013');
+  log('y un código de barras largo encuentra las resmas de papel', await hasta(t.page, () => { const c = document.querySelectorAll('#invContenido .card.art'); return c.length === 1 && /Resmas/.test(c[0].textContent); }));
+  await t.page.fill('#qInventario', '');
+  await t.page.click('#invSecciones [data-sec="conteo"]');
+  log('Conteo: «Te toca contar hoy (5)»: primero la clase A (botas 40), luego la B (chalecos) y las C que nunca se contaron o se pasaron de plazo', await hasta(t.page, () => {
+    const c = document.querySelector('#invContenido .cuadro-hoy'); if (!c || !/Te toca contar hoy \(5\)/.test(c.textContent)) return false;
+    const f = [...c.querySelectorAll('.hoy-lista li')].map(li => [li.querySelector('.abc').textContent, li.querySelector('.hoy-n').childNodes[0].textContent]);
+    return f.length === 5 && f[0].join() === 'A,Botas de seguridad talla 40' && f[1].join() === 'B,Chalecos reflectivos' && f.slice(2).every(x => x[0] === 'C') && f[2][1] === 'Tóner para impresora' && /nunca contado/.test(c.textContent) && /contado hace 45 días/.test(c.textContent); }), await texto(t.page, '#invContenido'));
+  log('la tarjeta trae un botón por bodega con cuántos le tocan («Contar en Riohacha (5)»)', await hasta(t.page, () => { const b = [...document.querySelectorAll('#invContenido .cuadro-hoy [data-accion="contarhoy"]')]; return b.length === 1 && /Contar en Riohacha \(5\)/.test(b[0].textContent); }));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '28-te-toca-contar.png'), fullPage: true });
+  // Tabla de existencias en pantalla ancha (1280 px)
+  await t.page.setViewportSize({ width: 1280, height: 860 });
+  await t.page.click('#invSecciones [data-sec="existencias"]');
+  log('a 1280 px sale el botón Tabla/Tarjetas, empieza en Tarjetas y no hay tabla', await hasta(t.page, () => !!document.querySelector('#invContenido .vista-toggle') && document.querySelector('#invContenido [data-accion="vista"][data-id="tarjetas"]').getAttribute('aria-pressed') === 'true' && !document.querySelector('#invContenido .tabla-inv')));
+  await t.page.click('#invContenido [data-accion="vista"][data-id="tabla"]');
+  log('al escoger «Tabla» sale la tabla con los 18 artículos, con código, bodega, mínimo, máximo, valor, clase ABC y estado', await hasta(t.page, () => { const th = [...document.querySelectorAll('#invContenido .tabla-inv thead th')].map(x => x.textContent.trim().replace(/[▲▼]/g, '').trim()); return document.querySelectorAll('#invContenido .tabla-inv tbody tr').length === 18 && ['Código', 'Artículo', 'Categoría', 'Bodega', 'Ubicación', 'Hay', 'Mín.', 'Máx.', 'Valor en bodega', 'ABC', 'Estado'].every((x, i) => th[i] === x); }));
+  log('la tabla ensancha la ventana (más de 900 px de ancho) y el encabezado queda fijo al bajar (sticky)', await t.page.evaluate(() => document.querySelector('#invContenido .tabla-inv-wrap').getBoundingClientRect().width > 900 && getComputedStyle(document.querySelector('#invContenido .tabla-inv thead th')).position === 'sticky'));
+  log('la elección se recuerda en este navegador (inv.vista = tabla)', await t.page.evaluate(() => localStorage.getItem('inv.vista') === 'tabla'));
+  log('la clase ABC: 2 A, 3 B y 13 C, y las A son las botas 40 y las resmas (lo que más valor sacó en 90 días)', await hasta(t.page, () => { const f = [...document.querySelectorAll('#invContenido .tabla-inv tbody tr')], por = k => f.filter(r => r.querySelector('.abc') && r.querySelector('.abc').textContent === k); return por('A').length === 2 && por('B').length === 3 && por('C').length === 13 && por('A').every(r => /Botas de seguridad talla 40|Resmas de papel/.test(r.textContent)); }));
+  const colTabla = (k, num) => t.page.evaluate(([i, n]) => [...document.querySelectorAll('#invContenido .tabla-inv tbody tr')].map(r => { const x = r.children[i].textContent.trim(); return n ? Number(x.replace(/\D/g, '')) : x; }), [k, num]);
+  await t.page.click('#invContenido .th-orden[data-id="cantidad"]');
+  const asc = await colTabla(5, true);
+  log('ordenar por «Hay»: de menor a mayor (el encabezado lo dice con aria-sort y una flecha)', asc.length === 18 && asc.every((v, i) => i === 0 || asc[i - 1] <= v) && await t.page.evaluate(() => document.querySelector('#invContenido .tabla-inv th[aria-sort="ascending"]') !== null && /▲/.test(document.querySelector('#invContenido .tabla-inv th[aria-sort="ascending"]').textContent)), JSON.stringify(asc));
+  await t.page.click('#invContenido .th-orden[data-id="cantidad"]');
+  const desc = await colTabla(5, true);
+  log('tocar otra vez el mismo encabezado lo ordena de mayor a menor', desc.every((v, i) => i === 0 || desc[i - 1] >= v) && desc[0] === Math.max(...asc), JSON.stringify(desc));
+  await t.page.click('#invContenido .th-orden[data-id="valor"]'); await t.page.click('#invContenido .th-orden[data-id="valor"]');
+  const vals = await colTabla(8, true);
+  log('ordenar por «Valor en bodega» de mayor a menor', vals.every((v, i) => i === 0 || vals[i - 1] >= v), JSON.stringify(vals));
+  await t.page.click('#invContenido .th-orden[data-id="nombre"]');
+  const nom = await colTabla(1, false);
+  log('ordenar por «Artículo»: de la A a la Z', nom.every((v, i) => i === 0 || nom[i - 1].localeCompare(v, 'es', { numeric: true }) <= 0), JSON.stringify(nom));
+  log('el pie de la tabla suma el valor de lo que se ve (hay × precio de cada artículo, recalculado aparte)', await hasta(t.page, () => { const d = window.App.S.datos.articulos, total = d.reduce((s, a) => s + (Number(a.cantidad) || 0) * (Number(a.costo) || 0), 0); return document.querySelector('#invContenido .tabla-inv tfoot .num').textContent.trim() === window.App.cop(total) && /Total de 18 artículos/.test(document.querySelector('#invContenido .tabla-inv tfoot').textContent); }));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '29-existencias-tabla-1280.png'), fullPage: true });
+  await t.page.fill('#qInventario', 'botas');
+  log('en la tabla también funciona el buscador (escribir «botas» deja 2 filas)', await hasta(t.page, () => document.querySelectorAll('#invContenido .tabla-inv tbody tr').length === 2));
+  await t.page.fill('#qInventario', '');
+  await t.page.click('#invContenido .tabla-inv tbody tr:first-child .fila-nombre'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  log('tocar un artículo de la tabla abre su hoja, con el código, la clase ABC y el último conteo', await hasta(t.page, () => { const x = document.getElementById('acCampos').textContent; return /Clase ABC/.test(x) && /Último conteo/.test(x); }), await texto(t.page, '#acCampos'));
+  await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shAccion').hidden);
+  await t.page.setViewportSize({ width: 412, height: 860 });
+  log('al achicar la ventana a 412 px la tabla se vuelve tarjetas y desaparece el botón Tabla/Tarjetas', await hasta(t.page, () => !document.querySelector('#invContenido .tabla-inv') && !document.querySelector('#invContenido .vista-toggle') && document.querySelectorAll('#invContenido .card.art').length === 18));
+  await t.page.evaluate(() => localStorage.removeItem('inv.vista'));
   for (const [sec, re] of [['movimientos', /Registró/], ['solicitudes', /En espera/], ['compras', /En curso/], ['conteo', /conteo/i], ['resumen', /Cómo van las compras[\s\S]*Valor de lo que hay en bodega/]]) {
     await t.page.click(`#invSecciones [data-sec="${sec}"]`);
     log(`Inventario: la parte «${sec}» funciona`, await hasta(t.page, r => new RegExp(r).test(document.getElementById('invContenido').textContent), re.source), (await texto(t.page, '#invContenido')).slice(0, 200));
@@ -677,6 +725,7 @@ try {
   await t.page.fill('#acMotivo', 'Se usaron en la reunión'); await t.page.click('#acPrimario');
   log('el conteo ajusta la cantidad y deja el ajuste con lo que había al revisar', await hasta(t.page, x => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.articulos['ar-017'].cantidad === x && Object.values(d.movimientos).some(m => m.tipo === 'ajuste' && m.motivo === 'conteo' && m.articuloId === 'ar-017' && m.cantidad === -7 && m.saldo === x); }, vasos0 - 2));
   log('al guardar el conteo se borra el borrador del teléfono', await t.page.evaluate(() => localStorage.getItem('conteo.Bogotá') === null));
+  log('el artículo contado con diferencia también queda con la fecha de hoy como su último conteo', await hasta(t.page, () => window.App.S.datos.articulos.find(a => a.id === 'ar-017').ultimoConteo === window.App.hoyISO()));
   // Artículo nuevo
   await t.page.click('#invSecciones [data-sec="existencias"]');
   await t.page.click('#invContenido [data-accion="nuevoart"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
@@ -1776,6 +1825,68 @@ try {
   log('cambia a Carolina Castillo (Jefe) otra vez', await cambiar(t.page, 'jefe'));
   await t.page.click('.tab[data-vista="equipos"]'); await t.page.click('#eqSecciones [data-sec="resumen"]');
   log('Resumen: ahora quedan 2 sin verificar hace más de 6 meses (el DEMO-0012 y el DEMO-0100 recién registrado) y el Resumen cuenta 3 de baja', await hasta(t.page, () => { const x = document.getElementById('eqContenido').textContent; return /Sin verificar hace más de 6 meses \(2\)/.test(x) && /3 de baja \(fuera de la cifra\)/.test(x); }), await txtEq());
+
+  console.log('6c. Inventario: escáner de códigos, código del artículo y conteo de lo que toca hoy (Fase 13)');
+  const hoy13 = await t.page.evaluate(() => window.App.hoyISO());
+  const errAc = re => hasta(t.page, r => !document.getElementById('acErr').hidden && new RegExp(r).test(document.getElementById('acErr').textContent), re.source);
+  await t.page.click('.tab[data-vista="inventario"]'); await t.page.click('#invSecciones [data-sec="existencias"]'); await t.page.fill('#qInventario', '');
+  await t.page.evaluate(async () => { await window.UI.cargarScript('codigos.js?v=1'); });
+  const fingirCod = c => t.page.evaluate(s => { window.Codigos.leer = async () => s; }, c);
+  await fingirCod('bot-042');
+  await t.page.click('#invContenido [data-accion="escanear"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  log('escanear un código que existe (aunque venga en minúscula y con guion) abre la hoja de ese artículo', await hasta(t.page, () => /Botas de seguridad talla 42/.test(document.getElementById('acT').textContent)));
+  await t.page.click('#acCerrar'); await hasta(t.page, () => document.getElementById('shAccion').hidden);
+  await fingirCod('ZZZ999');
+  await t.page.click('#invContenido [data-accion="escanear"]');
+  log('escanear un código que no existe lo dice y lo deja escrito en el buscador', await hasta(t.page, () => /No hay un artículo con el código ZZZ999/.test(document.getElementById('toast').textContent) && document.getElementById('qInventario').value === 'ZZZ999'));
+  await t.page.fill('#qInventario', '');
+  await t.page.evaluate(() => window.nube.lote([['mezclar', 'articulos', 'ar-017', { codigo: 'BOT042' }]]));
+  await fingirCod('BOT042');
+  await t.page.click('#invContenido [data-accion="escanear"]');
+  log('si dos bodegas tienen el mismo código, lo dice y deja las dos en el buscador para escoger', await hasta(t.page, () => /Hay 2 artículos con el código BOT042/.test(document.getElementById('toast').textContent) && document.getElementById('qInventario').value === 'BOT042' && document.querySelectorAll('#invContenido .card.art').length === 2));
+  await t.page.evaluate(() => window.nube.lote([['mezclar', 'articulos', 'ar-017', { codigo: '' }]]));
+  await t.page.fill('#qInventario', '');
+  await t.page.click('#invContenido .card.art[data-id="ar-012"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  await t.page.click('#acCampos [data-accion="editart"]'); await hasta(t.page, () => !!document.getElementById('acCodigo'));
+  log('«Editar artículo» trae el campo del código con su botón de escanear y el código que ya tiene (TON001)', await hasta(t.page, () => document.getElementById('acCodigo').value === 'TON001' && !!document.querySelector('#acCampos [data-accion="escancodigo"]')));
+  await t.page.fill('#acCodigo', 'TON 001'); await t.page.click('#acPrimario');
+  log('un código con espacio no deja guardar', await errAc(/de 3 a 30 letras o números, sin espacios ni guiones/));
+  await t.page.fill('#acCodigo', 'bot040'); await t.page.click('#acPrimario');
+  log('un código que ya tiene otro artículo de la misma bodega no deja guardar, y dice cuál', await errAc(/Ese código ya lo tiene «Botas de seguridad talla 40» en la bodega de Riohacha/));
+  await fingirCod('7-70-123'); await t.page.click('#acCampos [data-accion="escancodigo"]');
+  log('el botón de escanear del formulario escribe el código limpio (sin guiones) en el campo', await hasta(t.page, () => document.getElementById('acCodigo').value === '770123'));
+  await t.page.click('#acPrimario');
+  log('guarda el código nuevo y el artículo se encuentra con él', await hasta(t.page, () => document.getElementById('shAccion').hidden && window.App.S.datos.articulos.find(a => a.id === 'ar-012').codigo === '770123'));
+  // «Te toca contar hoy»: contar solo esos artículos
+  await t.page.evaluate(() => localStorage.setItem('conteo.Riohacha', JSON.stringify({ vals: { 'ar-009': '12' }, en: new Date().toISOString() })));
+  await t.page.click('#invSecciones [data-sec="conteo"]');
+  const nBtn = await t.page.evaluate(() => { const b = document.querySelector('#invContenido .cuadro-hoy [data-accion="contarhoy"]'); const m = b && /\((\d+)\)/.exec(b.textContent); return m ? Number(m[1]) : 0; });
+  log('Conteo: hay artículos que tocan hoy y el botón dice cuántos', nBtn >= 1, String(nBtn));
+  const movs0 = Object.keys((await dat()).movimientos).length, avisos0 = Object.values((await dat()).avisos).filter(a => a.titulo === 'Conteo con diferencias').length;
+  await t.page.click('#invContenido .cuadro-hoy [data-accion="contarhoy"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  log('«Contar en …» abre el conteo solo con esos artículos, con «los de hoy» en el título', await hasta(t.page, n => /los de hoy/.test(document.getElementById('acT').textContent) && document.querySelectorAll('#acCampos input[data-art]').length === n, nBtn));
+  const ids13 = await t.page.evaluate(() => [...document.querySelectorAll('#acCampos input[data-art]')].map(i => i.dataset.art)), dd13 = (await dat()).articulos;
+  for (const id of ids13) await t.page.fill('#cn-' + id, String(dd13[id].cantidad));
+  log('lo escrito se suma al borrador de la bodega sin borrar lo que ya había de otros artículos (ar-009 sigue en 12)', await t.page.evaluate(n => { const j = JSON.parse(localStorage.getItem('conteo.Riohacha') || 'null'); return !!j && j.vals['ar-009'] === '12' && Object.keys(j.vals).length === n + 1; }, ids13.length));
+  await t.page.click('#acPrimario');
+  log('«Revisar» dice que todo cuadra con la app', await hasta(t.page, n => new RegExp(`Contaste ${n} (artículo|artículos): todo cuadra con la app`).test(document.getElementById('acSub').textContent), ids13.length), await texto(t.page, '#acSub'));
+  await t.page.click('#acPrimario');
+  log('al guardar un conteo que cuadra: queda la fecha de hoy como último conteo de cada uno, sin tocar cantidades ni crear movimientos ni avisos', await hasta(t.page, () => document.getElementById('shAccion').hidden) && await (async () => { const d = await dat(); return ids13.every(id => d.articulos[id].ultimoConteo === hoy13 && d.articulos[id].cantidad === dd13[id].cantidad) && Object.keys(d.movimientos).length === movs0 && Object.values(d.avisos).filter(a => a.titulo === 'Conteo con diferencias').length === avisos0; })());
+  log('lo contado sale de «Te toca contar hoy» y el borrador conserva solo lo de ar-009', await hasta(t.page, ([ids, nombres]) => { const c = document.querySelector('#invContenido .cuadro-hoy'); return !!c && nombres.every(n => !c.textContent.includes(n)); }, [ids13, ids13.map(id => dd13[id].nombre)]) && await t.page.evaluate(() => { const j = JSON.parse(localStorage.getItem('conteo.Riohacha') || 'null'); return !!j && Object.keys(j.vals).join() === 'ar-009'; }));
+  await t.page.evaluate(() => localStorage.removeItem('conteo.Riohacha'));
+  // Quien solo pide material: sin clase ABC (sale de los movimientos, que no ve)
+  log('cambia a Pedro (Logística, solo pide material)', await cambiar(t.page, 'logistica'));
+  await t.page.click('.tab[data-vista="inventario"]'); await t.page.click('#invSecciones [data-sec="existencias"]');
+  await t.page.click('#invContenido .card.art'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  log('quien solo pide ve el código del artículo pero no su clase ABC', await hasta(t.page, () => { const x = document.getElementById('acCampos').textContent; return !/Clase ABC/.test(x) && /Último conteo/.test(x); }), await texto(t.page, '#acCampos'));
+  await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shAccion').hidden);
+  await t.page.setViewportSize({ width: 1280, height: 860 });
+  await t.page.evaluate(() => localStorage.setItem('inv.vista', 'tabla'));
+  await t.page.click('#invSecciones [data-sec="solicitudes"]'); await t.page.click('#invSecciones [data-sec="existencias"]');
+  log('y su tabla de existencias no trae la columna ABC', await hasta(t.page, () => { const th = [...document.querySelectorAll('#invContenido .tabla-inv thead th')].map(x => x.textContent.trim()); return th.length === 10 && !th.some(x => /^ABC/.test(x)); }));
+  await t.page.setViewportSize({ width: 412, height: 860 });
+  await t.page.evaluate(() => localStorage.removeItem('inv.vista'));
+  log('cambia a Carolina Castillo (Jefe) otra vez', await cambiar(t.page, 'jefe'));
 
   console.log('6. Seguridad y errores');
   await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); d.compras['co-002'].que = '<img src=x onerror="window.__hackeado=1">Prueba'; d.articulos['ar-011'].nombre = '<img src=x onerror="window.__hackeado=2">Mouse'; d.solicitudes[Object.keys(d.solicitudes)[0]].paraQue = '<script>window.__hackeado=3</script>'; d.compras['co-xss'] = { que: 'Compra con texto malo', cantidad: 3, unidad: 'artículos', categoria: 'Otro', valorAprox: 6000, paraQue: '<b onmouseover="window.__hackeado=6">x</b>', pide: 'Carolina Castillo', pideRol: 'jefe', autoriza: 'Oscar Muñoz', autorizaJefe: '', estado: 'comprado', proveedor: '<svg onload="window.__hackeado=7">', valorReal: 6000, fechaPedido: '2026-11-01', fechaCompra: '2026-11-02', entregadoA: '', motivoRechazo: '', articuloId: '', factura: '', revisada: false, historial: [],

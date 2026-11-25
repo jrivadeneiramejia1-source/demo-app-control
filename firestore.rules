@@ -420,14 +420,17 @@ service cloud.firestore {
     // Las 3 bodegas de la empresa (deben coincidir con personas.js): todo artículo nace en una de ellas y no cambia de bodega
     // (para moverlo se hace un traslado: sale de una y entra a la otra, cada una con su movimiento).
     function bodegaOk() { return nuevo().get('bodega', '') in ['Riohacha', 'Guamal', 'Bogotá']; }
+    // Código del artículo (opcional, en mayúsculas: 3 a 30 letras o números) y fecha de su último conteo (opcional).
+    function codigoArtOk() { let c = nuevo().get('codigo', ''); return c is string && (c == '' || c.matches('^[A-Z0-9]{3,30}$')); }
+    function conteoArtOk() { let f = nuevo().get('ultimoConteo', ''); return f is string && (f == '' || esFecha(f)); }
     match /articulos/{id} {
       allow read: if veInventario();
       // La cantidad nunca queda negativa (si dos personas sacan al tiempo lo último, la segunda recibe un error).
       allow create: if (esJefe() && esPrueba() && bodegaOk())
-        || (esBodega() && bodegaOk() && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == 0 || movOk(id, 0)));
+        || (esBodega() && bodegaOk() && codigoArtOk() && conteoArtOk() && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == 0 || movOk(id, 0)));
       allow update: if (esJefe() && esPrueba())
-        || (esBodega() && soloCambia(['cantidad', 'ultimoMov', 'nombre', 'categoria', 'unidad', 'minimo', 'maximo', 'ubicacion', 'costo', 'proveedor'])
-            && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == antes().cantidad || movOk(id, antes().cantidad)));
+        || (esBodega() && soloCambia(['cantidad', 'ultimoMov', 'nombre', 'categoria', 'unidad', 'minimo', 'maximo', 'ubicacion', 'costo', 'proveedor', 'codigo', 'ultimoConteo'])
+            && codigoArtOk() && conteoArtOk() && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == antes().cantidad || movOk(id, antes().cantidad)));
       allow delete: if esJefe();
     }
     match /movimientos/{id} {

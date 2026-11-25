@@ -907,6 +907,50 @@ await prueba('Baja: un lote de 100 equipos dados de baja por una cuenta propia d
   const jef = await cuenta('bjJef6', 'jefe');
   await assertSucceeds(lote(jef, b => { for (let i = 0; i < 100; i++) b.update(doc(jef, 'equipos', 'eq-bl' + i), { estado: 'baja', bajaPedida: BP(), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }); })); });
 
+console.log('Fase 13: código del artículo y fecha del último conteo');
+await limpiar();
+const AR13 = extra => Object.assign({ nombre: 'Guantes', categoria: 'EPP', unidad: 'pares', cantidad: 0, minimo: 2, maximo: 10, ubicacion: 'Estante A1', costo: 12000, proveedor: 'Ferretería', bodega: 'Riohacha' }, extra);
+await prueba('Código: Bodega crea un artículo con código de 3 a 30 letras o números en mayúscula, o sin código', async () => {
+  const bod = await cuenta('cdBod', 'asistente');
+  await assertSucceeds(setDoc(doc(bod, 'articulos', 'ar-cd1'), AR13({ codigo: 'BOT042' })));
+  await assertSucceeds(setDoc(doc(bod, 'articulos', 'ar-cd2'), AR13({ codigo: 'ABC' })));
+  await assertSucceeds(setDoc(doc(bod, 'articulos', 'ar-cd3'), AR13({ codigo: '7'.repeat(30) })));
+  await assertSucceeds(setDoc(doc(bod, 'articulos', 'ar-cd4'), AR13({ codigo: '' })));
+  await assertSucceeds(setDoc(doc(bod, 'articulos', 'ar-cd5'), AR13())); });
+await prueba('Código: en minúscula, con guion, con espacio, muy corto, muy largo o que no es texto, no pasa', async () => {
+  const bod = await cuenta('cdBod2', 'asistente');
+  for (const [i, c] of [['a', 'bot042'], ['b', 'BOT-042'], ['c', 'BOT 042'], ['d', 'AB'], ['e', '7'.repeat(31)], ['f', 12345], ['g', 'ÑANDÚ1']]) await assertFails(setDoc(doc(bod, 'articulos', 'ar-cx' + i), AR13({ codigo: c }))); });
+await prueba('Código y último conteo: Bodega los pone y los cambia en un artículo que ya existe (sin tocar la cantidad)', async () => {
+  await sembrar(d => setDoc(doc(d, 'articulos', 'ar-cd6'), AR13({ cantidad: 5 })));
+  const bod = await cuenta('cdBod3', 'asistente');
+  await assertSucceeds(updateDoc(doc(bod, 'articulos', 'ar-cd6'), { codigo: 'GUA001' }));
+  await assertSucceeds(updateDoc(doc(bod, 'articulos', 'ar-cd6'), { ultimoConteo: '2026-11-25' }));
+  await assertSucceeds(updateDoc(doc(bod, 'articulos', 'ar-cd6'), { codigo: '', ultimoConteo: '' })); });
+await prueba('Código y último conteo: con formato malo no pasan (código con guion, fecha «ayer» o con otro formato, fecha que no es texto)', async () => {
+  await sembrar(d => setDoc(doc(d, 'articulos', 'ar-cd7'), AR13({ cantidad: 5 })));
+  const bod = await cuenta('cdBod4', 'asistente');
+  await assertFails(updateDoc(doc(bod, 'articulos', 'ar-cd7'), { codigo: 'GUA-001' }));
+  await assertFails(updateDoc(doc(bod, 'articulos', 'ar-cd7'), { ultimoConteo: 'ayer' }));
+  await assertFails(updateDoc(doc(bod, 'articulos', 'ar-cd7'), { ultimoConteo: '25/11/2026' }));
+  await assertFails(updateDoc(doc(bod, 'articulos', 'ar-cd7'), { ultimoConteo: 20261125 })); });
+await prueba('Código y último conteo: quien no maneja la bodega (Conductor, Colaborador, Gerente, Consulta) no los cambia', async () => {
+  await sembrar(d => setDoc(doc(d, 'articulos', 'ar-cd8'), AR13({ cantidad: 5 })));
+  for (const [uid, rol] of [['cdCon', 'conductor'], ['cdCol', 'colaborador'], ['cdGer', 'gerente'], ['cdCons', 'consulta']]) { const db = await cuenta(uid, rol);
+    await assertFails(updateDoc(doc(db, 'articulos', 'ar-cd8'), { codigo: 'HACK01' }));
+    await assertFails(updateDoc(doc(db, 'articulos', 'ar-cd8'), { ultimoConteo: '2026-11-25' })); } });
+await prueba('Conteo con diferencia: la cantidad cambia junto con su movimiento y la fecha del último conteo; sin el movimiento no pasa', async () => {
+  await sembrar(d => setDoc(doc(d, 'articulos', 'ar-cd9'), AR13({ cantidad: 5 })));
+  const bod = await cuenta('cdBod5', 'asistente');
+  await assertFails(updateDoc(doc(bod, 'articulos', 'ar-cd9'), { cantidad: 3, ultimoConteo: '2026-11-25' }));
+  await assertSucceeds(lote(bod, b => { b.update(doc(bod, 'articulos', 'ar-cd9'), { cantidad: 3, ultimoMov: 'mo-cd9', ultimoConteo: '2026-11-25' });
+    b.set(doc(bod, 'movimientos', 'mo-cd9'), movDe({ articuloId: 'ar-cd9', tipo: 'ajuste', motivo: 'conteo', cantidad: -2, saldo: 3 })); })); });
+await prueba('Conteo: un lote de 100 artículos que cuadran (solo la fecha del conteo) de una cuenta propia de Bodega cabe en el límite de las reglas', async () => {
+  await sembrar(async d => { for (let i = 0; i < 100; i++) await setDoc(doc(d, 'articulos', 'ar-lc' + i), AR13({ nombre: 'Art ' + i, cantidad: 4 })); });
+  const bod = await cuenta('cdBod6', 'asistente');
+  await assertSucceeds(lote(bod, b => { for (let i = 0; i < 100; i++) b.set(doc(bod, 'articulos', 'ar-lc' + i), { ultimoConteo: '2026-11-25' }, { merge: true }); })); });
+await prueba('Código: la Jefe de prueba carga los datos de ejemplo con códigos sin pasar por las revisiones', async () => {
+  await assertSucceeds(setDoc(doc(prueba_('jefe'), 'articulos', 'ar-ej9'), AR13({ cantidad: 4, codigo: '7700000000013', ultimoConteo: '2026-10-11' }))); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

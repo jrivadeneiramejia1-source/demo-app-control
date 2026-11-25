@@ -381,3 +381,37 @@ button.card .card-title { text-align: left; }
 .seg label:has(input:focus-visible) { outline: 3px solid var(--accent); outline-offset: 2px; }
 .aviso.peligro { color: var(--danger); background: var(--danger-bg); }
 .rev-res { display: block; }
+
+/* ---------- Existencias: tabla (≥ 900 px), código del artículo, clase ABC y «Te toca contar hoy» ---------- */
+.barra-vista { align-items: center; justify-content: space-between; }
+.vista-toggle { display: inline-grid; grid-auto-flow: column; background: var(--surface-2); border-radius: 12px; padding: 3px; gap: 3px; }
+.vista-toggle button { border: 0; background: transparent; min-height: 36px; padding: 0 14px; border-radius: 9px; font: inherit; font-weight: 700; font-size: .86rem; color: var(--muted); cursor: pointer; }
+.vista-toggle button[aria-pressed="true"] { background: var(--surface); color: var(--fg); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+/* Con la tabla, la ventana de Inventario se ensancha (el resto de la app sigue en su columna). Sin :has() la tabla se desplaza de lado. */
+main:has(> #vInventario.ancha:not([hidden])) { max-width: min(1240px, 100%); }
+.tabla-inv-wrap { max-height: 72vh; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-card); background: var(--surface); overscroll-behavior: contain; }
+.tabla-inv { border-collapse: separate; border-spacing: 0; width: 100%; font-size: .88rem; }
+.tabla-inv th, .tabla-inv td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: middle; white-space: nowrap; }
+.tabla-inv thead th { position: sticky; top: 0; z-index: 2; background: var(--surface-2); padding: 0; }
+.tabla-inv th.num, .tabla-inv td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tabla-inv td small { color: var(--muted); }
+.tabla-inv td.mono { font-family: var(--f-mono); font-size: .82rem; color: var(--muted); }
+.tabla-inv tbody tr { cursor: pointer; }
+.tabla-inv tbody tr.fila-agotado td:first-child { box-shadow: inset 4px 0 0 var(--danger); }
+.tabla-inv tbody tr.fila-bajo td:first-child { box-shadow: inset 4px 0 0 var(--sol); }
+@media (hover: hover) { .tabla-inv tbody tr:hover td { background: var(--surface-2); } }
+.tabla-inv tfoot th, .tabla-inv tfoot td { position: sticky; bottom: 0; background: var(--surface-2); border-bottom: 0; border-top: 1px solid var(--line-2); font-weight: 700; }
+.th-orden { display: flex; width: 100%; align-items: center; justify-content: inherit; gap: 2px; border: 0; background: transparent; font: inherit; font-size: .72rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding: 11px 10px; cursor: pointer; white-space: nowrap; }
+.tabla-inv th.num .th-orden { justify-content: flex-end; }
+.th-orden:hover, th[aria-sort="ascending"] .th-orden, th[aria-sort="descending"] .th-orden { color: var(--fg); }
+.fila-nombre { border: 0; background: transparent; padding: 0; font: inherit; font-weight: 700; color: var(--accent-txt, var(--accent)); text-align: left; cursor: pointer; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 3px; }
+.fila-nombre:hover, .fila-nombre:focus-visible { text-decoration-color: currentColor; }
+.abc { display: inline-grid; place-items: center; width: 1.7em; height: 1.7em; border-radius: 50%; font-size: .78rem; font-weight: 800; flex: none; }
+.abc-A { background: var(--accent); color: var(--accent-ink); }
+.abc-B { background: var(--accent-soft); color: var(--accent-txt, var(--accent)); }
+.abc-C { background: var(--surface-2); color: var(--muted); }
+.cuadro-hoy { display: grid; gap: 8px; }
+.hoy-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.hoy-lista li { display: flex; gap: 10px; align-items: center; }
+.hoy-n { display: grid; min-width: 0; font-weight: 700; }
+.hoy-n .meta { font-weight: 400; }

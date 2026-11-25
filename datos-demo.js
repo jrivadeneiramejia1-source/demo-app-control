@@ -235,6 +235,15 @@
       'ar-018': articulo('Linterna recargable', 'Herramientas', 'unidades', 5, 2, 8, 'Estante E1', 38000, 'Ferretería El Faro', 'Bogotá')
     };
 
+    // Códigos de ejemplo (inventados; algunos artículos no tienen, porque es opcional) y fecha del último conteo (días atrás).
+    // Con eso la tarjeta «Te toca contar hoy» muestra algunos artículos al día y otros que ya les toca.
+    const CODIGOS = { 'ar-001': 'BOT040', 'ar-002': 'BOT042', 'ar-003': 'CHA001', 'ar-004': 'GUA001', 'ar-005': 'CAS001', 'ar-006': 'TAP001', 'ar-007': 'EXT005', 'ar-008': 'MUL006', 'ar-009': 'CIN001',
+      'ar-010': 'HDM002', 'ar-011': 'MOU001', 'ar-012': 'TON001', 'ar-013': '7700000000013' };
+    Object.entries(CODIGOS).forEach(([id, c]) => { articulos[id].codigo = c; });
+    const CONTEOS = { 'ar-001': -45, 'ar-002': -200, 'ar-003': -100, 'ar-004': -20, 'ar-005': -3, 'ar-006': -30, 'ar-007': -30, 'ar-008': -30, 'ar-009': -30, 'ar-010': -190, 'ar-011': -30,
+      'ar-013': -10, 'ar-014': -60, 'ar-015': -30, 'ar-016': -30, 'ar-017': -30, 'ar-018': -30 };
+    Object.entries(CONTEOS).forEach(([id, n]) => { articulos[id].ultimoConteo = dias(n); });
+
     // ---------- MOVIMIENTOS DE BODEGA ----------
     // El saldo de cada movimiento es la cantidad del artículo justo después de registrarlo.
     function mov(articuloId, tipo, motivo, cantidad, saldo, persona, proyecto, fecha, nota, extra) {
@@ -430,5 +439,5 @@
     return { equipos, hojas, tareasEq, compras, vehiculos, novedades, entregas, tanqueos, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 15, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 16, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();
