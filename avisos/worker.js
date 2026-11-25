@@ -29,9 +29,9 @@ const ORIGEN_LOCAL = /^http:\/\/(127\.0\.0\.1|localhost):\d{1,5}$/;
 // Servicios de notificaciones conocidos (Chrome/Android, Firefox, Safari/iPhone, Edge). Evita que el Worker sirva para llamar a cualquier sitio.
 const SERVICIOS_PUSH = /^https:\/\/(fcm\.googleapis\.com|android\.googleapis\.com|([a-z0-9-]+\.)*push\.services\.mozilla\.com|([a-z0-9-]+\.)*push\.apple\.com|([a-z0-9-]+\.)*notify\.windows\.com)\//;
 const LLAVES_GOOGLE = 'https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com';
-const ROLES = ['gerente', 'jefe', 'equipos', 'soporte', 'compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional', 'administrativo', 'colaborador', 'financiero', 'consulta'];
+const ROLES = ['gerente', 'jefe', 'equipos', 'soporte', 'compras', 'coordcompras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional', 'administrativo', 'colaborador', 'financiero', 'consulta'];
 // Igual que las reglas de Firebase: «rol.nombre.apellido@example.com» es una persona de prueba y el rol es lo primero.
-const PRUEBA = /^(gerente|jefe|equipos|soporte|compras|asistente|carros|conductor|logistica|profesional|administrativo|colaborador|financiero|consulta)[.][a-z.]+@example[.]com$/;
+const PRUEBA = /^(gerente|jefe|equipos|soporte|compras|coordcompras|asistente|carros|conductor|logistica|profesional|administrativo|colaborador|financiero|consulta)[.][a-z.]+@example[.]com$/;
 const EXTRAS = ['compra', 'actas', 'encargada'];
 const MAX_DESTINOS = 25, MAX_TELEFONOS = 5, DIAS_VIGENTE = 60, MAX_CUERPO = 16 * 1024, MAX_TITULO = 80, MAX_TEXTO = 300, MAX_URL = 300, MAX_ETIQUETA = 80;
 const MAX_POR_MINUTO = 20, MAX_POR_DIA = 300;

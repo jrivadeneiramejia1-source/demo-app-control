@@ -140,8 +140,8 @@
 
     // ---------- COMPRAS ----------
     // Rol de quien pide (sirve para que nadie autorice su propio pedido). Mismos nombres de personas.js.
-    // Autoriza la Jefe (Carolina); lo que pide Carolina lo autoriza el Gerente (Oscar M.). Compra Mauricio y recibe Andrés.
-    const ROL_DE = { 'Oscar Muñoz': 'gerente', 'Carolina Castillo': 'jefe', 'Mauricio Giraldo': 'compras', 'Wilson Muñoz': 'carros', 'Oscar Farfán': 'conductor', 'Andrés Beltrán': 'asistente' };
+    // Autoriza la Coordinadora de compras (Mauricio G.); lo que pide ella y lo que vale más de 5 millones lo autoriza el Gerente general (Oscar M.). Compra Fredy y recibe Andrés.
+    const ROL_DE = { 'Oscar Muñoz': 'gerente', 'Carolina Castillo': 'jefe', 'Mauricio Giraldo': 'coordcompras', 'Fredy Torres': 'compras', 'Ángel Ortiz': 'soporte', 'Wilson Muñoz': 'carros', 'Oscar Farfán': 'conductor', 'Andrés Beltrán': 'asistente' };
     function compra(que, cantidad, unidad, categoria, valorAprox, paraQue, pide, autoriza, estado, extra) {
       return Object.assign({
         que, cantidad, unidad, categoria, valorAprox, paraQue, pide, pideRol: ROL_DE[pide] || '', autoriza, estado,
@@ -154,22 +154,25 @@
       'co-002': compra('Mouse inalámbrico', 6, 'unidades', 'Accesorios', 180000, 'Para los portátiles de campo',
         'Carolina Castillo', '', 'pedido', { fechaPedido: dias(0), articuloId: 'ar-011' }),
       'co-003': compra('Resmas de papel carta', 8, 'resmas', 'Papelería', 224000, 'Para imprimir listas de asistencia',
-        'Andrés Beltrán', 'Carolina Castillo', 'autorizado', { fechaPedido: dias(-4), articuloId: 'ar-013' }),
+        'Andrés Beltrán', 'Mauricio Giraldo', 'autorizado', { fechaPedido: dias(-4), articuloId: 'ar-013' }),
       'co-004': compra('Cámara web con micrófono', 2, 'unidades', 'Cómputo', 390000, 'Para reuniones con equipos remotos',
-        'Carolina Castillo', 'Oscar Muñoz', 'rechazado',
+        'Mauricio Giraldo', 'Oscar Muñoz', 'rechazado',
         { fechaPedido: dias(-9), motivoRechazo: 'Ya hay cámaras en bodega, usa esas primero' }),
       'co-005': compra('Cables HDMI y adaptadores', 5, 'unidades', 'Accesorios', 140000, 'Para el proyector de las reuniones',
-        'Andrés Beltrán', 'Carolina Castillo', 'comprado',
+        'Andrés Beltrán', 'Mauricio Giraldo', 'comprado',
         { fechaPedido: dias(-12), proveedor: 'Ferretería El Faro', valorReal: 152000, fechaCompra: dias(-8), articuloId: 'ar-010' }),
       'co-006': compra('Memorias USB de 64 GB', 10, 'unidades', 'Cómputo', 320000, 'Para entregar copias a los líderes',
-        'Carolina Castillo', 'Oscar Muñoz', 'comprado',
+        'Mauricio Giraldo', 'Oscar Muñoz', 'comprado',
         { fechaPedido: dias(-7), proveedor: 'Papelería Central', valorReal: 305000, fechaCompra: dias(-3) }),
       'co-007': compra('Chalecos reflectivos', 12, 'unidades', 'EPP', 420000, 'Para la cuadrilla de campo',
-        'Andrés Beltrán', 'Carolina Castillo', 'recibido',
+        'Andrés Beltrán', 'Mauricio Giraldo', 'recibido',
         { fechaPedido: dias(-25), proveedor: 'Ferretería El Faro', valorReal: 438000, fechaCompra: dias(-20), entregadoA: 'Jorge Ibarra', articuloId: 'ar-003' }),
       'co-008': compra('Garrafones de agua', 6, 'unidades', 'Refrigerios', 90000, 'Para la reunión de la semana pasada',
         'Un compañero (sin identificar)', '', 'sin-autorizar',
-        { fechaPedido: dias(-5), proveedor: 'Distribuidora Agua Clara', valorReal: 96000, fechaCompra: dias(-5) })
+        { fechaPedido: dias(-5), proveedor: 'Distribuidora Agua Clara', valorReal: 96000, fechaCompra: dias(-5) }),
+      // Vale más de 5 millones: la Coordinadora ya la autorizó y falta el Gerente general.
+      'co-009': compra('Portátiles para el equipo de campo', 2, 'unidades', 'Cómputo', 6800000, 'Para los dos proyectos nuevos',
+        'Ángel Ortiz', '', 'por-gerente', { fechaPedido: dias(-2), autorizaJefe: 'Mauricio Giraldo' })
     };
     // Historial de cada compra (cómo va), armado según su estado. Las horas son de oficina y nunca quedan en el futuro.
     const desfase = f => Math.round((new Date(f + 'T12:00:00') - new Date(dias(0) + 'T12:00:00')) / 86400000);
@@ -178,37 +181,37 @@
       const paso = (fecha, hora, texto, por) => h.push({ fecha: iso(desfase(fecha), hora, 0), texto, por });
       if (c.estado === 'sin-autorizar') paso(c.fechaCompra, 10, `Compró en ${c.proveedor} sin pedir autorización`, c.pide);
       else paso(c.fechaPedido, 9, 'Pidió la compra', c.pide);
+      if (c.estado === 'por-gerente') paso(c.fechaPedido, 15, 'Autorizó y la pasó al Gerente general (vale más de 5.000.000)', c.autorizaJefe);
       if (['autorizado', 'comprado', 'recibido'].includes(c.estado)) paso(c.fechaPedido, 15, 'Autorizó la compra', c.autoriza);
       if (c.estado === 'rechazado') paso(c.fechaPedido, 16, `Rechazó la compra: ${c.motivoRechazo}`, c.autoriza);
-      if (['comprado', 'recibido'].includes(c.estado)) paso(c.fechaCompra, 11, `Compró en ${c.proveedor}`, 'Mauricio Giraldo');
+      if (['comprado', 'recibido'].includes(c.estado)) paso(c.fechaCompra, 11, `Compró en ${c.proveedor}`, 'Fredy Torres');
       if (c.estado === 'recibido') paso(c.fechaCompra, 16, c.articuloId ? 'Recibido en bodega' : `Entregado a ${c.entregadoA}`, 'Andrés Beltrán');
       c.historial = h;
     });
 
     // ---------- ARTÍCULOS DE BODEGA ----------
-    function articulo(nombre, categoria, unidad, cantidad, minimo, maximo, ubicacion, costo, proveedor) {
-      return { nombre, categoria, unidad, cantidad, minimo, maximo, ubicacion, costo, proveedor };
+    function articulo(nombre, categoria, unidad, cantidad, minimo, maximo, ubicacion, costo, proveedor, bodega) {
+      return { nombre, categoria, unidad, cantidad, minimo, maximo, ubicacion, costo, proveedor, bodega };
     }
-    const BOD = 'Bodega Riohacha · ';
     const articulos = {
-      'ar-001': articulo('Botas de seguridad talla 40', 'EPP', 'pares', 0, 4, 16, BOD + 'Estante A1', 85000, 'Ferretería El Faro'),
-      'ar-002': articulo('Botas de seguridad talla 42', 'EPP', 'pares', 6, 4, 16, BOD + 'Estante A1', 85000, 'Ferretería El Faro'),
-      'ar-003': articulo('Chalecos reflectivos', 'EPP', 'unidades', 15, 5, 25, BOD + 'Estante A2', 35000, 'Ferretería El Faro'),
-      'ar-004': articulo('Guantes de vaqueta', 'EPP', 'pares', 10, 6, 30, BOD + 'Estante A2', 12000, 'Ferretería El Faro'),
-      'ar-005': articulo('Cascos de seguridad', 'EPP', 'unidades', 9, 4, 15, BOD + 'Estante A3', 28000, 'Ferretería El Faro'),
-      'ar-006': articulo('Tapabocas', 'EPP', 'cajas', 7, 3, 12, BOD + 'Estante A3', 18000, 'Distribuidora Costa Salud'),
-      'ar-007': articulo('Extensión eléctrica de 5 m', 'Eléctricos', 'unidades', 8, 3, 12, BOD + 'Estante B1', 32000, 'Tecnoguajira Suministros'),
-      'ar-008': articulo('Multitoma de 6 puestos', 'Eléctricos', 'unidades', 5, 2, 10, BOD + 'Estante B1', 25000, 'Tecnoguajira Suministros'),
-      'ar-009': articulo('Cinta aislante', 'Eléctricos', 'rollos', 12, 5, 30, BOD + 'Estante B2', 4000, 'Tecnoguajira Suministros'),
-      'ar-010': articulo('Cable HDMI de 2 m', 'Cómputo', 'unidades', 2, 3, 10, BOD + 'Estante C1', 28000, 'Tecnoguajira Suministros'),
-      'ar-011': articulo('Mouse inalámbrico', 'Cómputo', 'unidades', 7, 3, 15, BOD + 'Estante C1', 30000, 'Tecnoguajira Suministros'),
-      'ar-012': articulo('Tóner para impresora', 'Papelería', 'unidades', 1, 2, 6, BOD + 'Estante C2', 185000, 'Papelería Central'),
-      'ar-013': articulo('Resmas de papel carta', 'Papelería', 'resmas', 3, 5, 20, BOD + 'Estante C3', 28000, 'Papelería Central'),
-      'ar-014': articulo('Jabón líquido', 'Aseo', 'galones', 4, 2, 8, BOD + 'Estante D1', 22000, 'Distribuidora Agua Clara'),
-      'ar-015': articulo('Papel higiénico', 'Aseo', 'paquetes', 10, 4, 20, BOD + 'Estante D1', 24000, 'Distribuidora Agua Clara'),
-      'ar-016': articulo('Café molido', 'Cafetería', 'paquetes', 0, 4, 12, BOD + 'Estante D2', 16000, 'Distribuidora Agua Clara'),
-      'ar-017': articulo('Vasos desechables', 'Cafetería', 'paquetes', 8, 3, 15, BOD + 'Estante D2', 7000, 'Distribuidora Agua Clara'),
-      'ar-018': articulo('Linterna recargable', 'Herramientas', 'unidades', 5, 2, 8, BOD + 'Estante E1', 38000, 'Ferretería El Faro')
+      'ar-001': articulo('Botas de seguridad talla 40', 'EPP', 'pares', 0, 4, 16, 'Estante A1', 85000, 'Ferretería El Faro', 'Riohacha'),
+      'ar-002': articulo('Botas de seguridad talla 42', 'EPP', 'pares', 6, 4, 16, 'Estante A1', 85000, 'Ferretería El Faro', 'Riohacha'),
+      'ar-003': articulo('Chalecos reflectivos', 'EPP', 'unidades', 15, 5, 25, 'Estante A2', 35000, 'Ferretería El Faro', 'Riohacha'),
+      'ar-004': articulo('Guantes de vaqueta', 'EPP', 'pares', 10, 6, 30, 'Estante A2', 12000, 'Ferretería El Faro', 'Riohacha'),
+      'ar-005': articulo('Cascos de seguridad', 'EPP', 'unidades', 9, 4, 15, 'Estante A3', 28000, 'Ferretería El Faro', 'Riohacha'),
+      'ar-006': articulo('Tapabocas', 'EPP', 'cajas', 7, 3, 12, 'Estante A3', 18000, 'Distribuidora Costa Salud', 'Riohacha'),
+      'ar-007': articulo('Extensión eléctrica de 5 m', 'Eléctricos', 'unidades', 8, 3, 12, 'Estante B1', 32000, 'Tecnoguajira Suministros', 'Riohacha'),
+      'ar-008': articulo('Multitoma de 6 puestos', 'Eléctricos', 'unidades', 5, 2, 10, 'Estante B1', 25000, 'Tecnoguajira Suministros', 'Riohacha'),
+      'ar-009': articulo('Cinta aislante', 'Eléctricos', 'rollos', 12, 5, 30, 'Estante B2', 4000, 'Tecnoguajira Suministros', 'Riohacha'),
+      'ar-010': articulo('Cable HDMI de 2 m', 'Cómputo', 'unidades', 2, 3, 10, 'Estante C1', 28000, 'Tecnoguajira Suministros', 'Riohacha'),
+      'ar-011': articulo('Mouse inalámbrico', 'Cómputo', 'unidades', 7, 3, 15, 'Estante C1', 30000, 'Tecnoguajira Suministros', 'Riohacha'),
+      'ar-012': articulo('Tóner para impresora', 'Papelería', 'unidades', 1, 2, 6, 'Estante C2', 185000, 'Papelería Central', 'Riohacha'),
+      'ar-013': articulo('Resmas de papel carta', 'Papelería', 'resmas', 3, 5, 20, 'Estante C3', 28000, 'Papelería Central', 'Guamal'),
+      'ar-014': articulo('Jabón líquido', 'Aseo', 'galones', 4, 2, 8, 'Estante D1', 22000, 'Distribuidora Agua Clara', 'Guamal'),
+      'ar-015': articulo('Papel higiénico', 'Aseo', 'paquetes', 10, 4, 20, 'Estante D1', 24000, 'Distribuidora Agua Clara', 'Guamal'),
+      'ar-016': articulo('Café molido', 'Cafetería', 'paquetes', 0, 4, 12, 'Estante D2', 16000, 'Distribuidora Agua Clara', 'Bogotá'),
+      'ar-017': articulo('Vasos desechables', 'Cafetería', 'paquetes', 8, 3, 15, 'Estante D2', 7000, 'Distribuidora Agua Clara', 'Bogotá'),
+      'ar-018': articulo('Linterna recargable', 'Herramientas', 'unidades', 5, 2, 8, 'Estante E1', 38000, 'Ferretería El Faro', 'Bogotá')
     };
 
     // ---------- MOVIMIENTOS DE BODEGA ----------
@@ -367,13 +370,14 @@
       return { para, titulo, texto, en, modulo, leido: {} };
     }
     const avisos = {
-      'av-001': aviso('jefe', 'Compra por autorizar', 'Andrés Beltrán pide comprar botas de seguridad talla 40, que están agotadas.', iso(0, 8, 15), 'inventario'),
-      'av-007': aviso('gerente', 'Compra por autorizar', 'Carolina Castillo pide comprar 6 unidades de mouse inalámbrico (aprox. $ 180.000). La autorizas tú porque la pidió la Jefe.', iso(0, 8, 20), 'inventario'),
+      'av-001': aviso('coordcompras', 'Compra por autorizar', 'Andrés Beltrán pide comprar botas de seguridad talla 40, que están agotadas.', iso(0, 8, 15), 'inventario'),
+      'av-007': aviso('coordcompras', 'Compra por autorizar', 'Carolina Castillo pide comprar 6 unidades de mouse inalámbrico (aprox. $ 180.000).', iso(0, 8, 20), 'inventario'),
+      'av-012': aviso('gerente', 'Compra por autorizar (segundo paso)', 'Mauricio Giraldo autorizó los portátiles para el equipo de campo por $ 6.800.000 y la pasa a tu decisión.', iso(-2, 15, 10), 'inventario'),
       'av-009': aviso('equipos', 'Equipos en Recibidos', 'Hay 3 equipos en Recibidos esperando revisión: DEMO-0010, DEMO-0011 y DEMO-0012.', iso(0, 7, 45), 'equipos'),
       'av-010': aviso('logistica', 'Reunión próxima', 'La reunión en la Comunidad Ejemplo Norte es en 6 días: hay que alistar refrigerios, almuerzo y sonido.', iso(-1, 16, 0), 'reuniones'),
       'av-011': aviso('administrativo', 'Acta por registrar', 'La reunión de ayer en la Comunidad Ejemplo Occidente ya pasó: registra el acta y el formato diario.', iso(0, 7, 30), 'reuniones'),
-      'av-008': aviso('compras', 'Compra autorizada: hay que comprar', 'Carolina Castillo autorizó comprar 8 resmas de papel carta.', iso(-4, 15, 5), 'inventario'),
-      'av-002': aviso('jefe', 'Compra sin autorización', 'Se compró algo sin autorización: garrafones de agua.', iso(-5, 17, 40), 'inventario'),
+      'av-008': aviso('compras', 'Compra autorizada: hay que comprar', 'Mauricio Giraldo autorizó comprar 8 resmas de papel carta.', iso(-4, 15, 5), 'inventario'),
+      'av-002': aviso('coordcompras', 'Compra sin autorización', 'Se compró algo sin autorización: garrafones de agua.', iso(-5, 17, 40), 'inventario'),
       'av-003': aviso('carros', 'SOAT por vencer', 'El SOAT del ABC 123 vence en 12 días.', iso(-1, 7, 30), 'vehiculos'),
       'av-004': aviso('jefe', 'Novedad en un carro', 'Oscar Farfán reportó un rayón en el ABC 123.', iso(-2, 18, 10), 'vehiculos'),
       'av-005': aviso('todos', 'Bienvenido a la demo', 'Bienvenido a la demo. Aquí todos los datos son inventados, puedes probar todo con calma.', iso(0, 7, 0), 'inicio'),
@@ -383,5 +387,5 @@
     return { equipos, hojas, tareasEq, compras, vehiculos, novedades, entregas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 9, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 11, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

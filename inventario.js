@@ -1,5 +1,5 @@
 /* inventario.js — Módulo Inventario de la demo: bodega de consumibles con las compras adentro.
-   Partes: Qué hay que hacer · Existencias · Movimientos · Pedidos de material · Compras · Conteo · Resumen.
+   Partes: Qué hay que hacer · Bodega (3 bodegas: Riohacha, Guamal y Bogotá, con traslados) · Movimientos · Pedidos de material · Compras · Conteo · Resumen.
    Las tareas salen solas de los datos:
      artículo agotado o bajo sin compra abierta  -> Pedir compra        (bodega)
      pedido de material pendiente               -> Entregar            (bodega)
@@ -19,7 +19,7 @@
   const A = () => window.App;
   const $ = id => document.getElementById(id);
   const ABIERTA = ['pedido', 'por-gerente', 'autorizado', 'comprado'];
-  const SECCIONES = [['hacer', 'Qué hay que hacer'], ['existencias', 'Existencias'], ['movimientos', 'Movimientos'], ['solicitudes', 'Pedidos de material'], ['compras', 'Compras'], ['conteo', 'Conteo'], ['resumen', 'Resumen']];
+  const SECCIONES = [['hacer', 'Qué hay que hacer'], ['existencias', 'Bodega'], ['movimientos', 'Movimientos'], ['solicitudes', 'Pedidos de material'], ['compras', 'Compras'], ['conteo', 'Conteo'], ['resumen', 'Resumen']];
   const SEC = Object.fromEntries(SECCIONES);
   const sec = (...ks) => ks.map(k => [k, SEC[k]]);
   // Qué partes ve cada nivel. El Gerente ve todo a detalle pero sin lo del día a día; quien solo pide ve lo suyo y las existencias;
@@ -28,6 +28,7 @@
     jefe: [['panorama', 'Panorama']].concat(SECCIONES),
     bodega: SECCIONES,
     compra: sec('hacer', 'existencias', 'compras', 'solicitudes', 'movimientos', 'resumen'),
+    coordina: sec('hacer', 'compras', 'existencias', 'solicitudes', 'movimientos', 'resumen'),
     pide: [['hacer', 'Lo mío']].concat(sec('existencias', 'solicitudes', 'compras')),
     ver: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'resumen'),
     finanzas: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'resumen'),
@@ -43,9 +44,9 @@
     comprado: ['Falta recibir', 's-listo', 'listo'], recibido: ['Recibida', 's-disco', 'disco'], 'sin-autorizar': ['Sin autorizar', 's-peligro', 'peligro']
   };
   const EST_SOL = { pendiente: ['En espera', 's-org', 'org'], entregada: ['Entregado', 's-disco', 'disco'], rechazada: ['No se entregó', 's-peligro', 'peligro'] };
-  const MOTIVO_MOV = { inicial: 'Cantidad inicial', compra: 'Compra recibida', entrega: 'Entrega', devolucion: 'Devolución', conteo: 'Ajuste por conteo', dano: 'Daño o pérdida' };
+  const MOTIVO_MOV = { traslado: 'Traslado entre bodegas', inicial: 'Cantidad inicial', compra: 'Compra recibida', entrega: 'Entrega', devolucion: 'Devolución', conteo: 'Ajuste por conteo', dano: 'Daño o pérdida' };
   let seccion = 'hacer';
-  const sub = { movimientos: 'todos', solicitudes: 'pendiente', compras: 'curso' };
+  const sub = { movimientos: 'todos', solicitudes: 'pendiente', compras: 'curso', bodega: 'todas' };
   let guardando = false, accion = null, pushPendientes = [], rolPintado = '';
 
   /* ---------- datos derivados ---------- */
@@ -55,6 +56,9 @@
   const estadoArt = a => (num(a.cantidad) <= 0 ? 'agotado' : num(a.cantidad) <= num(a.minimo) ? 'bajo' : 'bien');
   const D = () => A().S.datos;
   const articulos = () => D().articulos;
+  // Las 3 bodegas son siempre las mismas (Riohacha, Guamal y Bogotá). Un artículo viejo sin bodega se cuenta en Riohacha.
+  const BODEGAS = window.DEMO.BODEGAS;
+  const bodegaDe = a => (BODEGAS.includes(a.bodega) ? a.bodega : 'Riohacha');
   const artPorId = id => articulos().find(a => a.id === id) || null;
   // Las líneas de una compra (las compras viejas tienen una sola, sin lista).
   const lineasDe = c => {
@@ -67,32 +71,33 @@
   const persona = () => A().S.persona;
   // En la demo con personas de prueba se nombra a la persona (Andrés B.); con cuentas propias, el rol (Bodega), porque puede haber varias.
   // Con varias personas en un mismo rol (por ejemplo, 3 Gerentes) se dice el rol; si hay una sola, su nombre.
-  const nombreRol = rol => { const ps = window.DEMO.PERSONAS.filter(x => x.rol === rol), r = window.DEMO.rolDe(rol); return persona() && persona().prueba && ps.length === 1 ? ps[0].corto : (r ? r.rolTxt : rol); };
+  const nombreRol = rol => { rol = ROL_DE[rol] || rol; const ps = window.DEMO.PERSONAS.filter(x => x.rol === rol), r = window.DEMO.rolDe(rol); return persona() && persona().prueba && ps.length === 1 ? ps[0].corto : (r ? r.rolTxt : rol); };
   const perm = () => A().permiso('inventario');
   const esJefe = () => perm() === 'jefe';
   const esGerente = () => perm() === 'gerente';
   const esBodega = () => perm() === 'bodega' || esJefe();       // la Jefe también puede mover la bodega
   const secciones = () => SECCIONES_NIVEL[perm()] || SECCIONES_NIVEL.ver;
-  // Las compras pasan por la Jefe y, si valen el monto del Gerente o más (o las pidió la Jefe), por el Gerente. Nadie autoriza lo suyo.
-  const autorizadorDe = c => (c.estado === 'por-gerente' || c.pideRol === 'jefe' || c.pideRol === 'gerente' ? 'gerente' : 'jefe');
+  // Las compras las autoriza la Coordinadora de compras (ya no la Jefe) y, si valen MÁS del monto del Gerente, después el Gerente general.
+  // Lo que pide la Coordinadora lo decide el Gerente general; lo que pide el Gerente general nace autorizado. Nadie autoriza lo suyo.
+  const esCoordinador = () => perm() === 'coordina';
+  const esGerenteGeneral = () => esGerente() && A().tieneExtra('general');
+  const ROL_DE = { coordina: 'coordcompras', gerente: 'gerente', jefe: 'jefe', compras: 'compras', asistente: 'asistente' };   // papel -> rol (para nombrarlo y avisarle)
+  const autorizadorDe = c => (c.estado === 'por-gerente' || c.pideRol === 'coordcompras' ? 'gerente' : 'coordina');
   const esPorAutorizar = c => c.estado === 'pedido' || c.estado === 'por-gerente';
   // Nadie decide lo suyo (se compara el correo que dejó la compra al crearse; las de antes, sin correo, por el nombre).
   const esMiaLaCompra = c => (c.pideCorreo ? c.pideCorreo === persona().correo : c.pide === persona().nombre);
-  // Si la Jefe no responde en 2 días, el Gerente puede autorizar o rechazar lo que pidió otra persona (lo mismo que exigen las reglas).
-  const hora = f => (f && typeof f.toMillis === 'function' ? f.toMillis() : Date.parse(f));
-  const respaldoVencido = c => c.estado === 'pedido' && !['jefe', 'gerente'].includes(c.pideRol) && Number.isFinite(hora(c.creadoEn)) && Date.now() > hora(c.creadoEn) + 2 * 86400000;
-  const puedoDecidir = c => esPorAutorizar(c) && !esMiaLaCompra(c) && (puedoHacer(autorizadorDe(c)) || (esGerente() && respaldoVencido(c)));
+  const puedoDecidir = c => esPorAutorizar(c) && !esMiaLaCompra(c) && puedoHacer(autorizadorDe(c));
   // Qué papel hace la persona en el flujo, según su NIVEL (no su rol): así sirve también cuando la Jefe le sube o le baja el nivel.
-  const miFuncion = () => (esJefe() ? 'jefe' : esGerente() ? 'gerente' : perm() === 'bodega' ? 'asistente' : perm() === 'compra' ? 'compras' : '');
+  const miFuncion = () => (esJefe() ? 'jefe' : esGerenteGeneral() ? 'gerente' : esGerente() ? '' : perm() === 'bodega' ? 'asistente' : perm() === 'compra' ? 'compras' : perm() === 'coordina' ? 'coordina' : '');
   // Bodega con el permiso extra «compra» también hace y registra compras (como Compras).
   const hagoCompras = () => perm() === 'compra' || (perm() === 'bodega' && A().tieneExtra('compra'));
-  // Quién puede hacer una tarea: la persona con ese papel, o la Jefe (que puede hacer todo menos lo del Gerente).
-  const puedoHacer = rol => miFuncion() === rol || (rol === 'compras' && hagoCompras()) || (esJefe() && rol !== 'gerente');
+  // Quién puede hacer una tarea: la persona con ese papel; el Gerente general también hace lo de la Coordinadora (acceso total); la Jefe hace todo menos autorizar (ni lo del Gerente ni lo de la Coordinadora).
+  const puedoHacer = rol => miFuncion() === rol || (rol === 'compras' && hagoCompras()) || (rol === 'coordina' && esGerenteGeneral()) || (esJefe() && rol !== 'gerente' && rol !== 'coordina');
   const esMia = t => miFuncion() === t.rol || (t.rol === 'compras' && hagoCompras());
   const veTodo = () => perm() !== 'pide';                                       // quien solo pide ve solo lo suyo
   const veMovs = () => veTodo() && !esGerente();                                // el Gerente ve el resumen, no cada movimiento
-  const puedoPedirMaterial = () => ['pide', 'finanzas', 'compra', 'bodega', 'jefe'].includes(perm());
-  const puedoPedirCompra = () => ['pide', 'finanzas', 'compra', 'bodega', 'gerente', 'jefe'].includes(perm());
+  const puedoPedirMaterial = () => ['pide', 'finanzas', 'coordina', 'compra', 'bodega', 'jefe'].includes(perm());
+  const puedoPedirCompra = () => ['pide', 'finanzas', 'coordina', 'compra', 'bodega', 'gerente', 'jefe'].includes(perm());
   // Marcas que exigen las reglas al pedir: la cuenta, su correo y la hora del servidor (no se pueden inventar).
   const misMarcas = () => ({ pideUid: window.nube.uid(), pideCorreo: window.nube.correo(), creadoEn: window.nube.ahoraServidor() });
   const ahora = () => new Date().toISOString();
@@ -114,11 +119,10 @@
       const a = c.articuloId ? artPorId(c.articuloId) : null;
       if (esPorAutorizar(c)) {
         out.push({ tipo: 'autorizar', rol: autorizadorDe(c), urg: a && estadoArt(a) === 'agotado' ? 0 : 2, compra: c, art: a });
-        if (respaldoVencido(c)) out.push({ tipo: 'autorizar', rol: 'gerente', urg: 1, compra: c, art: a, respaldo: true });
       }
       else if (c.estado === 'autorizado') out.push({ tipo: 'comprar', rol: 'compras', urg: 3, compra: c, art: a });
       else if (c.estado === 'comprado') out.push({ tipo: 'recibir', rol: 'asistente', urg: 3, compra: c, art: a });
-      else if (c.estado === 'sin-autorizar' && !c.revisada) out.push({ tipo: 'revisar', rol: 'jefe', urg: 4, compra: c, art: a });
+      else if (c.estado === 'sin-autorizar' && !c.revisada) out.push({ tipo: 'revisar', rol: 'coordina', urg: 4, compra: c, art: a });
     });
     return out.sort((x, y) => x.urg - y.urg);
   }
@@ -153,8 +157,8 @@
     if (!secciones().some(x => x[0] === seccion)) seccion = secciones()[0][0];
     $('btnPedirMaterial').hidden = !puedoPedirMaterial(); $('btnPedirCompra').hidden = !puedoPedirCompra();
     $('btnPedirMaterial').parentElement.hidden = $('btnPedirMaterial').hidden && $('btnPedirCompra').hidden;
-    // Quien hace las compras «hace» una compra (la Jefe la autoriza antes); los demás la piden. El Gerente la hace y nace autorizada.
-    $('btnPedirCompraTxt').textContent = hagoCompras() || esGerente() ? 'Hacer una compra' : 'Pedir una compra';
+    // Quien hace las compras «hace» una compra (la Coordinadora la autoriza antes); los demás la piden. El Gerente general la hace y nace autorizada.
+    $('btnPedirCompraTxt').textContent = hagoCompras() || esGerenteGeneral() ? 'Hacer una compra' : 'Pedir una compra';
     const arts = articulos();
     App.tablero('inventario', [
       { k: 'v-ago', n: arts.filter(a => estadoArt(a) === 'agotado').length, lbl: 'Agotados', icono: 'aviso', tono: 'peligro', filtro: 'agotado' },
@@ -189,8 +193,8 @@
       // La Jefe ve todo agrupado por quién tiene que hacerlo, y puede hacer cualquier paso ella misma.
       const grupos = {};
       lista.forEach(t => { (grupos[t.rol] = grupos[t.rol] || []).push(t); });
-      const orden = ['jefe', 'compras', 'asistente', 'gerente'];
-      if (Object.keys(grupos).some(r => r !== 'jefe' && r !== 'gerente')) h += '<p class="meta">Como Jefe puedes hacer cualquier paso aunque le toque a otra persona.</p>';
+      const orden = ['jefe', 'coordina', 'compras', 'asistente', 'gerente'];
+      if (Object.keys(grupos).some(r => r !== 'jefe' && r !== 'gerente' && r !== 'coordina')) h += '<p class="meta">Como Jefe puedes hacer cualquier paso aunque le toque a otra persona, menos autorizar compras (eso es de la Coordinadora de compras y del Gerente general).</p>';
       h += Object.keys(grupos).sort((a, b) => orden.indexOf(a) - orden.indexOf(b)).map(rol =>
         `<div class="section-label">${rol === 'jefe' ? 'Te toca a ti' : 'Le toca a ' + esH(nombreRol(rol))} (${grupos[rol].length})${esH(filtroTxt)}</div>
          <div class="list">${grupos[rol].map(tarjeta).join('')}</div>`).join('');
@@ -233,10 +237,8 @@
       titulo = `${c.estado === 'por-gerente' ? 'Autorizar (segundo paso)' : 'Autorizar compra'}: ${a ? a.nombre : c.que}`;
       detalle.push(cantTxt(c.cantidad, c.unidad), 'aprox. ' + cop(c.valorAprox), 'pidió ' + c.pide, c.paraQue);
       if (a && estadoArt(a) !== 'bien') extra = pill(estadoArt(a) === 'agotado' ? 'En bodega: agotado' : `En bodega: quedan ${cantTxt(a.cantidad, a.unidad)}`, EST_ART[estadoArt(a)][1]);
-      if (c.pideRol === 'jefe') extra += pill('La pidió la Jefe: la autoriza el Gerente', 's-pend', 'info');
-      if (c.pideRol === 'gerente') extra += pill('La pidió un Gerente: la autoriza otro Gerente', 's-pend', 'info');
-      if (t.respaldo) extra += pill('La Jefe no ha respondido en 2 días: puedes autorizarla tú', 's-pend', 'info');
-      if (c.estado === 'por-gerente') extra += pill(`La Jefe ya la autorizó${c.autorizaJefe ? ' (' + c.autorizaJefe + ')' : ''}: falta el Gerente`, 's-pend', 'info');
+      if (c.pideRol === 'coordcompras') extra += pill('La pidió la Coordinadora de compras: la autoriza el Gerente general', 's-pend', 'info');
+      if (c.estado === 'por-gerente') extra += pill(`La Coordinadora ya la autorizó${c.autorizaJefe ? ' (' + c.autorizaJefe + ')' : ''}: falta el Gerente general`, 's-pend', 'info');
       botones = boton('autorizar', 'Autorizar', 'check', ` data-id="${esH(c.id)}"`, 'primary small') + boton('rechazar', 'Rechazar', '', ` data-id="${esH(c.id)}"`, 'ghost small');
     } else if (t.tipo === 'comprar') {
       icono = 'carrito'; tono = 'listo';
@@ -286,11 +288,12 @@
     const q = $('qInventario').value.trim().toLowerCase();
     const orden = { agotado: 0, bajo: 1, bien: 2 };
     const todos = articulos().slice().sort((a, b) => (orden[estadoArt(a)] - orden[estadoArt(b)]) || String(a.nombre).localeCompare(String(b.nombre)));
-    const vis = todos.filter(a => (!['agotado', 'bajo'].includes(f) || f === estadoArt(a)) && (!q || texto(a.nombre, a.categoria, a.ubicacion, a.proveedor).includes(q)));
+    const vis = todos.filter(a => (!['agotado', 'bajo'].includes(f) || f === estadoArt(a)) && (sub.bodega === 'todas' || bodegaDe(a) === sub.bodega) && (!q || texto(a.nombre, a.categoria, bodegaDe(a), a.ubicacion, a.proveedor).includes(q)));
     let h = barraBotones(esBodega() ? [boton('nuevoart', 'Agregar artículo', 'mas'), boton('entrada', 'Registrar entrada', 'importar'), boton('salida', 'Registrar salida', 'entrega'),
       boton('bdexcel', 'Descargar base de datos', 'excel'), `<label class="btn small foto-btn"><span data-ico="importar"></span>Subir Excel<input id="invArchivo" class="archivo-oculto" type="file" accept=".xlsx,.xls,.csv"></label>`] : []);
     if (esBodega() && errorEx) h += `<div class="err" role="alert">${esH(errorEx)}</div>`;
     if (esBodega() && previaEx) h += htmlPreviaEx();
+    h += subChips('bodega', [['todas', 'Todas las bodegas', todos.length]].concat(BODEGAS.map(b => [b, b, todos.filter(a => bodegaDe(a) === b).length])));
     h += `<div class="count" aria-live="polite">${vis.length === todos.length ? todos.length + ' artículos' : vis.length + ' de ' + todos.length + ' artículos'}</div>`;
     if (!vis.length) return h + UI.vacio('vacio', 'No hay artículos con ese filtro', f ? 'Toca otra vez la cifra de arriba para ver todo.' : '');
     return h + `<div class="list">${vis.map(a => {
@@ -299,7 +302,7 @@
       const pctMin = Math.max(0, Math.min(100, Math.round(num(a.minimo) / Math.max(1, num(a.maximo)) * 100)));
       return `<button type="button" class="card art st-${st[2]}" data-accion="verart" data-id="${esH(a.id)}">
         <span class="card-head"><span class="card-title">${esH(a.nombre)}</span>${App.pill(st[0], st[1])}</span>
-        <span class="card-sub">${esH(a.categoria)} · ${esH(a.ubicacion)}</span>
+        <span class="card-sub">${esH([a.categoria, 'Bodega ' + bodegaDe(a), a.ubicacion].filter(Boolean).join(' · '))}</span>
         <span class="nivel"><span class="nivel-n">${esH(num(a.cantidad))} <small>${esH(a.unidad)}</small></span>
           <span class="barra n-${e}" role="img" aria-label="${esH(`${num(a.cantidad)} de ${num(a.maximo)}; mínimo ${num(a.minimo)}`)}"><i style="width:${pct}%"></i><b style="left:${pctMin}%"></b></span>
           <span class="meta">mínimo ${esH(num(a.minimo))} · máximo ${esH(num(a.maximo))}</span></span>
@@ -373,6 +376,7 @@
     const cuenta = g => todas.filter(c => grupo(c) === g).length;
     const vis = todas.filter(c => (sub.compras === 'todas' || grupo(c) === sub.compras) && (!q || texto(c.que, c.proveedor, c.pide, c.categoria, c.paraQue).includes(q)));
     let h = barraBotones(puedoHacer('compras') ? [boton('sinaut', 'Registrar compra hecha sin autorización', 'aviso')] : []);
+    h += window.ExcelBD.html(cfgCompras());
     h += subChips('compras', [['curso', 'En curso', cuenta('curso')], ['recibidas', 'Recibidas', cuenta('recibidas')], ['rechazadas', 'Rechazadas', cuenta('rechazadas')], ['sin', 'Sin autorizar', cuenta('sin')], ['todas', 'Todas', todas.length]]);
     return h + (vis.length ? `<div class="list">${vis.map(tarjetaCompra).join('')}</div>` : UI.vacio('carrito', 'No hay compras aquí', `Cambia el filtro o toca «${hagoCompras() ? 'Hacer' : 'Pedir'} una compra».`));
   }
@@ -409,24 +413,24 @@
     const costoDe = m => num(m.cantidad) * num((artPorId(m.articuloId) || {}).costo);
     const catDe = m => (artPorId(m.articuloId) || {}).categoria;
     let h = '';
-    if (esGerente()) {
-      // Lo único que el Gerente tiene que hacer: autorizar las compras que pide la Jefe.
+    if (esGerenteGeneral()) {
+      // Lo que le toca al Gerente general: las compras de más del monto (ya pasadas por la Coordinadora) y las que pide la Coordinadora.
       const mias = tareas().filter(esMia);
       h += `<div class="section-label">Te toca a ti (${mias.length})</div>`;
-      h += mias.length ? `<div class="list">${mias.map(tarjeta).join('')}</div>` : '<p class="meta">Nada por autorizar. Las compras que pida la Jefe te llegan aquí y al teléfono.</p>';
-    }
-    if (esGerente()) {
-      h += `<div class="card"><b>Compras que decides tú</b><span class="meta">Las que pide la Jefe, y las que valen ${esH(cop(App.montoGerente()))} o más (la Jefe las autoriza antes y te las pasa).</span>
-        ${persona().real ? `<div class="row">${boton('monto', 'Cambiar el monto', 'lapiz', '', 'small')}</div>` : '<span class="meta">El monto lo cambia el Gerente con su cuenta propia (la persona de prueba no puede).</span>'}</div>`;
+      h += mias.length ? `<div class="list">${mias.map(tarjeta).join('')}</div>` : '<p class="meta">Nada por autorizar. Las compras de más de ' + esH(cop(App.montoGerente())) + ' y las que pida la Coordinadora te llegan aquí y al teléfono.</p>';
+      h += `<div class="card"><b>Compras que decides tú</b><span class="meta">Las de más de ${esH(cop(App.montoGerente()))} (la Coordinadora las autoriza antes y te las pasa) y las que pide la Coordinadora. Lo que pides tú nace autorizado. También puedes decidir cualquier pedido sin esperar.</span>
+        ${persona().real ? `<div class="row">${boton('monto', 'Cambiar el monto', 'lapiz', '', 'small')}</div>` : '<span class="meta">El monto lo cambia el Gerente general con su cuenta propia (la persona de prueba no puede).</span>'}</div>`;
+    } else if (esGerente()) {
+      h += `<div class="card"><b>Solo ves</b><span class="meta">Las compras las autoriza la Coordinadora de compras y, las de más de ${esH(cop(App.montoGerente()))}, el Gerente general. Tú ves los resúmenes y el detalle de cada cosa.</span></div>`;
     }
     h += barraBotones(perm() !== 'pide' ? [boton('excel', 'Descargar Excel', 'excel', '', 'primary')] : []);
     // Cómo van las compras: cada paso con quién lo tiene.
     const etapa = (estado, lbl, quien) => { const n = d.compras.filter(c => c.estado === estado).length; return `<div class="etapa${n ? ' con' : ''}"><span class="rm-n">${n}</span><b>${esH(lbl)}</b><span class="meta">${esH(quien)}</span></div>`; };
     h += `<div class="section-label">Cómo van las compras</div><div class="card etapas">
-      ${etapa('pedido', 'Por autorizar', 'Jefe o Gerente')}${etapa('por-gerente', 'Falta el Gerente', 'Gerente')}${etapa('autorizado', 'Falta comprar', nombreRol('compras'))}${etapa('comprado', 'Falta recibir', nombreRol('asistente'))}
+      ${etapa('pedido', 'Por autorizar', 'Coordinadora de compras')}${etapa('por-gerente', 'Falta el Gerente general', 'Gerente general')}${etapa('autorizado', 'Falta comprar', nombreRol('compras'))}${etapa('comprado', 'Falta recibir', nombreRol('asistente'))}
     </div>`;
     h += `<div class="resumen-grid">
-      <div class="card"><span class="meta">Valor de lo que hay en bodega</span><span class="rm-n valor">${esH(cop(valorBodega))}</span><span class="meta">${articulos().length} artículos</span></div>
+      <div class="card"><span class="meta">Valor de lo que hay en bodega</span><span class="rm-n valor">${esH(cop(valorBodega))}</span><span class="meta">${articulos().length} artículos</span><span class="meta">${esH(BODEGAS.map(b => `${b}: ${cop(articulos().filter(a => bodegaDe(a) === b).reduce((x, a) => x + num(a.cantidad) * num(a.costo), 0))}`).join(' · '))}</span></div>
       <div class="card"><span class="meta">Comprado este mes (${comprasMes.length})</span><span class="rm-n valor">${esH(cop(totalMes))}</span>${sinAutMes ? App.pill('Sin autorizar: ' + cop(sinAutMes), 's-peligro', 'aviso') : App.pill('Todo autorizado', 's-disco', 'check')}</div>
       <div class="card"><span class="meta">Salió de bodega este mes</span><span class="rm-n valor">${esH(cop(salidas.reduce((s, m) => s + costoDe(m), 0)))}</span><span class="meta">${salidas.length} salidas</span></div>
     </div>`;
@@ -445,17 +449,17 @@
     const item = (tono, icono, titulo, detalle, datos) => `<button type="button" class="card tarea st-${tono}"${datos}><div class="tarea-cab"><span class="ico t-${tono}" aria-hidden="true">${window.ico(icono)}</span><div class="tarea-t"><b>${esH(titulo)}</b><span class="meta">${esH(detalle)}</span></div></div></button>`;
     const suma = l => l.reduce((x, c) => x + num(c.valorAprox), 0);
     const ago = articulos().filter(a => estadoArt(a) === 'agotado'), baj = articulos().filter(a => estadoArt(a) === 'bajo');
-    const pedJefe = d.compras.filter(c => c.estado === 'pedido' && autorizadorDe(c) === 'jefe'), esperaG = d.compras.filter(c => (c.estado === 'por-gerente') || (c.estado === 'pedido' && autorizadorDe(c) === 'gerente'));
+    const pedJefe = d.compras.filter(c => c.estado === 'pedido' && autorizadorDe(c) === 'coordina'), esperaG = d.compras.filter(c => (c.estado === 'por-gerente') || (c.estado === 'pedido' && autorizadorDe(c) === 'gerente'));
     const falta = d.compras.filter(c => c.estado === 'autorizado'), llegar = d.compras.filter(c => c.estado === 'comprado');
     const sinAut = d.compras.filter(c => c.estado === 'sin-autorizar' && !c.revisada), demas = d.compras.filter(c => sobrecosto(c));
     const viejos = d.solicitudes.filter(s => s.estado === 'pendiente' && Date.now() - Date.parse(s.fecha) > 2 * 86400000);
     const nom = l => l.slice(0, 3).map(x => x.nombre || x.que || x.articulo).join(', ') + (l.length > 3 ? '…' : '');
     const u = [];
     if (ago.length) u.push(item('peligro', 'aviso', `${ago.length} ${ago.length === 1 ? 'artículo agotado' : 'artículos agotados'}`, nom(ago), ir('existencias', '', '', 'agotado')));
-    if (pedJefe.length) u.push(item('org', 'carrito', `${pedJefe.length} ${pedJefe.length === 1 ? 'compra espera tu decisión' : 'compras esperan tu decisión'}`, `${cop(suma(pedJefe))} en total`, ir('hacer')));
+    if (pedJefe.length) u.push(item('org', 'carrito', `${pedJefe.length} ${pedJefe.length === 1 ? 'compra espera a la Coordinadora de compras' : 'compras esperan a la Coordinadora de compras'}`, `${cop(suma(pedJefe))} en total`, ir('compras', 'compras', 'curso')));
     if (sinAut.length) u.push(item('peligro', 'aviso', `${sinAut.length} ${sinAut.length === 1 ? 'compra hecha sin autorización' : 'compras hechas sin autorización'}`, `${cop(sinAut.reduce((x, c) => x + num(c.valorReal || c.valorAprox), 0))}: habla con quien compró y márcala revisada`, ir('compras', 'compras', 'sin')));
     if (demas.length) u.push(item('peligro', 'aviso', `${demas.length} ${demas.length === 1 ? 'compra pagada con más de lo autorizado' : 'compras pagadas con más de lo autorizado'}`, demas.slice(0, 3).map(c => `${c.que} (+${sobrecosto(c).pct} %)`).join(', '), ir('compras', 'compras', 'todas')));
-    if (esperaG.length) u.push(item('org', 'persona', `${esperaG.length} ${esperaG.length === 1 ? 'compra espera al Gerente' : 'compras esperan al Gerente'}`, `${cop(suma(esperaG))} en total`, ir('compras', 'compras', 'curso')));
+    if (esperaG.length) u.push(item('org', 'persona', `${esperaG.length} ${esperaG.length === 1 ? 'compra espera al Gerente general' : 'compras esperan al Gerente general'}`, `${cop(suma(esperaG))} en total`, ir('compras', 'compras', 'curso')));
     if (viejos.length) u.push(item('org', 'entrega', `${viejos.length} ${viejos.length === 1 ? 'pedido de material espera' : 'pedidos de material esperan'} hace más de 2 días`, nom(viejos), ir('solicitudes', 'solicitudes', 'pendiente')));
     if (baj.length) u.push(item('org', 'caja', `${baj.length} ${baj.length === 1 ? 'artículo bajo del mínimo' : 'artículos bajos del mínimo'}`, nom(baj), ir('existencias', '', '', 'bajo')));
     if (falta.length) u.push(item('listo', 'carrito', `${falta.length} ${falta.length === 1 ? 'compra falta comprarla' : 'compras faltan por comprar'}`, `${cop(suma(falta))} autorizados`, ir('compras', 'compras', 'curso')));
@@ -479,12 +483,12 @@
     h += `<div class="section-label">Compras del mes por categoría</div><div class="card">${barras(agrupar(comprasMes, c => c.categoria, c => num(c.valorReal || c.valorAprox)), cop)}</div>`;
     return h;
   }
-  /** El Gerente fija desde cuánto autoriza él (además de lo que pide la Jefe). Solo con cuenta propia: las reglas no dejan a la persona de prueba. */
+  /** El Gerente general fija desde cuánto autoriza él (además de lo que pide la Coordinadora). Solo con cuenta propia: las reglas no dejan a la persona de prueba. */
   function cambiarMonto() {
     abrirAccion({
-      titulo: 'Desde cuánto autorizas tú', sub: `Hoy: ${A().cop(A().montoGerente())}. Las compras de ese valor o más pasan por la Jefe y después por ti. Lo que pide la Jefe lo decides siempre.`,
+      titulo: 'Desde cuánto autorizas tú', sub: `Hoy: ${A().cop(A().montoGerente())}. Las compras de MÁS de ese valor pasan por la Coordinadora y después por ti. Lo que pide la Coordinadora lo decides siempre.`,
       campos: campoNum('acMonto', 'Monto (pesos)', A().montoGerente(), 0, 1000000000, 'Sin puntos ni comas. Con 0, decides todas las compras.'),
-      primario: 'Guardar el monto', icono: 'check', listo: 'Listo: monto guardado. Vale desde la próxima compra que autorice la Jefe.',
+      primario: 'Guardar el monto', icono: 'check', listo: 'Listo: monto guardado. Vale desde la próxima compra que autorice la Coordinadora.',
       ops: () => {
         const n = entero('acMonto');
         if (!(n >= 0 && n <= 1000000000)) return fallar('Escribe un monto entero en pesos, sin puntos ni comas.', 'acMonto');
@@ -497,7 +501,7 @@
   const campoNum = (id, lbl, v, min, max, ayuda) => `<div class="field"><label for="${id}">${lbl}</label><input id="${id}" type="number" inputmode="numeric" min="${min}"${max != null ? ` max="${max}"` : ''} step="1" value="${esH(v)}">${ayuda ? `<span class="meta" id="${id}Ay">${esH(ayuda)}</span>` : ''}</div>`;
   const campoTxt = (id, lbl, v, ph, max) => `<div class="field"><label for="${id}">${lbl}</label><input id="${id}" type="text" maxlength="${max || 120}" autocomplete="off" value="${esH(v || '')}" placeholder="${esH(ph || '')}"></div>`;
   const campoSel = (id, lbl, ops, v) => `<div class="field"><label for="${id}">${lbl}</label><select id="${id}">${ops.map(([val, txt]) => `<option value="${esH(val)}"${val === v ? ' selected' : ''}>${esH(txt)}</option>`).join('')}</select></div>`;
-  const opsArt = vacio => (vacio ? [['', vacio]] : []).concat(articulos().slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map(a => [a.id, `${a.nombre} (${num(a.cantidad) > 0 ? 'hay ' + cantTxt(a.cantidad, a.unidad) : 'agotado'})`]));
+  const opsArt = vacio => (vacio ? [['', vacio]] : []).concat(articulos().slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map(a => [a.id, `${a.nombre} · ${bodegaDe(a)} (${num(a.cantidad) > 0 ? 'hay ' + cantTxt(a.cantidad, a.unidad) : 'agotado'})`]));
   function abrirAccion(o) {
     accion = o;
     $('acT').textContent = o.titulo; $('acSub').textContent = o.sub || '';
@@ -562,13 +566,13 @@
   function pedirCompra(artId, cantSug) {
     const a = artId ? artPorId(artId) : null;
     const sug = cantSug || (a ? Math.max(1, num(a.maximo) - num(a.cantidad)) : 1);
-    const elGerente = esGerente(), aut = autorizadorDe({ pideRol: persona().rol, estado: 'pedido' }), monto = A().montoGerente();
+    const general = esGerenteGeneral(), aut = autorizadorDe({ pideRol: persona().rol, estado: 'pedido' }), monto = A().montoGerente(), quienAut = aut === 'gerente' ? 'el Gerente general' : nombreRol(aut);
     cotizaciones = []; extrasN = 0;
     abrirAccion({
       titulo: hagoCompras() ? 'Hacer una compra' : 'Pedir una compra',
-      sub: elGerente ? 'Como Gerente no te autorizas tú: la autoriza otro Gerente (le llega el aviso).'
-        : hagoCompras() ? `Escribe qué vas a comprar. Antes de comprar, ${nombreRol(aut)} la autoriza (le llega el aviso)${aut === 'jefe' ? `; si vale ${A().cop(monto)} o más, después la autoriza el Gerente` : ''}.`
-        : `Escribe qué se va a comprar. Le llega el aviso a ${nombreRol(aut)} para que la autorice${aut === 'jefe' ? `; si vale ${A().cop(monto)} o más, después la autoriza el Gerente` : ''}.`,
+      sub: general ? `Como Gerente general no necesitas que nadie la autorice: queda autorizada y le llega el aviso a ${nombreRol('compras')} para comprarla.`
+        : hagoCompras() ? `Escribe qué vas a comprar. Antes de comprar, ${quienAut} la autoriza (le llega el aviso)${aut === 'coordina' ? `; si vale más de ${A().cop(monto)}, después la autoriza el Gerente general` : ''}.`
+        : `Escribe qué se va a comprar. Le llega el aviso a ${quienAut} para que la autorice${aut === 'coordina' ? `; si vale más de ${A().cop(monto)}, después la autoriza el Gerente general` : ''}.`,
       campos: campoSel('acArt', '¿Es para la bodega?', opsArt('No va a bodega'), a ? a.id : '') +
         campoTxt('acQue', 'Qué se va a comprar', a ? a.nombre : '', 'Ej: botas de seguridad talla 40', 100) +
         `<div class="fields cols">${campoNum('acCant', 'Cantidad', sug, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), a ? a.unidad : 'unidades')}</div>` +
@@ -579,7 +583,7 @@
         campoSel('acProy', 'Proyecto', PROYECTOS.map(p => [p, p]), PROYECTOS[0]) +
         `<div class="field"><span class="lbl">Cotizaciones (opcional, hasta 3 fotos)</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="acCotTxt">Adjuntar fotos de cotizaciones</span><input id="acCot" class="archivo-oculto" type="file" accept="image/*" multiple></label><div id="acCotVer" class="cot-mini"></div></div>`,
       primario: hagoCompras() ? 'Enviar para autorizar' : 'Pedir la compra', icono: 'enviar',
-      listo: elGerente ? 'Listo: compra pedida. Le llegó el aviso a los otros Gerentes para autorizarla.' : hagoCompras() ? `Listo: le llegó el aviso a ${nombreRol(aut)}. Cuando la autorice, haces la compra y la registras.` : `Listo: compra pedida. Le llegó el aviso a ${nombreRol(aut)} para autorizarla.`,
+      listo: general ? `Listo: compra autorizada. Le llegó el aviso a ${nombreRol('compras')} para comprarla.` : hagoCompras() ? `Listo: le llegó el aviso a ${quienAut}. Cuando la autorice, haces la compra y la registras.` : `Listo: compra pedida. Le llegó el aviso a ${quienAut} para autorizarla.`,
       ops: () => {
         const art = artPorId(valor('acArt')), n = entero('acCant'), v = entero('acValor');
         if (!valor('acQue')) return fallar('Escribe qué se va a comprar.', 'acQue');
@@ -602,11 +606,13 @@
         const proyecto = valor('acProy'), resumenTxt = unico ? valor('acQue') : `${valor('acQue')} y ${lineas.length - 1} más`;
         const doc = Object.assign({ que: resumenTxt, cantidad: unico ? n : lineas.reduce((x, l) => x + l.cantidad, 0), unidad: unico ? valor('acUni') : 'artículos', categoria: valor('acCat'), valorAprox: total,
           paraQue: valor('acPara') + (proyecto ? ` (${proyecto})` : ''), proyecto, proveedorSug: valor('acProvSug'), lineas, cotizaciones: cotizaciones.slice(),
-          pide: persona().nombre, pideRol: persona().rol, autoriza: '', autorizaJefe: '', estado: 'pedido', proveedor: '', valorReal: 0, fechaPedido: A().hoyISO(), fechaCompra: '', entregadoA: '', motivoRechazo: '',
+          pide: persona().nombre, pideRol: persona().rol, autoriza: general ? persona().nombre : '', autorizaJefe: '', estado: general ? 'autorizado' : 'pedido', proveedor: '', valorReal: 0, fechaPedido: A().hoyISO(), fechaCompra: '', entregadoA: '', motivoRechazo: '',
           articuloId: unico && art ? art.id : '', factura: '', revisada: false }, misMarcas());
         doc.historial = [{ fecha: ahora(), texto: 'Pidió la compra', por: persona().nombre }];
+        if (general) { doc.autorizaCorreo = window.nube.correo(); doc.historial.push({ fecha: ahora(), texto: 'Autorizó la compra (Gerente general: lo que pide no necesita autorización)', por: persona().nombre }); }
         return [['set', 'compras', window.nube.idNuevo('co'), doc],
-          aviso(aut, 'Compra por autorizar', `${persona().nombre} pide comprar ${resumenTxt} por ${A().cop(total)}.`, elGerente)];
+          general ? aviso('compras', 'Compra autorizada: hay que comprar', `${persona().nombre} autorizó comprar ${resumenTxt} por ${A().cop(total)}.`)
+            : aviso(ROL_DE[aut], 'Compra por autorizar', `${persona().nombre} pide comprar ${resumenTxt} por ${A().cop(total)}.`)];
       }
     });
     // Al escoger un artículo de bodega se llenan solos el nombre, la unidad, la categoría y el valor.
@@ -658,33 +664,33 @@
       <tfoot><tr><td colspan="3"><b>Total aprox.</b></td><td><b>${esH(cop(c.valorAprox))}</b></td></tr></tfoot></table>
       <dl class="datos"><dt>Pidió</dt><dd>${esH(c.pide)}${c.fechaPedido ? ' el ' + esH(App.fechaCorta(c.fechaPedido)) : ''}</dd><dt>Para qué</dt><dd>${esH(c.paraQue)}</dd>
         ${c.proveedorSug ? `<dt>A quién se le compra</dt><dd>${esH(c.proveedorSug)}</dd>` : ''}
-        ${conMonto ? `<dt>Monto del Gerente</dt><dd>${esH(cop(App.montoGerente()))}: desde ahí la compra también la autoriza el Gerente</dd>` : ''}</dl>
+        ${conMonto ? `<dt>Monto del Gerente</dt><dd>${esH(cop(App.montoGerente()))}: si la compra vale más de eso, también la autoriza el Gerente general</dd>` : ''}</dl>
       ${cots.length ? `<div class="field"><span class="lbl">Cotizaciones (${cots.length})</span><div class="cot-mini">${cots.map((x, i) => `<img src="${esH(x)}" alt="Cotización ${i + 1} de ${esH(c.que)}">`).join('')}</div></div>` : ''}`;
   }
 
   function autorizar(c) {
     const App = A(), monto = App.montoGerente(), segundo = c.estado === 'por-gerente';
-    // La Jefe pasa al Gerente lo que vale el monto o más (salvo lo que pidió ella: eso siempre lo decide el Gerente).
-    const pasaAlGerente = !segundo && esJefe() && !['jefe', 'gerente'].includes(c.pideRol) && num(c.valorAprox) >= monto;
+    // La Coordinadora pasa al Gerente general lo que vale MÁS del monto (lo que pidió ella siempre lo decide el Gerente general, y él decide directo).
+    const pasaAlGerente = !segundo && esCoordinador() && num(c.valorAprox) > monto;
     abrirAccion({
-      titulo: segundo ? 'Autorizar compra (segundo paso)' : 'Autorizar compra', sub: `${c.que}: aprox. ${App.cop(c.valorAprox)}.${segundo ? ` La Jefe ya la autorizó${c.autorizaJefe ? ' (' + c.autorizaJefe + ')' : ''}.` : ''}`,
-      campos: detalleCompra(c, true) + (pasaAlGerente ? `<div class="aviso warn"><span>Vale ${esH(App.cop(monto))} o más: al autorizarla pasa al Gerente, que la autoriza después. Aún no se puede comprar.</span></div>` : ''),
-      primario: pasaAlGerente ? 'Autorizar y pasar al Gerente' : 'Autorizar', icono: 'check', secundario: 'Rechazar',
-      listo: pasaAlGerente ? 'Listo: autorizada. Le llegó el aviso al Gerente para el segundo paso.' : `Listo: compra autorizada. Le llegó el aviso a ${nombreRol('compras')} para comprarla.`,
+      titulo: segundo ? 'Autorizar compra (segundo paso)' : 'Autorizar compra', sub: `${c.que}: aprox. ${App.cop(c.valorAprox)}.${segundo ? ` La Coordinadora ya la autorizó${c.autorizaJefe ? ' (' + c.autorizaJefe + ')' : ''}.` : ''}`,
+      campos: detalleCompra(c, true) + (pasaAlGerente ? `<div class="aviso warn"><span>Vale más de ${esH(App.cop(monto))}: al autorizarla pasa al Gerente general, que la autoriza después. Aún no se puede comprar.</span></div>` : ''),
+      primario: pasaAlGerente ? 'Autorizar y pasar al Gerente general' : 'Autorizar', icono: 'check', secundario: 'Rechazar',
+      listo: pasaAlGerente ? 'Listo: autorizada. Le llegó el aviso al Gerente general para el segundo paso.' : `Listo: compra autorizada. Le llegó el aviso a ${nombreRol('compras')} para comprarla.`,
       ops: () => {
         if (esMiaLaCompra(c)) return fallar('No puedes autorizar una compra que pediste tú.');
-        if (!puedoDecidir(c)) return fallar(c.pideRol === 'gerente' ? 'Esta compra la autoriza otro Gerente.' : `Esta compra la autoriza ${nombreRol(autorizadorDe(c))}.`);
-        const porRespaldo = esGerente() && respaldoVencido(c);
+        if (!puedoDecidir(c)) return fallar(`Esta compra la autoriza ${nombreRol(autorizadorDe(c))}.`);
         if (pasaAlGerente) {
-          return [['mezclar', 'compras', c.id, { estado: 'por-gerente', autorizaJefe: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, `Autorizó y la pasó al Gerente (vale ${App.cop(c.valorAprox)}, desde ${App.cop(monto)} decide él)`) }],
+          return [['mezclar', 'compras', c.id, { estado: 'por-gerente', autorizaJefe: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, `Autorizó y la pasó al Gerente general (vale ${App.cop(c.valorAprox)}, más de ${App.cop(monto)} decide él)`) }],
             aviso('gerente', 'Compra por autorizar (segundo paso)', `${persona().nombre} autorizó ${c.que} por ${App.cop(c.valorAprox)} y la pasa a tu decisión.`)];
         }
-        const campos = { estado: 'autorizado', autoriza: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, porRespaldo ? 'El Gerente autorizó la compra (la Jefe no respondió en 2 días)' : segundo ? 'El Gerente autorizó la compra' : c.pideRol === 'gerente' ? 'Otro Gerente autorizó la compra' : 'Autorizó la compra') };
-        if (esJefe() && !segundo) campos.autorizaJefe = persona().nombre;
+        const campos = { estado: 'autorizado', autoriza: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, segundo ? 'El Gerente general autorizó la compra' : esGerenteGeneral() ? 'El Gerente general autorizó la compra' : 'Autorizó la compra') };
+        if (esCoordinador() && !segundo) campos.autorizaJefe = persona().nombre;
+        const avisaCoord = (segundo || esGerenteGeneral()) && c.pideRol !== 'coordcompras';
         return [['mezclar', 'compras', c.id, campos],
           aviso('compras', 'Compra autorizada: hay que comprar', `${persona().nombre} autorizó comprar ${cantTxt(c.cantidad, c.unidad)} de ${c.que}.`),
-          c.pideRol !== 'compras' ? aviso(c.pideRol, 'Te autorizaron la compra', `${persona().nombre} autorizó tu compra de ${c.que}.`, c.pideRol === 'gerente') : null,
-          (segundo && c.autorizaJefe) || porRespaldo ? aviso('jefe', porRespaldo ? 'El Gerente autorizó una compra que esperaba tu respuesta' : 'El Gerente autorizó la compra', `${persona().nombre} autorizó ${c.que}.`) : null];
+          c.pideRol !== 'compras' ? aviso(c.pideRol, 'Te autorizaron la compra', `${persona().nombre} autorizó tu compra de ${c.que}.`, ['gerente', 'coordcompras'].includes(c.pideRol)) : null,
+          avisaCoord ? aviso('coordcompras', 'El Gerente general autorizó la compra', `${persona().nombre} autorizó ${c.que}.`) : null];
       },
       alSecundario: () => rechazar(c)
     });
@@ -697,10 +703,10 @@
       ops: () => {
         if (!valor('acMotivo')) return fallar('Escribe el motivo.', 'acMotivo');
         if (esMiaLaCompra(c)) return fallar('No puedes decidir sobre una compra que pediste tú.');
-        if (!puedoDecidir(c)) return fallar(c.pideRol === 'gerente' ? 'Esta compra la decide otro Gerente.' : `Esta compra la decide ${nombreRol(autorizadorDe(c))}.`);
+        if (!puedoDecidir(c)) return fallar(`Esta compra la decide ${nombreRol(autorizadorDe(c))}.`);
         return [['mezclar', 'compras', c.id, { estado: 'rechazado', motivoRechazo: valor('acMotivo'), autoriza: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, `Rechazó la compra: ${valor('acMotivo')}`) }],
-          aviso(c.pideRol, 'Rechazaron tu compra', `${c.que}: ${valor('acMotivo')}.`, c.pideRol === 'gerente'),
-          c.estado === 'por-gerente' && c.autorizaJefe ? aviso('jefe', 'El Gerente rechazó la compra', `${c.que}: ${valor('acMotivo')}.`) : null];
+          aviso(c.pideRol, 'Rechazaron tu compra', `${c.que}: ${valor('acMotivo')}.`, ['gerente', 'coordcompras'].includes(c.pideRol)),
+          c.estado === 'por-gerente' && c.autorizaJefe ? aviso('coordcompras', 'El Gerente general rechazó la compra', `${c.que}: ${valor('acMotivo')}.`) : null];
       }
     });
   }
@@ -731,7 +737,7 @@
     fotoFactura = '';
     abrirAccion({
       titulo: sinAutorizacion ? 'Registrar compra hecha sin autorización' : 'Registrar compra',
-      sub: sinAutorizacion ? 'Para que quede el registro: la Jefe recibe el aviso y la compra se ve en rojo en el resumen.' : `${c.que}: ${cantTxt(c.cantidad, c.unidad)}, autorizada por ${c.autoriza || 'la Jefe'}.`,
+      sub: sinAutorizacion ? 'Para que quede el registro: la Coordinadora de compras recibe el aviso y la compra se ve en rojo en el resumen.' : `${c.que}: ${cantTxt(c.cantidad, c.unidad)}, autorizada por ${c.autoriza || 'la Coordinadora'}.`,
       campos: (sinAutorizacion ? campoTxt('acQue', 'Qué se compró', '', 'Ej: garrafones de agua', 100) + `<div class="fields cols">${campoNum('acCant', 'Cantidad', 1, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), 'unidades')}</div>` + campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), 'Otro') + campoTxt('acPara', 'Para qué', '', 'Ej: para la reunión de hoy', 140) + campoTxt('acQuien', 'Quién compró', '', 'Nombre', 60) : '') +
         campoTxt('acProv', 'Proveedor', (a && a.proveedor) || (c && c.proveedor) || '', 'Dónde se compró') +
         campoNum('acValor', 'Valor pagado (pesos)', c ? c.valorAprox : '', 0, null, c ? `Autorizado: aprox. ${A().cop(c.valorAprox)}.` : '') +
@@ -749,15 +755,15 @@
           return [['set', 'compras', window.nube.idNuevo('co'), { que: valor('acQue'), cantidad: entero('acCant'), unidad: valor('acUni'), categoria: valor('acCat'), valorAprox: v, paraQue: valor('acPara') || 'Sin dato',
             pide: valor('acQuien'), pideRol: persona().rol, autoriza: '', estado: 'sin-autorizar', proveedor: valor('acProv'), valorReal: v, fechaPedido: A().hoyISO(), fechaCompra: A().hoyISO(), entregadoA: '', motivoRechazo: '', articuloId: '',
             factura: fotoFactura, revisada: false, historial: [{ fecha: ahora(), texto: `Registró una compra de ${valor('acQuien')} hecha sin autorización en ${valor('acProv')}`, por: persona().nombre }], ...misMarcas() }],
-            aviso('jefe', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} en ${valor('acProv')} (${A().cop(v)}) sin autorización.`),
+            aviso('coordcompras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} en ${valor('acProv')} (${A().cop(v)}) sin autorización.`),
             aviso('compras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} (${A().cop(v)}) sin autorización.`)];
         }
-        // Más del 10 % sobre lo autorizado: queda dicho en el historial y le avisa a la Jefe (y al Gerente si él la había autorizado).
+        // Más del 10 % sobre lo autorizado: queda dicho en el historial y le avisa a la Coordinadora (y al Gerente general si él la había autorizado).
         const sobre = num(c.valorAprox) > 0 && v > num(c.valorAprox) * 1.1, pct = Math.round((v / Math.max(1, num(c.valorAprox)) - 1) * 100);
         return [['mezclar', 'compras', c.id, { estado: 'comprado', proveedor: valor('acProv'), valorReal: v, fechaCompra: A().hoyISO(), factura: fotoFactura || c.factura || '', historial: paso(c, `Compró en ${valor('acProv')} por ${A().cop(v)}${sobre ? ` (${pct} % más de lo autorizado)` : ''}`) }],
           aviso('asistente', 'Compra en camino: hay que recibirla', `${persona().nombre} compró ${cantTxt(c.cantidad, c.unidad)} de ${c.que} en ${valor('acProv')}. ${a ? 'Recíbela en bodega cuando llegue.' : `Cuando llegue, entrégala a ${c.pide}.`}`),
           c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Ya se compró', `Se compró ${c.que} en ${valor('acProv')}.`) : null,
-          sobre ? aviso('jefe', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null,
+          sobre ? aviso('coordcompras', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null,
           sobre && c.estado === 'autorizado' && c.autorizaJefe && c.autoriza !== c.autorizaJefe ? aviso('gerente', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null];
       }
     });
@@ -798,7 +804,7 @@
         const nota = [valor('acNota'), faltan.length ? 'Llegó menos: ' + faltan.join('; ') : ''].filter(Boolean).join('. ');
         return [['mezclar', 'compras', c.id, { estado: 'recibido', entregadoA: hayFuera ? valor('acQuien') : '', historial: paso(c, `Recibida${nota ? '. ' + nota : ''}`) }]].concat(ops,
           [c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya llegó.`) : null],
-          faltan.length ? [aviso('jefe', 'Llegó menos de lo comprado', `${c.que}. ${faltan.join('; ')}.`)] : []);
+          faltan.length ? [aviso('coordcompras', 'Llegó menos de lo comprado', `${c.que}. ${faltan.join('; ')}.`)] : []);
       }
     });
   }
@@ -823,7 +829,7 @@
           ['mezclar', 'compras', c.id, { estado: 'recibido', historial: paso(c, `Recibido en bodega: ${cantTxt(n, a.unidad)}${nota ? '. ' + nota : ''}`) }],
           ...mover(a, n, { articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: hay + n, persona: c.proveedor || '', nota, compraId: c.id }),
           c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya está en bodega.`) : null,
-          n < num(c.cantidad) ? aviso('jefe', 'Llegó menos de lo comprado', `${c.que}: llegaron ${n} de ${num(c.cantidad)}.`) : null
+          n < num(c.cantidad) ? aviso('coordcompras', 'Llegó menos de lo comprado', `${c.que}: llegaron ${n} de ${num(c.cantidad)}.`) : null
         ];
       }
     });
@@ -843,7 +849,7 @@
     if (puedoDecidir(c)) botones.push(boton('autorizar', 'Autorizar', 'check', ` data-id="${esH(c.id)}"`, 'primary small'), boton('rechazar', 'Rechazar', '', ` data-id="${esH(c.id)}"`, 'ghost small'));
     if (c.estado === 'autorizado' && puedoHacer('compras')) botones.push(boton('comprar', 'Registrar compra', 'carrito', ` data-id="${esH(c.id)}"`, 'primary small'));
     if (c.estado === 'comprado' && puedoHacer('asistente')) botones.push(boton('recibir', lineasDe(c).length > 1 ? 'Recibir la compra' : c.articuloId ? 'Recibir en bodega' : 'Marcar como recibida', 'caja', ` data-id="${esH(c.id)}"`, 'primary small'));
-    if (c.estado === 'sin-autorizar' && !c.revisada && esJefe()) botones.push(boton('revisada', 'Marcar como revisada', 'check', ` data-id="${esH(c.id)}"`, 'small'));
+    if (c.estado === 'sin-autorizar' && !c.revisada && (esCoordinador() || esGerenteGeneral())) botones.push(boton('revisada', 'Marcar como revisada', 'check', ` data-id="${esH(c.id)}"`, 'small'));
     const hist = historial(c).sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)));
     abrirAccion({
       titulo: c.que, sub: `${lineasDe(c).length > 1 ? lineasDe(c).length + ' artículos' : cantTxt(c.cantidad, c.unidad)} · ${c.categoria}`,
@@ -851,7 +857,7 @@
         ${detalleCompra(c, esPorAutorizar(c))}
         <dl class="datos">
           ${num(c.valorReal) ? `<dt>Pagado</dt><dd>${esH(App.cop(c.valorReal))}${sobre ? ' (' + esH(String(sobre.pct)) + ' % más)' : ''}</dd>` : ''}
-          ${c.autorizaJefe ? `<dt>Autorizó la Jefe</dt><dd>${esH(c.autorizaJefe)}</dd>` : ''}
+          ${c.autorizaJefe ? `<dt>Primero autorizó</dt><dd>${esH(c.autorizaJefe)}</dd>` : ''}
           ${c.autoriza ? `<dt>${esPorAutorizar(c) ? 'Autoriza' : 'Decidió'}</dt><dd>${esH(c.autoriza)}</dd>` : ''}
           ${c.proveedor ? `<dt>Proveedor</dt><dd>${esH(c.proveedor)}${c.fechaCompra ? ', ' + esH(App.fechaCorta(c.fechaCompra)) : ''}</dd>` : ''}
           ${c.motivoRechazo ? `<dt>Motivo</dt><dd>${esH(c.motivoRechazo)}</dd>` : ''}
@@ -948,28 +954,55 @@
   function editarArticulo(a) {
     const nuevo = !a;
     abrirAccion({
-      titulo: nuevo ? 'Agregar artículo' : 'Editar artículo', sub: nuevo ? 'Un artículo nuevo para la bodega.' : `Cambia los datos de ${a.nombre}. La cantidad se cambia con entradas, salidas o conteo.`,
-      campos: campoTxt('acNom', 'Nombre', a ? a.nombre : '', 'Ej: guantes de nitrilo talla M', 80) +
+      titulo: nuevo ? 'Agregar artículo' : 'Editar artículo', sub: nuevo ? 'Un artículo nuevo para una de las 3 bodegas.' : `Cambia los datos de ${a.nombre} (bodega ${bodegaDe(a)}). La cantidad se cambia con entradas, salidas o conteo, y de bodega con un traslado.`,
+      campos: (nuevo ? campoSel('acBod', 'Bodega', BODEGAS.map(b => [b, b]), BODEGAS.includes(sub.bodega) ? sub.bodega : BODEGAS[0]) : '') +
+        campoTxt('acNom', 'Nombre', a ? a.nombre : '', 'Ej: guantes de nitrilo talla M', 80) +
         `<div class="fields cols">${campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), a && CATEGORIAS.includes(a.categoria) ? a.categoria : 'EPP')}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), a ? a.unidad : 'unidades')}</div>` +
         (nuevo ? campoNum('acCantIni', 'Cantidad que hay ahora', 0, 0, 99999) : '') +
         `<div class="fields cols">${campoNum('acMin', 'Mínimo (avisa al bajar de aquí)', a ? a.minimo : 2, 0, 99999)}${campoNum('acMax', 'Máximo (hasta dónde se compra)', a ? a.maximo : 10, 1, 99999)}</div>` +
-        campoTxt('acUbi', 'Ubicación', a ? a.ubicacion : 'Bodega Riohacha · Estante ', 'Ej: Bodega Riohacha · Estante B1', 80) +
+        campoTxt('acUbi', 'Ubicación dentro de la bodega', a ? a.ubicacion : 'Estante ', 'Ej: Estante B1', 80) +
         `<div class="fields cols">${campoNum('acCosto', 'Precio aprox. por unidad (pesos)', a ? a.costo : '', 0, null)}${campoTxt('acProvH', 'Proveedor habitual', a ? a.proveedor : '', 'Ej: Ferretería El Faro', 60)}</div>`,
       primario: nuevo ? 'Agregar' : 'Guardar cambios', icono: 'check', listo: nuevo ? 'Listo: artículo agregado a la bodega.' : 'Listo: artículo actualizado.',
       ops: () => {
         const mn = entero('acMin'), mx = entero('acMax'), costo = entero('acCosto'), ini = nuevo ? entero('acCantIni') : 0;
         if (!valor('acNom')) return fallar('Escribe el nombre.', 'acNom');
-        if (articulos().some(x => String(x.nombre).toLowerCase() === valor('acNom').toLowerCase() && (!a || x.id !== a.id))) return fallar('Ya hay un artículo con ese nombre.', 'acNom');
+        const bod = nuevo ? valor('acBod') : bodegaDe(a);
+        if (!BODEGAS.includes(bod)) return fallar('Escoge una de las 3 bodegas.', 'acBod');
+        if (articulos().some(x => String(x.nombre).toLowerCase() === valor('acNom').toLowerCase() && bodegaDe(x) === bod && (!a || x.id !== a.id))) return fallar(`Ya hay un artículo con ese nombre en la bodega de ${bod}.`, 'acNom');
         if (!(mn >= 0)) return fallar('El mínimo debe ser un número entero, 0 o más.', 'acMin');
         if (!(mx > mn)) return fallar('El máximo debe ser mayor que el mínimo.', 'acMax');
         if (!(costo >= 0)) return fallar('Escribe el precio en pesos, sin puntos ni comas.', 'acCosto');
         if (nuevo && !(ini >= 0)) return fallar('La cantidad debe ser un número entero, 0 o más.', 'acCantIni');
         const datos = { nombre: valor('acNom'), categoria: valor('acCat'), unidad: valor('acUni'), minimo: mn, maximo: mx, ubicacion: valor('acUbi'), costo, proveedor: valor('acProvH') };
         if (!nuevo) return [['mezclar', 'articulos', a.id, datos]];
+        datos.bodega = bod;
         const id = window.nube.idNuevo('ar');
         const movId = window.nube.idNuevo('mo');
         return [['set', 'articulos', id, Object.assign({ cantidad: ini }, ini > 0 ? { ultimoMov: movId } : {}, datos)],
           ini > 0 ? movimiento({ articuloId: id, articulo: datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo' }, movId) : null];
+      }
+    });
+  }
+  /** Traslado entre bodegas: sale de la bodega de origen y entra a la de destino (cada una con su movimiento), todo en una sola escritura.
+      Si en la bodega de destino ya hay ese artículo (mismo nombre), se le suma; si no, se crea ahí con los mismos datos. */
+  function trasladar(a) {
+    const origen = bodegaDe(a), destinos = BODEGAS.filter(b => b !== origen);
+    abrirAccion({
+      titulo: 'Trasladar a otra bodega', sub: `${a.nombre}: hoy hay ${cantTxt(a.cantidad, a.unidad)} en la bodega de ${origen}.`,
+      campos: campoSel('acDest', 'Bodega de destino', destinos.map(b => [b, b]), destinos[0]) + campoNum('acCant', 'Cantidad que se traslada', 1, 1, 99999) + campoTxt('acNota', 'Nota (opcional)', '', 'Ej: para el proyecto de Bogotá', 160),
+      primario: 'Trasladar', icono: 'entrega', listo: 'Listo: traslado registrado. Ya salió de una bodega y entró a la otra.',
+      ops: () => {
+        const n = entero('acCant'), dest = valor('acDest'), hay = num(a.cantidad), nota = valor('acNota');
+        if (!destinos.includes(dest)) return fallar('Escoge la bodega de destino.', 'acDest');
+        if (!(n > 0)) return fallar('Escribe una cantidad entera mayor que 0.', 'acCant');
+        if (n > hay) return fallar(`Solo hay ${cantTxt(hay, a.unidad)} en ${origen}.`, 'acCant');
+        const tid = window.nube.idNuevo('tr'), d = articulos().find(x => x.id !== a.id && String(x.nombre).toLowerCase() === String(a.nombre).toLowerCase() && bodegaDe(x) === dest);
+        const sale = mover(a, -n, { articuloId: a.id, articulo: a.nombre, tipo: 'salida', motivo: 'traslado', cantidad: n, saldo: hay - n, nota: `Traslado a ${dest}${nota ? ': ' + nota : ''}`, trasladoId: tid });
+        const notaIn = `Traslado desde ${origen}${nota ? ': ' + nota : ''}`;
+        if (d) return [...sale, ...mover(d, n, { articuloId: d.id, articulo: d.nombre, tipo: 'entrada', motivo: 'traslado', cantidad: n, saldo: num(d.cantidad) + n, nota: notaIn, trasladoId: tid })];
+        const id = window.nube.idNuevo('ar'), movId = window.nube.idNuevo('mo');
+        return [...sale, ['set', 'articulos', id, { nombre: a.nombre, categoria: a.categoria, unidad: a.unidad, cantidad: n, ultimoMov: movId, minimo: num(a.minimo), maximo: num(a.maximo), ubicacion: '', costo: num(a.costo), proveedor: a.proveedor || '', bodega: dest }],
+          movimiento({ articuloId: id, articulo: a.nombre, tipo: 'entrada', motivo: 'traslado', cantidad: n, saldo: n, nota: notaIn, trasladoId: tid }, movId)];
       }
     });
   }
@@ -987,13 +1020,13 @@
     const App = A(), e = estadoArt(a), movs = movsDe(a).slice(0, 8), sug = sugerido(a);
     const abierta = compraAbierta(a.id);
     const botones = (esBodega()
-      ? [boton('entrada', 'Entrada', 'importar', ` data-id="${esH(a.id)}"`), boton('salida', 'Salida', 'entrega', ` data-id="${esH(a.id)}"`), boton('editart', 'Editar', 'lapiz', ` data-id="${esH(a.id)}"`)].concat(abierta || !puedoPedirCompra() ? [] : [boton('pedir', 'Pedir compra', 'carrito', ` data-id="${esH(a.id)}"`)])
+      ? [boton('entrada', 'Entrada', 'importar', ` data-id="${esH(a.id)}"`), boton('salida', 'Salida', 'entrega', ` data-id="${esH(a.id)}"`), boton('trasladar', 'Trasladar', 'entrega', ` data-id="${esH(a.id)}"`), boton('editart', 'Editar', 'lapiz', ` data-id="${esH(a.id)}"`)].concat(abierta || !puedoPedirCompra() ? [] : [boton('pedir', 'Pedir compra', 'carrito', ` data-id="${esH(a.id)}"`)])
       : puedoPedirMaterial() ? [boton('pedirmat', 'Pedir de este artículo', 'mas', ` data-id="${esH(a.id)}"`, 'primary small')] : [])
       .concat(veMovs() ? [boton('kardex', 'Kárdex', 'historial', ` data-id="${esH(a.id)}"`)] : []);
     abrirAccion({
-      titulo: a.nombre, sub: `${a.categoria} · ${a.ubicacion}`,
+      titulo: a.nombre, sub: [a.categoria, 'Bodega ' + bodegaDe(a), a.ubicacion].filter(Boolean).join(' · '),
       campos: `<div class="row">${App.pill(EST_ART[e][0], EST_ART[e][1])}${abierta ? App.pill('Compra en curso: ' + EST_CO[abierta.estado][0].toLowerCase(), 's-listo', 'carrito') : ''}</div>
-        <dl class="datos"><dt>Hay</dt><dd><b>${esH(cantTxt(a.cantidad, a.unidad))}</b></dd><dt>Mínimo y máximo</dt><dd>${esH(num(a.minimo))} y ${esH(num(a.maximo))}</dd>
+        <dl class="datos"><dt>Bodega</dt><dd>${esH(bodegaDe(a))}${a.ubicacion ? ' · ' + esH(a.ubicacion) : ''}</dd><dt>Hay</dt><dd><b>${esH(cantTxt(a.cantidad, a.unidad))}</b></dd><dt>Mínimo y máximo</dt><dd>${esH(num(a.minimo))} y ${esH(num(a.maximo))}</dd>
           <dt>Precio aprox.</dt><dd>${esH(App.cop(a.costo))} por ${esH(SINGULAR[a.unidad] || 'unidad')}</dd><dt>Proveedor</dt><dd>${esH(a.proveedor || 'Sin dato')}</dd></dl>
         ${veMovs() && sug ? `<div class="note">En los últimos 30 días salieron ${esH(num(sug.total))} (unas ${esH(sug.semana)} por semana). Un mínimo de ${esH(sug.minimo)} alcanza para unos 10 días.${sug.minimo > num(a.minimo) ? ` <b>Tu mínimo (${esH(num(a.minimo))}) está bajo.</b>` : ' Tu mínimo está bien.'}</div>` : ''}
         ${botones.length ? `<div class="tarea-pie">${botones.join('')}</div>` : ''}
@@ -1062,10 +1095,10 @@
     b.disabled = true;
     try {
       const d = D(), hojas = [], gen = `Generado el ${A().hoyISO()}.`;
-      const TIT = { Existencias: ['Existencias de la bodega', 'Cuánto hay de cada artículo, su estado y su valor.'], Movimientos: ['Movimientos de la bodega', 'Cada entrada, salida y ajuste, del más nuevo al más viejo.'],
+      const TIT = { Bodega: ['Bodega: lo que hay en cada bodega', 'Cuánto hay de cada artículo en Riohacha, Guamal y Bogotá, su estado y su valor.'], Movimientos: ['Movimientos de la bodega', 'Cada entrada, salida y ajuste, del más nuevo al más viejo.'],
         Compras: ['Compras', 'Todas las compras: quién pidió, quién autorizó, cuánto costó y en qué va.'], 'Pedidos de material': ['Pedidos de material', 'Lo que pidió cada persona a la bodega y si se entregó.'] };
       const hoja = (nombre, filas) => hojas.push(window.Excel.deObjetos(nombre, TIT[nombre][0], `${TIT[nombre][1]} ${gen}`, filas));
-      hoja('Existencias', articulos().map(a => ({ Artículo: a.nombre, Categoría: a.categoria, Cantidad: num(a.cantidad), Unidad: a.unidad, Mínimo: num(a.minimo), Máximo: num(a.maximo), Estado: EST_ART[estadoArt(a)][0], Ubicación: a.ubicacion, 'Precio aprox.': num(a.costo), 'Valor en bodega': num(a.cantidad) * num(a.costo), Proveedor: a.proveedor })));
+      hoja('Bodega', articulos().map(a => ({ Bodega: bodegaDe(a), Artículo: a.nombre, Categoría: a.categoria, Cantidad: num(a.cantidad), Unidad: a.unidad, Mínimo: num(a.minimo), Máximo: num(a.maximo), Estado: EST_ART[estadoArt(a)][0], Ubicación: a.ubicacion, 'Precio aprox.': num(a.costo), 'Valor en bodega': num(a.cantidad) * num(a.costo), Proveedor: a.proveedor })));
       hoja('Movimientos', d.movimientos.slice().sort((x, y) => String(y.fecha).localeCompare(String(x.fecha))).map(m => ({ Fecha: fechaLocal(m.fecha, true), Artículo: m.articulo, Tipo: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: num(m.cantidad), Saldo: num(m.saldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota })));
       hoja('Compras', d.compras.map(c => ({ Qué: c.que, Cantidad: num(c.cantidad), Unidad: c.unidad, Categoría: c.categoria, Estado: (EST_CO[c.estado] || [c.estado])[0], Pidió: c.pide, Autoriza: c.autoriza, 'Valor aprox.': num(c.valorAprox), 'Valor pagado': num(c.valorReal), Proveedor: c.proveedor, 'Fecha pedido': c.fechaPedido, 'Fecha compra': c.fechaCompra, 'Para qué': c.paraQue })));
       hoja('Pedidos de material', d.solicitudes.map(s => ({ Fecha: fechaLocal(s.fecha, false), Artículo: s.articulo, Cantidad: num(s.cantidad), Pidió: s.pide, 'Para qué': s.paraQue, Proyecto: s.proyecto, Estado: (EST_SOL[s.estado] || [s.estado])[0], Entregó: s.entregadaPor, Motivo: s.motivo })));
@@ -1082,7 +1115,7 @@
      Reglas: sin código = artículo nuevo · con código y datos distintos = cambio · «Eliminar» en la columna Acción = se elimina (solo la Jefe).
      Lo que se deja vacío en un artículo que ya existe se queda como está. La cantidad solo cambia con «Cantidad real (conteo)» y deja su movimiento. */
   const normEx = t => String(t == null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-  const COL_EX = [['id', 'id'], ['codigo', 'id'], ['accion', 'accion'], ['articulo', 'nombre'], ['nombre', 'nombre'], ['categoria', 'categoria'], ['unidad', 'unidad'], ['cantidad hoy', 'hoy'], ['cantidad real', 'real'],
+  const COL_EX = [['id', 'id'], ['codigo', 'id'], ['accion', 'accion'], ['bodega', 'bodega'], ['articulo', 'nombre'], ['nombre', 'nombre'], ['categoria', 'categoria'], ['unidad', 'unidad'], ['cantidad hoy', 'hoy'], ['cantidad real', 'real'],
     ['minimo', 'minimo'], ['maximo', 'maximo'], ['ubicacion', 'ubicacion'], ['precio', 'costo'], ['proveedor', 'proveedor']];
   const colEx = t => { const n = normEx(t), m = COL_EX.find(([k]) => n === k || n.startsWith(k + ' ')); return m ? m[1] : ''; };
   // Texto limpio (sin caracteres raros); el apostrofo con que Excel protege un texto que empieza con = + - @ se quita.
@@ -1107,7 +1140,7 @@
       const f = {};
       Object.keys(crudo).forEach(k => { const c = colEx(k); if (c && String(f[c] == null ? '' : f[c]).trim() === '') f[c] = crudo[k]; });
       const errores = [], avisos = [], cambios = [], acc = normEx(f.accion);
-      const r = { fila: crudo.__fila || i + 2, tipo: '', id: txtEx(f.id, 60), nombre: '', datos: {}, real: null, a: null, cambios, errores, avisos, omitida: '' };
+      const r = { fila: crudo.__fila || i + 2, tipo: '', id: txtEx(f.id, 60), nombre: '', bodega: '', datos: {}, real: null, a: null, cambios, errores, avisos, omitida: '' };
       if (acc.startsWith('ejemplo')) { r.omitida = 'ejemplo'; return r; }
       const a = r.id ? artPorId(r.id) : null; r.a = a;
       r.nombre = txtEx(f.nombre, 80) || (a ? a.nombre : '');
@@ -1130,6 +1163,15 @@
       v.nombre = r.nombre;
       if (!v.nombre) errores.push('Falta el nombre del artículo.');
       else if (v.nombre !== (a && a.nombre) && /^[=+\-@]/.test(v.nombre)) errores.push('El nombre no puede empezar con = + - ni @.');
+      let bod = a ? bodegaDe(a) : '';
+      const tb = txtEx(f.bodega, 20);
+      if (tb !== '') {
+        const ok = buscar(BODEGAS, tb);
+        if (!ok) errores.push(`No entendí la bodega «${tb.slice(0, 20)}». Usa Riohacha, Guamal o Bogotá.`);
+        else if (a && ok !== bod) errores.push(`El Excel no cambia un artículo de bodega (hoy está en ${bod}). Para moverlo usa «Trasladar» en la app.`);
+        else bod = ok;
+      } else if (nuevo) errores.push('Falta la bodega (Riohacha, Guamal o Bogotá).');
+      r.bodega = bod;
       const lista = (k, opciones, rotulo) => {
         const t = txtEx(f[k], 30);
         if (t === '') { if (nuevo) errores.push(`Falta ${rotulo}.`); return; }
@@ -1153,7 +1195,8 @@
         r.datos[k] = v[k];
         cambios.push(`${ETIQ_EX[k]}: ${k === 'costo' ? cop(a.costo) : (a[k] == null || a[k] === '' ? '(vacío)' : a[k])} → ${k === 'costo' ? cop(v[k]) : v[k]}`);
       });
-      if (nuevo) cambios.push(`${CATEGORIAS.includes(v.categoria) ? v.categoria : ''} · ${v.unidad} · mínimo ${v.minimo}, máximo ${v.maximo} · ${cop(v.costo)} c/u`);
+      if (nuevo) r.datos.bodega = bod;
+      if (nuevo) cambios.push(`Bodega ${bod} · ${v.categoria} · ${v.unidad} · mínimo ${v.minimo}, máximo ${v.maximo} · ${cop(v.costo)} c/u`);
       if (real !== null && (nuevo ? real > 0 : real !== num(a.cantidad))) { r.real = real; cambios.push(nuevo ? `Cantidad inicial: ${real}` : `Cantidad: ${num(a.cantidad)} → ${real} (ajuste por conteo)`); }
       if (!nuevo && !cambios.length) r.omitida = 'igual';
       return r;
@@ -1161,10 +1204,10 @@
     // Los nombres no se pueden repetir, contando lo que cambia el mismo Excel.
     const quita = new Set(filas.filter(x => x.tipo === 'eliminar' && !x.errores.length).map(x => x.id));
     const renombra = new Map(filas.filter(x => x.tipo === 'cambiar' && !x.errores.length && x.datos.nombre).map(x => [x.id, x.datos.nombre]));
-    const cuenta = new Map(), sumar = n => { const k = n.toLowerCase(); cuenta.set(k, (cuenta.get(k) || 0) + 1); };
-    arts.filter(a => !quita.has(a.id)).forEach(a => sumar(renombra.get(a.id) || String(a.nombre)));
-    filas.filter(x => x.tipo === 'agregar' && !x.errores.length).forEach(x => sumar(x.datos.nombre));
-    filas.forEach(x => { if (!x.errores.length && x.datos.nombre && cuenta.get(x.datos.nombre.toLowerCase()) > 1) x.errores.push('Ya hay un artículo con ese nombre (en la app o repetido en el Excel).'); });
+    const cuenta = new Map(), clave = (b, n) => `${b}|${String(n).toLowerCase()}`, sumar = (b, n) => { const k = clave(b, n); cuenta.set(k, (cuenta.get(k) || 0) + 1); };
+    arts.filter(a => !quita.has(a.id)).forEach(a => sumar(bodegaDe(a), renombra.get(a.id) || String(a.nombre)));
+    filas.filter(x => x.tipo === 'agregar' && !x.errores.length).forEach(x => sumar(x.bodega, x.datos.nombre));
+    filas.forEach(x => { if (!x.errores.length && x.datos.nombre && cuenta.get(clave(x.bodega, x.datos.nombre)) > 1) x.errores.push(`Ya hay un artículo con ese nombre en la bodega de ${x.bodega} (en la app o repetido en el Excel).`); });
     return filas;
   }
 
@@ -1173,7 +1216,7 @@
     if (archivo.size > 1048576) throw new Error('El archivo pesa mucho. Usa uno de menos de 1 MB.');
     if (!/\.(xlsx|xls|csv)$/i.test(archivo.name)) throw new Error('Sube un archivo de Excel (.xlsx) o CSV.');
     const X = await cargarXlsx(), libro = X.read(await archivo.arrayBuffer(), { type: 'array' });
-    const orden = libro.SheetNames.filter(n => normEx(n) === 'existencias').concat(libro.SheetNames);
+    const orden = libro.SheetNames.filter(n => ['bodega', 'existencias'].includes(normEx(n))).concat(libro.SheetNames);
     for (const n of orden) {
       // Los números se leen como números (raw) para no confundir «$85,000» con texto.
       const m = X.utils.sheet_to_json(libro.Sheets[n], { header: 1, defval: '', raw: true, blankrows: true });
@@ -1198,32 +1241,33 @@
     try {
       const hoy = A().hoyISO(), rango = (col, n) => ({ hoja: 'Listas', rango: `$${col}$5:$${col}$${4 + Math.max(1, n)}` });
       const ACCIONES = ['Agregar', 'Cambiar', 'Eliminar'];
-      const arts = articulos().slice().sort((x, y) => String(x.categoria).localeCompare(String(y.categoria)) || String(x.nombre).localeCompare(String(y.nombre)));
-      const filas = arts.map(a => [a.id, '', a.nombre, a.categoria, a.unidad, num(a.cantidad), '', num(a.minimo), num(a.maximo), a.ubicacion, num(a.costo), a.proveedor, EST_ART[estadoArt(a)][0], num(a.cantidad) * num(a.costo)]);
-      filas.push({ estilo: 'ejemplo', celdas: ['', 'Ejemplo (se ignora)', 'Artículo de ejemplo', 'EPP', 'unidades', '', 5, 2, 10, 'Bodega Riohacha · Estante A1', 12000, 'Proveedor de ejemplo', '', ''] });
-      const base = { nombre: 'Existencias', titulo: 'Base de datos: existencias de la bodega', vacias: 20,
-        subtitulo: `Una fila por artículo (${hoy}). Cambia lo que quieras en las filas de siempre y escribe los artículos nuevos en las filas de abajo, sin código (ID). Luego sube este mismo archivo en la app (Inventario › Existencias › Subir Excel): la app te muestra qué cambia y tú confirmas. Las columnas grises solo se miran. Lo que dejes vacío en un artículo que ya existe se queda como está. La fila amarilla es de ejemplo y se ignora.`,
-        columnas: [{ t: 'ID', ancho: 12, gris: true }, { t: 'Acción', ancho: 14, lista: rango('C', ACCIONES.length) }, { t: 'Artículo', ancho: 34 }, { t: 'Categoría', ancho: 16, lista: rango('A', CATEGORIAS.length) },
+      const arts = articulos().slice().sort((x, y) => BODEGAS.indexOf(bodegaDe(x)) - BODEGAS.indexOf(bodegaDe(y)) || String(x.categoria).localeCompare(String(y.categoria)) || String(x.nombre).localeCompare(String(y.nombre)));
+      const filas = arts.map(a => [a.id, '', bodegaDe(a), a.nombre, a.categoria, a.unidad, num(a.cantidad), '', num(a.minimo), num(a.maximo), a.ubicacion, num(a.costo), a.proveedor, EST_ART[estadoArt(a)][0], num(a.cantidad) * num(a.costo)]);
+      filas.push({ estilo: 'ejemplo', celdas: ['', 'Ejemplo (se ignora)', 'Riohacha', 'Artículo de ejemplo', 'EPP', 'unidades', '', 5, 2, 10, 'Estante A1', 12000, 'Proveedor de ejemplo', '', ''] });
+      const base = { nombre: 'Bodega', titulo: 'Base de datos: bodega (Riohacha, Guamal y Bogotá)', vacias: 20,
+        subtitulo: `Una fila por artículo (${hoy}). Cambia lo que quieras en las filas de siempre y escribe los artículos nuevos en las filas de abajo, sin código (ID). Luego sube este mismo archivo en la app (Inventario › Bodega › Subir Excel): la app te muestra qué cambia y tú confirmas. Las columnas grises solo se miran. Lo que dejes vacío en un artículo que ya existe se queda como está. La fila amarilla es de ejemplo y se ignora.`,
+        columnas: [{ t: 'ID', ancho: 12, gris: true }, { t: 'Acción', ancho: 14, lista: rango('C', ACCIONES.length) }, { t: 'Bodega', ancho: 13, lista: rango('D', BODEGAS.length) }, { t: 'Artículo', ancho: 34 }, { t: 'Categoría', ancho: 16, lista: rango('A', CATEGORIAS.length) },
           { t: 'Unidad', ancho: 12, lista: rango('B', UNIDADES.length) }, { t: 'Cantidad hoy', ancho: 12, tipo: 'numero', gris: true }, { t: 'Cantidad real (conteo)', ancho: 15, tipo: 'numero', validar: { min: 0 } },
           { t: 'Mínimo', ancho: 10, tipo: 'numero', validar: { min: 0 } }, { t: 'Máximo', ancho: 10, tipo: 'numero', validar: { min: 1 } }, { t: 'Ubicación', ancho: 32 }, { t: 'Precio aprox.', ancho: 14, tipo: 'dinero', validar: { min: 0 } },
           { t: 'Proveedor', ancho: 26 },
-          { t: 'Estado', ancho: 17, gris: true, formula: r => `IF(OR(C${r}="",F${r}=""),"",IF(F${r}<=0,"Agotado",IF(F${r}<=H${r},"Bajo del mínimo","Bien")))`,
+          { t: 'Estado', ancho: 17, gris: true, formula: r => `IF(OR(D${r}="",G${r}=""),"",IF(G${r}<=0,"Agotado",IF(G${r}<=I${r},"Bajo del mínimo","Bien")))`,
             resaltar: [{ texto: 'Agotado', fondo: 'FFF8D3CF', letra: 'FF9B1C14' }, { texto: 'Bajo del mínimo', fondo: 'FFFDE7BF', letra: 'FF7A4B00' }] },
-          { t: 'Valor en bodega', ancho: 16, tipo: 'dinero', gris: true, formula: r => `IF(OR(F${r}="",K${r}=""),"",F${r}*K${r})` }],
+          { t: 'Valor en bodega', ancho: 16, tipo: 'dinero', gris: true, formula: r => `IF(OR(G${r}="",L${r}=""),"",G${r}*L${r})` }],
         filas };
       const ayuda = { nombre: 'Ayuda', titulo: 'Cómo usar esta base de datos', subtitulo: 'Cada fila es un artículo de la bodega. Lo que cambies aquí se aplica en la app cuando subes el archivo y confirmas.', columnas: [{ t: 'Qué', ancho: 30 }, { t: 'Cómo', ancho: 100 }],
-        filas: [['Artículo nuevo', 'Escríbelo en las filas vacías de abajo, sin código (ID). Obligatorios: Artículo, Categoría, Unidad, Mínimo, Máximo y Precio. La Cantidad real es la que hay ahora (opcional).'],
+        filas: [['Artículo nuevo', 'Escríbelo en las filas vacías de abajo, sin código (ID). Obligatorios: Bodega (Riohacha, Guamal o Bogotá), Artículo, Categoría, Unidad, Mínimo, Máximo y Precio. La Cantidad real es la que hay ahora (opcional).'],
           ['Cambiar un artículo', 'Cambia la celda (nombre, categoría, unidad, mínimo, máximo, ubicación, precio o proveedor). La app lo detecta sola; la columna Acción puede quedar vacía.'],
           ['Cambiar la cantidad', 'Escribe lo que contaste en «Cantidad real (conteo)». La app guarda un ajuste en Movimientos. «Cantidad hoy» no se usa al subir.'],
+          ['Cambiar de bodega', 'El Excel no mueve artículos entre bodegas. Para eso usa «Trasladar» en la app: sale de una bodega y entra a la otra, cada una con su movimiento. El mismo artículo puede estar en las 3 bodegas (una fila en cada una).'],
           ['Eliminar un artículo', 'Escribe «Eliminar» en la columna Acción. Solo la Jefe puede, y solo si no tiene compras ni pedidos en curso. Borrar la fila NO elimina nada.'],
           ['Código (ID)', 'No lo cambies: así la app sabe qué artículo es. Una fila sin código es un artículo nuevo.'],
-          ['Categorías', CATEGORIAS.join(', ')], ['Unidades', UNIDADES.join(', ')],
+          ['Bodegas', BODEGAS.join(', ') + ' (siempre son estas 3)'], ['Categorías', CATEGORIAS.join(', ')], ['Unidades', UNIDADES.join(', ')],
           ['Estado y Valor en bodega', 'Se calculan solos en Excel (no se suben). Estado: Agotado, Bajo del mínimo o Bien.'],
           ['Atajos de Excel', 'Los títulos tienen filtros (flecha), la primera fila queda fija al bajar, Ctrl+Shift+L activa o quita filtros y Ctrl+F busca un artículo.'],
           ['Después de subir', 'La app te muestra qué agregaría, cambiaría o eliminaría. Nada se guarda hasta que toques «Guardar». Si subes el mismo archivo otra vez, lo que ya quedó guardado no se repite.']] };
-      const listas = { nombre: 'Listas', titulo: 'Listas de opciones (no tocar)', subtitulo: 'Alimentan los menús desplegables de la hoja Existencias.', oculta: true, columnas: [{ t: 'Categoría', ancho: 20 }, { t: 'Unidad', ancho: 16 }, { t: 'Acción', ancho: 16 }], filas: [] };
-      for (let k = 0; k < Math.max(CATEGORIAS.length, UNIDADES.length, ACCIONES.length); k++) listas.filas.push([CATEGORIAS[k] || '', UNIDADES[k] || '', ACCIONES[k] || '']);
-      await window.Excel.descargar({ archivo: `Base de datos Existencias ${hoy}`, hojas: [base, ayuda, listas] });
+      const listas = { nombre: 'Listas', titulo: 'Listas de opciones (no tocar)', subtitulo: 'Alimentan los menús desplegables de la hoja Bodega.', oculta: true, columnas: [{ t: 'Categoría', ancho: 20 }, { t: 'Unidad', ancho: 16 }, { t: 'Acción', ancho: 16 }, { t: 'Bodega', ancho: 16 }], filas: [] };
+      for (let k = 0; k < Math.max(CATEGORIAS.length, UNIDADES.length, ACCIONES.length); k++) listas.filas.push([CATEGORIAS[k] || '', UNIDADES[k] || '', ACCIONES[k] || '', BODEGAS[k] || '']);
+      await window.Excel.descargar({ archivo: `Base de datos Bodega ${hoy}`, hojas: [base, ayuda, listas] });
       A().toast('Listo: base de datos descargada');
     } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
     finally { b.disabled = false; }
@@ -1268,7 +1312,7 @@
     let hechos = 0;
     try {
       for (let k = 0; k < lotes.length; k++) {
-        if (k === lotes.length - 1 && (ajustes || cuenta('eliminar'))) lotes[k].push(aviso('jefe', 'Excel de existencias', `${persona().nombre} subió un Excel de existencias: ${resumen}${ajustes ? `; ${pl(ajustes, 'artículo ajustado', 'artículos ajustados')} por conteo` : ''}.`));
+        if (k === lotes.length - 1 && (ajustes || cuenta('eliminar'))) lotes[k].push(aviso('jefe', 'Excel de la bodega', `${persona().nombre} subió un Excel de la bodega: ${resumen}${ajustes ? `; ${pl(ajustes, 'artículo ajustado', 'artículos ajustados')} por conteo` : ''}.`));
         await window.nube.lote(lotes[k].filter(Boolean)); hechos += lotes[k].length;
       }
       previaEx = null;
@@ -1295,6 +1339,39 @@
     return h + `<div class="row acciones-inv"><button class="btn primary" type="button" data-accion="exguardar"${buenas.length && !aplicandoEx ? '' : ' disabled'}>${window.ico('check')}Guardar ${pl(buenas.length, 'cambio', 'cambios')}</button><button class="btn ghost" type="button" data-accion="exdescartar">Descartar</button></div>`;
   }
 
+  /* ---------- base de datos en Excel de las compras (excel-bd.js): agregar muchas a la vez; lo que ya está solo se mira ---------- */
+  const cfgCompras = () => ({
+    clave: 'compras', hoja: 'Compras', titulo: 'Base de datos: compras', sub: 'Una fila por compra', archivo: 'Base de datos Compras',
+    acciones: ['Agregar'], puedeSubir: puedoPedirCompra,
+    columnas: [
+      { t: 'Qué', k: 'que', clave: true, obligatoria: true, max: 100, ancho: 34 }, { t: 'Cantidad', k: 'cantidad', tipo: 'entero', min: 1, max: 99999, obligatoria: true },
+      { t: 'Unidad', k: 'unidad', lista: UNIDADES, obligatoria: true }, { t: 'Categoría', k: 'categoria', lista: CATEGORIAS, obligatoria: true },
+      { t: 'Valor total', k: 'valor', tipo: 'dinero', min: 1, obligatoria: true }, { t: 'Para qué', k: 'paraQue', obligatoria: true, max: 140, ancho: 36 },
+      { t: 'Proyecto', k: 'proyecto', lista: PROYECTOS, defecto: PROYECTOS[0] }, { t: 'Proveedor sugerido', k: 'provSug', max: 80, ancho: 24 },
+      { t: 'Estado', k: 'estado', gris: true, ancho: 16 }, { t: 'Pidió', k: 'pide', gris: true, ancho: 22 }, { t: 'Fecha del pedido', k: 'fecha', gris: true }, { t: 'Valor pagado', k: 'pagado', tipo: 'dinero', gris: true }],
+    filas: () => D().compras.filter(c => veTodo() || c.pide === persona().nombre).sort((a, b) => String(b.fechaPedido || b.fechaCompra).localeCompare(String(a.fechaPedido || a.fechaCompra)))
+      .map(c => ({ id: c.id, v: { que: c.que, cantidad: num(c.cantidad), unidad: c.unidad, categoria: c.categoria, valor: num(c.valorAprox), paraQue: c.paraQue, proyecto: c.proyecto || '', provSug: c.proveedorSug || '', estado: (EST_CO[c.estado] || [c.estado])[0], pide: c.pide, fecha: c.fechaPedido || c.fechaCompra || '', pagado: num(c.valorReal) } })),
+    ejemplo: { que: 'Resmas de papel carta', cantidad: 5, unidad: 'resmas', categoria: 'Papelería', valor: 140000, paraQue: 'Para imprimir listas de asistencia', proyecto: PROYECTOS[0], provSug: 'Papelería Central' },
+    ayuda: [['Compra nueva', 'Cada fila nueva pide una compra de UN artículo: queda «Por autorizar» y le llega el aviso a quien la autoriza (si eres el Gerente general queda autorizada). Obligatorios: Qué, Cantidad, Unidad, Categoría, Valor total y Para qué. Para varios artículos en una compra, o con fotos de cotizaciones, usa «Pedir una compra» en la app.'],
+      ['Compras que ya están', 'Aquí solo se miran: no se cambian ni se eliminan desde el Excel (son el rastro de lo que se gastó).']],
+    opsAgregar: x => {
+      const g = esGerenteGeneral(), v = x.v;
+      const doc = Object.assign({ que: v.que, cantidad: v.cantidad, unidad: v.unidad, categoria: v.categoria, valorAprox: v.valor, paraQue: v.paraQue + (v.proyecto ? ` (${v.proyecto})` : ''), proyecto: v.proyecto, proveedorSug: v.provSug,
+        lineas: [{ que: v.que, cantidad: v.cantidad, unidad: v.unidad, valor: v.valor, articuloId: '' }], cotizaciones: [], pide: persona().nombre, pideRol: persona().rol, autoriza: g ? persona().nombre : '', autorizaJefe: '', estado: g ? 'autorizado' : 'pedido',
+        proveedor: '', valorReal: 0, fechaPedido: A().hoyISO(), fechaCompra: '', entregadoA: '', motivoRechazo: '', articuloId: '', factura: '', revisada: false }, misMarcas());
+      doc.historial = [{ fecha: ahora(), texto: 'Pidió la compra (desde el Excel)', por: persona().nombre }];
+      if (g) { doc.autorizaCorreo = window.nube.correo(); doc.historial.push({ fecha: ahora(), texto: 'Autorizó la compra (Gerente general: lo que pide no necesita autorización)', por: persona().nombre }); }
+      return [['set', 'compras', window.nube.idNuevo('co'), doc]];
+    },
+    alGuardar: buenas => {
+      pushPendientes = [];
+      return [esGerenteGeneral() ? aviso('compras', 'Compras autorizadas: hay que comprar', `${persona().nombre} autorizó ${buenas.length} ${buenas.length === 1 ? 'compra' : 'compras'} desde un Excel.`)
+        : aviso(ROL_DE[autorizadorDe({ pideRol: persona().rol, estado: 'pedido' })], 'Compras por autorizar', `${persona().nombre} pidió ${buenas.length} ${buenas.length === 1 ? 'compra' : 'compras'} desde un Excel.`)];
+    },
+    despues: () => notificar(pushPendientes.slice())
+  });
+  window.ExcelBD.conectar($('invContenido'), { compras: cfgCompras }, () => pintar());
+
   /* ---------- eventos ---------- */
   $('invSecciones').addEventListener('click', e => {
     const b = e.target.closest('[data-sec]'); if (!b) return;
@@ -1316,7 +1393,7 @@
       entregar: () => s && entregar(s), noentregar: () => s && noEntregar(s), sinaut: () => registrarCompra(null, true),
       entrada: () => entradaSalida('entrada', a ? a.id : ''), salida: () => entradaSalida('salida', a ? a.id : ''),
       nuevoart: () => editarArticulo(null), editart: () => a && editarArticulo(a), verart: () => a && verArticulo(a), pedirmat: () => a && pedirMaterial(a.id),
-      conteo: () => conteo(), excel: () => descargarExcel(b), bdexcel: () => descargarBase(b), exguardar: () => guardarExcelExistencias(), exdescartar: () => { previaEx = null; errorEx = ''; pintar(); }, monto: () => cambiarMonto(), kardex: () => a && kardex(a), excelkardex: () => a && descargarKardex(b, a),
+      trasladar: () => a && trasladar(a), conteo: () => conteo(), excel: () => descargarExcel(b), bdexcel: () => descargarBase(b), exguardar: () => guardarExcelExistencias(), exdescartar: () => { previaEx = null; errorEx = ''; pintar(); }, monto: () => cambiarMonto(), kardex: () => a && kardex(a), excelkardex: () => a && descargarKardex(b, a),
       masLinea: () => masLinea(), quitarLinea: () => quitarLinea(b.dataset.n),
       ir: () => { seccion = b.dataset.sec; if (b.dataset.subk) sub[b.dataset.subk] = b.dataset.subv; A().S.filtro.inventario = b.dataset.filtro || ''; $('qInventario').value = ''; A().pintarTodo(); }
     };

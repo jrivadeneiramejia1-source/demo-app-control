@@ -49,7 +49,7 @@
   const tieneExtra = id => !!(S.persona && Array.isArray(S.persona.extras) && S.persona.extras.includes(id));
   const puedeVer = mod => permiso(mod) !== 'no';
   /** Desde cuánto una compra también la autoriza el Gerente (lo guarda el Gerente en Firebase; por defecto 1.000.000). */
-  const MONTO_POR_DEFECTO = 1000000;
+  const MONTO_POR_DEFECTO = 5000000;
   const montoGerente = () => { const d = S.datos.ajustesApp.find(x => x.id === 'compras'); return d && Number.isInteger(d.montoGerente) && d.montoGerente >= 0 ? d.montoGerente : MONTO_POR_DEFECTO; };
   const pill = (txt, clase, icono) => `<span class="pill ${clase}">${icono ? ico(icono) : ''}${esH(txt)}</span>`;
 
@@ -348,12 +348,12 @@
     $('inicioSub').textContent = p.cargo && p.cargo !== p.rolTxt ? `${p.cargo} · ${p.rolTxt}` : p.rolTxt;
     const n = pendientes();
     const todas = [
-      { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: ['gerente', 'jefe', 'asistente', 'consulta'] },
+      { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: ['gerente', 'jefe', 'asistente', 'coordcompras', 'consulta'] },
       { mod: 'inventario', k: 'i-ent', n: n.inv.porEntregar, lbl: 'Pedidos de material por entregar', icono: 'entrega', tono: 'listo', roles: ['jefe', 'asistente'] },
-      { mod: 'inventario', k: 'i-aut', n: n.inv.porAutorizarMias, lbl: 'Compras que te toca autorizar', icono: 'carrito', tono: 'org', roles: ['gerente', 'jefe'] },
+      { mod: 'inventario', k: 'i-aut', n: n.inv.porAutorizarMias, lbl: 'Compras que te toca autorizar', icono: 'carrito', tono: 'org', roles: () => permiso('inventario') === 'coordina' || (permiso('inventario') === 'gerente' && tieneExtra('general')) },
       { mod: 'inventario', k: 'i-com', n: n.inv.porComprar, lbl: 'Compras autorizadas por hacer', icono: 'carrito', tono: 'listo', roles: ['compras'] },
-      { mod: 'inventario', k: 'i-cur', n: n.inv.enCurso, lbl: 'Compras en curso', icono: 'carrito', tono: 'listo', roles: ['gerente', 'financiero', 'consulta'] },
-      { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['gerente', 'jefe', 'compras', 'financiero', 'consulta'] },
+      { mod: 'inventario', k: 'i-cur', n: n.inv.enCurso, lbl: 'Compras en curso', icono: 'carrito', tono: 'listo', roles: ['gerente', 'coordcompras', 'financiero', 'consulta'] },
+      { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['gerente', 'jefe', 'coordcompras', 'compras', 'financiero', 'consulta'] },
       { mod: 'inventario', k: 'i-mis', n: n.inv.misPedidos, lbl: 'Tus pedidos de material en espera', icono: 'caja', tono: 'listo', roles: () => ['pide', 'finanzas'].includes(permiso('inventario')) },
       { mod: 'vehiculos', k: 'i-nov', n: n.novedades, lbl: 'Novedades de carros sin revisar', icono: 'carro', tono: 'org', roles: ['jefe', 'carros', 'asistente'] },
       { mod: 'vehiculos', k: 'i-via', n: n.veh.mias, lbl: 'Viajes por registrar', icono: 'llave', tono: 'listo', roles: ['conductor'] },
@@ -514,7 +514,7 @@
     $('btnAvisos').onclick = abrirAvisos;
     $('btnSalir').onclick = async () => { cerrarHoja('shPersona'); await nube.salir(); };
     // «Personas y permisos» (gente.js, 34 KB) solo lo usa la Jefe: se descarga la primera vez que lo abre.
-    $('btnGente').onclick = () => { cerrarHoja('shPersona'); UI.cargarScript('gente.js?v=8').then(() => window.Gente.abrir(), () => toast('No se pudo abrir el panel. Revisa la conexión y vuelve a intentar.')); };
+    $('btnGente').onclick = () => { cerrarHoja('shPersona'); UI.cargarScript('gente.js?v=9').then(() => window.Gente.abrir(), () => toast('No se pudo abrir el panel. Revisa la conexión y vuelve a intentar.')); };
     $('entradaModo').addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return; modoEntrada = b.dataset.modo; $('entradaErr').hidden = true; pintarModoEntrada(); });
     $('ctCambiar').onclick = () => { modoCuenta = modoCuenta === 'crear' ? 'entrar' : 'crear'; $('ctErr').hidden = true; pintarModoEntrada(); };
     $('ctForm').addEventListener('submit', e => { e.preventDefault(); enviarCuenta(); });

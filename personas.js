@@ -22,6 +22,9 @@
       permisos: { equipos: 'soporte', inventario: 'pide', vehiculos: 'no', reuniones: 'no' } },
     { rol: 'compras', area: 'Inventario', rolTxt: 'Compras', cargo: 'Encargado de compras', pref: 'COM',
       permisos: { equipos: 'no', inventario: 'compra', vehiculos: 'no', reuniones: 'informa' } },
+    // Coordinador de compras: autoriza las compras (hasta el monto del Gerente; arriba de ese monto las pasa al Gerente general). No las hace: las hace Compras.
+    { rol: 'coordcompras', area: 'Inventario', rolTxt: 'Coordinador de compras', cargo: 'Coordinador de compras', pref: 'CCO',
+      permisos: { equipos: 'no', inventario: 'coordina', vehiculos: 'no', reuniones: 'no' } },
     { rol: 'asistente', area: 'Inventario', rolTxt: 'Bodega', cargo: 'Encargada de bodega', pref: 'BOD',
       permisos: { equipos: 'no', inventario: 'bodega', vehiculos: 'autoriza', reuniones: 'informa' } },
     { rol: 'carros', area: 'Vehículos', rolTxt: 'Transporte', cargo: 'Coordinadora de transporte', pref: 'TRA',
@@ -43,10 +46,13 @@
     { rol: 'consulta', area: 'General', rolTxt: 'Consulta', cargo: 'Solo consulta (revisoría y cumplimiento)', pref: 'CNS',
       permisos: { equipos: 'no', inventario: 'ver', vehiculos: 'ver', reuniones: 'no' } }
   ];
+  // Las 3 bodegas de la empresa: siempre estas (la app, el Excel y las reglas de Firebase las exigen). Debe coincidir con firestore.rules (bodegaOk).
+  const BODEGAS = ['Riohacha', 'Guamal', 'Bogotá'];
   const AREAS = ['Dirección', 'Equipos', 'Inventario', 'Vehículos', 'Reuniones', 'General'];
   // Permisos extra: además del rol (que da el código), el Gerente o la Jefe le marcan a cada persona lo que hace de más.
   // Cada uno sirve solo para los roles de la lista. Debe coincidir con firestore.rules (función extraDe).
   const EXTRAS = [
+    { id: 'general', roles: ['gerente'], txt: 'Gerente general', detalle: 'Autoriza las compras de más del monto del Gerente y las que pide la Coordinadora; lo que él pide no necesita autorización. Se marca a mano en la consola de Firebase (la Jefe no puede).' },
     { id: 'compra', roles: ['asistente'], txt: 'También hace y recibe compras', detalle: 'Ve las compras autorizadas y las registra, como Compras.' },
     { id: 'actas', roles: ['soporte'], txt: 'También sigue las actas de entrega', detalle: 'Además de los equipos, está pendiente de que cada entrega tenga su acta firmada (se usa en la fase de Equipos).' },
     { id: 'encargada', roles: ['administrativo'], txt: 'Encargada de reuniones', detalle: 'Ve todas las tareas de todas las reuniones y la bandeja de correos. Lo que se autoriza sigue siendo de la Jefe.' }
@@ -59,7 +65,7 @@
   const U_GER = 'Gerencia y control', U_SGI = 'SGI y HSE', U_PRO = 'Gerencia de Proyectos', U_ABA = 'Abastecimiento', U_ADM = 'Gerencia Administrativa', U_FIN = 'Gerencia Financiera';
   const UNIDADES = [U_GER, U_SGI, U_PRO, U_ABA, U_ADM, U_FIN];
   const DE_PRUEBA = [
-    ['gerente', 'Oscar Muñoz', 'Gerente', U_GER], ['gerente', 'Santiago Valencia', 'Gerente', U_GER],
+    ['gerente', 'Oscar Muñoz', 'Gerente general', U_GER, ['general']], ['gerente', 'Santiago Valencia', 'Gerente', U_GER],
     ['consulta', 'Revisor Fiscal', 'Revisor Fiscal (sin persona asignada)', U_GER], ['consulta', 'Oficial Cumplimiento', 'Oficial de Cumplimiento SAGRILAFT (sin persona asignada)', U_GER],
     ['profesional', 'Margaret Pulido', 'Coordinador SGI', U_SGI], ['profesional', 'Milena Bermúdez', 'Profesional SGI', U_SGI], ['profesional', 'Jorge Alberto Pérez', 'Profesional SGI', U_SGI],
     ['profesional', 'Luis Humberto López', 'Profesional SGI', U_SGI], ['colaborador', 'Yuliana Murcia', 'Asistente SGI', U_SGI],
@@ -71,7 +77,7 @@
     ['profesional', 'Mauricio Sabogal', 'Profesional Licitaciones', U_PRO], ['profesional', 'Wilson Rodríguez', 'Profesional Licitaciones', U_PRO],
     ['jefe', 'Carolina Castillo', 'Líder Abastecimiento y Coord. Seguimiento y Control', U_ABA],
     ['administrativo', 'Paola Martínez', 'Asistente Seguimiento y Control', U_ABA], ['administrativo', 'Solanyi Surquira', 'Asistente Administrativa', U_ABA, ['encargada']],
-    ['compras', 'Mauricio Giraldo', 'Coord. Compras', U_ABA], ['carros', 'Wilson Muñoz', 'Coord. Transporte', U_ABA], ['compras', 'Fredy Torres', 'Auxiliar Compras MGC', U_ABA],
+    ['coordcompras', 'Mauricio Giraldo', 'Coord. Compras', U_ABA], ['carros', 'Wilson Muñoz', 'Coord. Transporte', U_ABA], ['compras', 'Fredy Torres', 'Auxiliar Compras MGC', U_ABA],
     ['colaborador', 'Iveth Pardo', 'Recepcionista', U_ABA], ['colaborador', 'Alexander Beltrán', 'Mensajero', U_ABA], ['colaborador', 'Giovanna Bohórquez', 'Servicios Generales', U_ABA],
     ['conductor', 'Oscar Farfán', 'Conductor', U_ABA],
     // El organigrama no trae a nadie de bodega: en la demo lo hace el auxiliar administrativo (se cambia desde Personas y permisos).
@@ -87,14 +93,14 @@
   /** Correo inventado de una persona de prueba: «rol.nombre.apellido@example.com» (el rol va primero; lo leen las reglas). */
   const correoPrueba = (rol, nombre) => `${rol}.${sinTildes(nombre)}@example.com`;
   const PERMISO_TXT = { no: 'Sin acceso', ver: 'Solo ver', pide: 'Pide material', edita: 'Edita', reporta: 'Reporta novedades', autoriza: 'Autoriza',
-    compra: 'Hace las compras', bodega: 'Encargada de bodega', finanzas: 'Ve compras y facturas', gerente: 'Ve todo a detalle', jefe: 'Ve y cambia todo',
+    coordina: 'Coordina y autoriza las compras', compra: 'Hace las compras', bodega: 'Encargada de bodega', finanzas: 'Ve compras y facturas', gerente: 'Ve todo a detalle', jefe: 'Ve y cambia todo',
     encargado: 'Mantenimiento y actas de entrega', soporte: 'Recibe los registros y sigue las entregas', logistica: 'Logística de la reunión', asiste: 'Asiste a reuniones', actas: 'Registra actas y formatos', informa: 'Informa lo que hay' };
 
   // Niveles que la Jefe puede dar a una persona en cada módulo (además de «Como su rol», que es no marcar nada, y «Sin acceso»).
   // Nunca «jefe» ni «gerente». Debe coincidir con firestore.rules (función permisosOk).
   const NIVELES = {
     equipos: [['ver', 'Solo ver'], ['encargado', 'Encargado: mantenimiento y entregas'], ['soporte', 'Soporte: recibe y revisa']],
-    inventario: [['ver', 'Solo ver'], ['finanzas', 'Ve todas las compras y facturas, y también pide'], ['pide', 'Pide material y compras'], ['compra', 'Hace las compras'], ['bodega', 'Encargada de bodega']],
+    inventario: [['ver', 'Solo ver'], ['coordina', 'Coordina las compras: autoriza hasta el monto del Gerente'], ['finanzas', 'Ve todas las compras y facturas, y también pide'], ['pide', 'Pide material y compras'], ['compra', 'Hace las compras'], ['bodega', 'Encargada de bodega']],
     vehiculos: [['ver', 'Solo ver'], ['reporta', 'Reporta novedades y registra salidas'], ['autoriza', 'Revisa novedades y documentos']],
     reuniones: [['ver', 'Solo ver']]   // en Reuniones cada rol hace su tarea: aquí solo se sube o se baja a «ver»
   };
@@ -118,13 +124,14 @@
     return Object.freeze(Object.assign({ rol, nombre, corto: corto(nombre), correo: String(correo || '').toLowerCase(), cargo: cargo || r.cargo,
       rolTxt: r.rolTxt, area: r.area, ajustes, permisos: Object.freeze(Object.assign({}, r.permisos, ajustes)) }, x));
   }
-  // Permisos extra fijos de dos personas de prueba (Ángel revisa las actas, Solanyi es encargada de reuniones). Debe coincidir con firestore.rules (extrasPrueba).
+  // Permisos extra fijos de tres personas de prueba (Ángel revisa las actas, Solanyi es encargada de reuniones, Oscar es el Gerente general). Debe coincidir con firestore.rules (extrasPrueba).
   const PERSONAS = DE_PRUEBA.map(([rol, nombre, cargo, unidad, extras]) => armar(rol, nombre, correoPrueba(rol, nombre), cargo, { prueba: true, unidad, extras: extras || [] }));
 
   window.DEMO = Object.freeze({
     CLAVE: CLAVE_DEMO,
     ROLES: Object.freeze(ROLES.map(r => Object.freeze(r))),
     AREAS: Object.freeze(AREAS),
+    BODEGAS: Object.freeze(BODEGAS),
     UNIDADES: Object.freeze(UNIDADES),
     correoPrueba,
     PERSONAS: Object.freeze(PERSONAS),
