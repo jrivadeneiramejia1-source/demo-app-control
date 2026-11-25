@@ -250,7 +250,7 @@
       'so-002': solicitud('ar-018', 1, 'Wilson Muñoz', 'carros', 'Para revisar los carros de noche',
         'Proyecto Costa Norte', 'pendiente', iso(-1, 17, 5)),
       'so-003': solicitud('ar-002', 8, 'Jorge Ibarra', '', 'Botas para la cuadrilla nueva de campo',
-        'Proyecto Costa Norte', 'pendiente', iso(-2, 9, 20)),
+        'Proyecto Costa Norte', 'pendiente', iso(-3, 9, 20)),
       'so-004': solicitud('ar-004', 4, 'Jorge Ibarra', '', 'Guantes para el trabajo de campo',
         'Proyecto Costa Norte', 'entregada', iso(-7, 15, 0), { entregadaPor: 'Andrés Beltrán', fechaEntrega: iso(-6, 10, 0) }),
       'so-005': solicitud('ar-017', 20, 'Andrés Mendoza', '', 'Para una reunión con la comunidad',

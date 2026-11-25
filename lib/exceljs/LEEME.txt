@@ -1,0 +1,1 @@
+ExcelJS 4.4.0, licencia MIT (ver LICENSE.txt). Se usa para armar los archivos de Excel con formato (títulos, negrillas, cuadros y listas desplegables) que se descargan desde la app. Se carga solo al tocar un botón de descargar, no al abrir la app. Bajado de https://registry.npmjs.org/exceljs/-/exceljs-4.4.0.tgz

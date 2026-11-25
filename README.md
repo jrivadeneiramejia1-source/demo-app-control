@@ -35,6 +35,11 @@ Alternativa sin Excel: la Jefe puede crear un **código por rol** (`LOG-7KQ4-M2X
 - **Los códigos de Jefe y de Gerente se crean a mano** (el primero y todos los demás) en Firebase: Firestore Database > Datos > Iniciar colección `codigosDireccion`, documento con ID `JEF-XXXX-XXXX` y campos `rol` = `jefe`, `activo` = `true` (booleano), `por` = `consola`, `en` = la fecha. Con ese código se registra la primera Jefe.
 - **A un Gerente o a otra Jefe no se les cambia nada desde la app** (ni rol, ni pausa, ni permisos): solo desde la consola de Firebase. Así una Jefe no puede sacar a otra.
 
+### Los Excel de la app
+Todos los Excel que baja la app salen con el mismo formato: **título en negrilla arriba**, una línea que dice qué es, **columnas en negrilla con color**, cada dato en su cuadro, columnas del ancho justo, la fila de títulos fija al bajar y filtros. Los hay en Inventario (resumen y kárdex de cada artículo), Vehículos, Equipos (equipos y actas, sin cédulas ni firmas), Reuniones (reuniones y tareas) y la **plantilla de personas**.
+
+La **plantilla de personas** (Personas y permisos > Descargar plantilla) trae lo que ya está: las personas registradas e invitadas en gris («Ya registrada» / «Invitada»), 2 filas de ejemplo en amarillo y debajo filas vacías con **listas desplegables** (rol, niveles y permisos extra). Se agregan las personas nuevas abajo y se sube **la misma plantilla**: lo que ya estaba y los ejemplos se omiten y solo se guarda lo nuevo. (El rol y los permisos de quien ya entró se cambian desde su tarjeta, no desde el Excel.) Los Excel se arman con ExcelJS (`lib/exceljs`, gratis, MIT) y se leen con SheetJS (`lib/xlsx`); ambos se cargan solo al tocar el botón.
+
 ### Niveles por persona
 Además de su rol, la Jefe le puede poner a cada persona, **por módulo** (Equipos, Inventario, Vehículos, Reuniones): *Como su rol*, *Sin acceso*, *Solo ver* o un nivel de trabajo de ese módulo (por ejemplo, Inventario: *Pide material*, *Hace las compras*, *Encargada de bodega*). Sirve para subir o bajar: un bodeguero que solo mira Equipos, o un conductor que también atiende la bodega. En Reuniones solo se sube o se baja a *Solo ver* (allí cada rol hace su tarea). Las reglas de Firebase lo cumplen: con *Solo ver* o *Sin acceso* ni siquiera se puede leer lo que no toca.
 

@@ -84,6 +84,23 @@
     if (esJefe() || esEncargada()) s.splice(1, 0, ['correos', 'Correos']), s.push(['resumen', 'Resumen']);
     return s;
   }
+  /** Excel de Reuniones: las reuniones y todas sus tareas, con quién le tocaba y quién la hizo. */
+  async function descargarExcel(b) {
+    b.disabled = true;
+    try {
+      const gen = `Generado el ${A().hoyISO()}.`, E = window.Excel;
+      const reuniones = D().reuniones.slice().sort(ordenFecha).map(r => ({ Comunidad: r.comunidad, Fecha: r.fecha, Hora: r.hora, Lugar: r.lugar || 'Falta el lugar', Personas: num(r.asistentes), Estado: (EST_RE[r.estado] || [r.estado])[0], Jefe: r.jefe || '',
+        'Falta': (r.faltan || []).join(', ') }));
+      const tareas = D().necesidades.slice().sort((a, c) => String(a.fechaReunion).localeCompare(String(c.fechaReunion)) || String(a.comunidad).localeCompare(String(c.comunidad))).map(n => ({ Comunidad: n.comunidad, 'Fecha de la reunión': n.fechaReunion,
+        Tarea: (TIPO[n.tipo] || [n.tipo])[0], Detalle: n.detalle, 'Le toca a': n.responsableNombre || nombreRol(n.responsableRol), Estado: (EST_NE[n.estado] || [n.estado])[0], 'Lo hizo': n.por || '', Nota: n.motivo || '' }));
+      await E.descargar({ archivo: `Reuniones ${A().hoyISO()}`, hojas: [
+        E.deObjetos('Reuniones', 'Reuniones', `Cada reunión con su fecha, lugar y estado. ${gen}`, reuniones),
+        E.deObjetos('Tareas', 'Tareas de las reuniones', `Lo que le toca a cada persona en cada reunión, y quién ya lo hizo. ${gen}`, tareas)] });
+      A().toast('Listo: Excel descargado');
+    } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
+    finally { b.disabled = false; }
+  }
+  $('btnExcelReu').addEventListener('click', e => descargarExcel(e.currentTarget));
   function pintar() {
     const App = A(), S = App.S;
     if (!S.persona) return;
