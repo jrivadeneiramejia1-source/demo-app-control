@@ -401,7 +401,11 @@ Quien decide deja su **correo** en la compra (para que nadie se haga pasar por o
 - **Movimientos:** cada entrada, salida y ajuste (del más nuevo al más viejo). Quien solo pide **no los ve**.
 - **Quién mueve la bodega:** Bodega y la Jefe.
 - Bodega puede: registrar **entradas** (devolución) y **salidas** (entrega, daño o pérdida), **crear y editar artículos** y hacer el **conteo**. Cada movimiento queda con su motivo: *Cantidad inicial, Compra recibida, Entrega, Devolución, Ajuste por conteo* o *Daño o pérdida*.
-- **Conteo físico:** se cuenta en los estantes, se escribe lo que hay de verdad y, si hay diferencias, se escribe el motivo. La app ajusta.
+- **Conteo físico** (en tres pasos, siempre de **una bodega**):
+  1. Se escoge la **bodega** (Riohacha, Guamal o Bogotá) y, si se quiere, una **categoría**. Ahí mismo dice cuándo fue el último ajuste por conteo de cada bodega.
+  2. Se cuenta. **La app no dice cuánto cree que hay** (así nadie copia el número): cada artículo trae su estante para encontrarlo, y se deja en blanco lo que no se contó. **Lo que se escribe se guarda en el teléfono**: si se cierra a medias, al volver dice «Tienes un conteo sin terminar de Guamal» y se sigue donde se iba (o se empieza de cero).
+  3. **Revisar:** recién ahora aparece, por cada artículo, lo contado, lo que decía la app y la diferencia (las que no cuadran van primero y en rojo). Si hay diferencias se escribe el **motivo** y se guarda; la app ajusta y deja un movimiento por cada una. Si mientras se revisaba alguien movió la cantidad de un artículo, la app avisa y muestra la revisión otra vez sin guardar.
+  - Un conteo que cuadra del todo no deja ajustes, así que no aparece en «último ajuste por conteo».
 - **Kárdex:** el historial de **un** artículo con lo que quedó después de cada movimiento (y su Excel).
 - **Regla de oro:** **cada cambio de cantidad deja su movimiento en la misma escritura**. No se puede cambiar el stock sin dejar rastro. La cantidad **nunca queda negativa**.
 - Si un artículo se **daña o se pierde**, se avisa a la Jefe.

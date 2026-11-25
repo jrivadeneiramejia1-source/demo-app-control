@@ -389,10 +389,10 @@
     h += esBodega() ? barraBotones([boton('conteo', 'Empezar conteo', 'tarea', '', 'primary')]) : '<p class="meta">El conteo lo hace la encargada de bodega.</p>';
     if (!ajustes.length) return h + UI.vacio('tarea', 'Todavía no hay ajustes por conteo', '');
     const u = ajustes[0];
-    h += `<div class="card"><b>Último ajuste por conteo</b><span class="meta">${esH(`${u.por}, ${App.hace(u.fecha)}`)}</span></div>`;
+    h += `<div class="card"><b>Último ajuste por conteo</b><span class="meta">${esH(`${u.por}, ${App.hace(u.fecha)}`)}</span><span class="meta">${esH(textoUltimosAjustes())}</span></div>`;
     h += `<div class="section-label">Ajustes por conteo (${ajustes.length})</div><div class="list">${ajustes.slice(0, 30).map(m => `<div class="card mov st-org">
       <div class="card-head"><div class="card-title">${esH(m.articulo)}</div><span class="mov-n t-org">${esH((num(m.cantidad) > 0 ? '+' : '') + num(m.cantidad))}</span></div>
-      <span class="meta">${esH([`quedan ${num(m.saldo)}`, m.nota, `${m.por} ${App.hace(m.fecha)}`].filter(Boolean).join(' · '))}</span></div>`).join('')}</div>`;
+      <span class="meta">${esH([(a => (a ? bodegaDe(a) : ''))(artPorId(m.articuloId)), `quedan ${num(m.saldo)}`, m.nota, `${m.por} ${App.hace(m.fecha)}`].filter(Boolean).join(' · '))}</span></div>`).join('')}</div>`;
     return h;
   }
 
@@ -504,6 +504,7 @@
   const opsArt = vacio => (vacio ? [['', vacio]] : []).concat(articulos().slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map(a => [a.id, `${a.nombre} · ${bodegaDe(a)} (${num(a.cantidad) > 0 ? 'hay ' + cantTxt(a.cantidad, a.unidad) : 'agotado'})`]));
   function abrirAccion(o) {
     accion = o;
+    $('acCampos').oninput = null;
     $('acT').textContent = o.titulo; $('acSub').textContent = o.sub || '';
     $('acCampos').innerHTML = o.campos || '';
     window.llenarIconos($('acCampos'));
@@ -544,6 +545,7 @@
       A().cerrarHoja('shAccion');
       try { $('invContenido').focus({ preventScroll: true }); } catch (e) {}
       A().toast(accion.listo);
+      if (accion.alGuardar) accion.alGuardar();
       accion = null;
       notificar(envios);
     } catch (e) { fallar(window.nube.explicar(e)); }
@@ -1057,23 +1059,94 @@
     } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
     finally { b.disabled = false; }
   }
-  function conteo() {
-    const arts = articulos().slice().sort((a, b) => String(a.categoria).localeCompare(String(b.categoria)) || String(a.nombre).localeCompare(String(b.nombre)));
+  /* ---------- conteo físico: por bodega, a ciegas y con borrador en el teléfono ----------
+     Pasos: 1) escoger bodega y categoría, 2) contar (la app no dice cuánto cree que hay), 3) revisar las diferencias y guardar. */
+  let conteoEst = null;
+  const LS_CONTEO = b => 'conteo.' + b;
+  const leerBorrador = b => {
+    try {
+      const j = JSON.parse(localStorage.getItem(LS_CONTEO(b)) || 'null');
+      if (!j || typeof j !== 'object' || !j.vals || typeof j.vals !== 'object') return null;
+      const vals = Object.fromEntries(Object.entries(j.vals).filter(([, v]) => /^\d{1,9}$/.test(String(v))).map(([k, v]) => [k, String(v)]));
+      return Object.keys(vals).length ? { vals, en: String(j.en || '') } : null;
+    } catch (e) { return null; }
+  };
+  const guardarBorrador = b => {
+    const vals = {};
+    $('acCampos').querySelectorAll('input[data-art]').forEach(i => { if (i.value.trim() !== '') vals[i.dataset.art] = i.value.trim(); });
+    try { if (Object.keys(vals).length) localStorage.setItem(LS_CONTEO(b), JSON.stringify({ vals, en: new Date().toISOString() })); else localStorage.removeItem(LS_CONTEO(b)); } catch (e) {}
+  };
+  const borrarBorrador = b => { try { localStorage.removeItem(LS_CONTEO(b)); } catch (e) {} };
+  /** Último ajuste por conteo de una bodega. Si un conteo cuadró del todo no deja ajustes, así que no cuenta aquí. */
+  function ultimoAjusteConteo(b) {
+    const fs = D().movimientos.filter(m => m.motivo === 'conteo' && (a => a && bodegaDe(a) === b)(artPorId(m.articuloId))).map(m => String(m.fecha)).sort();
+    return fs.length ? fs[fs.length - 1] : '';
+  }
+  const textoUltimosAjustes = () => BODEGAS.map(b => { const f = ultimoAjusteConteo(b); return `${b}: ${f ? A().hace(f) : 'nunca'}`; }).join(' · ');
+
+  function conteo(bodIni) {
+    const bod0 = BODEGAS.includes(bodIni) ? bodIni : (BODEGAS.includes(sub.bodega) ? sub.bodega : BODEGAS[0]);
     abrirAccion({
-      titulo: 'Conteo físico', sub: 'Cuenta en los estantes y escribe cuánto hay de verdad. Deja en blanco lo que no contaste.',
-      campos: `<div class="conteo">${arts.map(a => `<div class="conteo-f"><label for="cn-${esH(a.id)}">${esH(a.nombre)}<span class="meta">La app dice ${esH(cantTxt(a.cantidad, a.unidad))}</span></label><input id="cn-${esH(a.id)}" data-art="${esH(a.id)}" type="number" inputmode="numeric" min="0" step="1" placeholder="${esH(num(a.cantidad))}"></div>`).join('')}</div>` +
-        campoTxt('acMotivo', 'Motivo de las diferencias (si hay)', '', 'Ej: se usaron sin registrar en la reunión', 160),
-      primario: 'Guardar conteo', icono: 'check', listo: 'Listo: conteo guardado.',
+      titulo: 'Conteo físico', sub: 'Escoge en qué bodega vas a contar. Cuentas sin ver lo que dice la app.',
+      campos: campoSel('acBod', 'Bodega', BODEGAS.map(b => [b, b]), bod0) + '<div class="field"><label for="acCat">Categoría</label><select id="acCat"></select></div><div id="acBorrador"></div>' +
+        `<p class="meta">Último ajuste por conteo: ${esH(textoUltimosAjustes())}</p>`,
+      primario: 'Empezar a contar', icono: 'tarea',
+      ops: () => { conteoContar(valor('acBod'), valor('acCat')); return null; }
+    });
+    A().vigilar('shAccion', () => null);   // escoger bodega no es algo que se pierda
+    const refrescar = () => {
+      const b = valor('acBod'), previa = valor('acCat');
+      const cats = Array.from(new Set(articulos().filter(a => bodegaDe(a) === b).map(a => a.categoria).filter(Boolean))).sort((x, y) => String(x).localeCompare(String(y)));
+      $('acCat').innerHTML = [['', 'Todas las categorías']].concat(cats.map(c => [c, c])).map(([v, tx]) => `<option value="${esH(v)}"${v === previa ? ' selected' : ''}>${esH(tx)}</option>`).join('');
+      const br = leerBorrador(b), n = br ? Object.keys(br.vals).length : 0;
+      $('acBorrador').innerHTML = br ? `<div class="note">Tienes un conteo sin terminar de ${esH(b)} (${n} ${n === 1 ? 'cantidad escrita' : 'cantidades escritas'}${br.en ? ', ' + esH(A().hace(br.en)) : ''}). Al empezar sigues donde ibas.</div><div class="acc-rap">${boton('borrarborrador', 'Empezar de cero (borra lo escrito)', 'borrar', ` data-bod="${esH(b)}"`, 'ghost small')}</div>` : '';
+      window.llenarIconos($('acBorrador'));
+    };
+    $('acBod').onchange = refrescar; refrescar();
+  }
+  function conteoContar(bod, cat) {
+    if (!BODEGAS.includes(bod)) return fallar('Escoge una de las 3 bodegas.', 'acBod');
+    const arts = articulos().filter(a => bodegaDe(a) === bod && (!cat || a.categoria === cat))
+      .sort((a, b) => String(a.ubicacion).localeCompare(String(b.ubicacion), 'es', { numeric: true }) || String(a.nombre).localeCompare(String(b.nombre)));
+    if (!arts.length) return fallar('No hay artículos en esa bodega y categoría.', 'acCat');
+    const vals = (leerBorrador(bod) || { vals: {} }).vals;
+    conteoEst = { bod, cat, ids: arts.map(a => a.id), conteos: {}, revisado: '' };
+    abrirAccion({
+      titulo: `Conteo físico: ${bod}${cat ? ' · ' + cat : ''}`, sub: 'Cuenta en los estantes y escribe cuánto hay de verdad. La app no dice cuánto cree que hay, para que cuentes sin pistas. Deja en blanco lo que no contaste. Lo que escribes se guarda en este teléfono.',
+      campos: `<div class="conteo">${arts.map(a => `<div class="conteo-f"><label for="cn-${esH(a.id)}">${esH(a.nombre)}<span class="meta">${esH([a.categoria, a.ubicacion, a.unidad].filter(Boolean).join(' · '))}</span></label><input id="cn-${esH(a.id)}" data-art="${esH(a.id)}" type="number" inputmode="numeric" min="0" step="1" placeholder="Contado" value="${esH(vals[a.id] == null ? '' : vals[a.id])}"></div>`).join('')}</div>`,
+      primario: 'Revisar', icono: 'check',
       ops: () => {
-        const filas = [...$('acCampos').querySelectorAll('input[data-art]')].filter(i => i.value.trim() !== '');
+        const filas = Array.from($('acCampos').querySelectorAll('input[data-art]')).filter(i => i.value.trim() !== '');
         if (!filas.length) return fallar('Escribe al menos una cantidad contada.');
-        const malas = filas.find(i => !/^\d+$/.test(i.value.trim()));
-        if (malas) return fallar('Las cantidades deben ser números enteros, 0 o más.', malas.id);
-        const difs = filas.map(i => { const a = artPorId(i.dataset.art), contado = Number(i.value.trim()); return { a, contado, dif: a ? contado - num(a.cantidad) : 0 }; }).filter(x => x.a && x.dif !== 0);
-        if (difs.length && !valor('acMotivo')) return fallar(`Hay ${difs.length} ${difs.length === 1 ? 'diferencia' : 'diferencias'}: escribe el motivo.`, 'acMotivo');
-        accion.listo = difs.length ? `Listo: conteo guardado. Se ajustaron ${difs.length} ${difs.length === 1 ? 'artículo' : 'artículos'}.` : 'Listo: conteo guardado. Todo cuadra con la app.';
-        if (!difs.length) return [];
-        return difs.flatMap(x => mover(x.a, x.dif, { articuloId: x.a.id, articulo: x.a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: x.dif, saldo: x.contado, nota: valor('acMotivo') })).concat([aviso('jefe', 'Conteo con diferencias', `${persona().nombre} contó la bodega: ${difs.length} ${difs.length === 1 ? 'artículo no cuadró' : 'artículos no cuadraron'} (${valor('acMotivo')}).`)]);
+        const mala = filas.find(i => !/^\d+$/.test(i.value.trim()));
+        if (mala) return fallar('Las cantidades deben ser números enteros, 0 o más.', mala.id);
+        conteoEst.conteos = Object.fromEntries(filas.map(i => [i.dataset.art, Number(i.value.trim())]));
+        conteoRevisar();
+        return null;
+      }
+    });
+    // Lo escrito ya queda guardado en el teléfono: cerrar esta hoja no pierde nada, así que no pregunta «¿Salir sin guardar?».
+    A().vigilar('shAccion', () => null);
+    $('acCampos').oninput = e => { if (e.target.matches && e.target.matches('input[data-art]')) guardarBorrador(bod); };
+  }
+  const difsDeConteo = () => conteoEst.ids.filter(id => id in conteoEst.conteos).map(id => artPorId(id)).filter(Boolean)
+    .map(a => ({ a, contado: conteoEst.conteos[a.id], antes: num(a.cantidad), dif: conteoEst.conteos[a.id] - num(a.cantidad) }));
+  function conteoRevisar() {
+    const e = conteoEst, filas = difsDeConteo(), difs = filas.filter(x => x.dif !== 0), sin = e.ids.length - filas.length;
+    e.revisado = JSON.stringify(difs.map(x => [x.a.id, x.antes]));
+    const fila = x => `<div class="conteo-r${x.dif ? ' difiere' : ''}"><span class="cr-n">${esH(x.a.nombre)}<span class="meta">${esH([x.a.ubicacion, x.a.unidad].filter(Boolean).join(' · '))}</span></span><span class="cr-v"><span class="meta">Contaste</span><b class="num">${x.contado}</b></span><span class="cr-v"><span class="meta">La app decía</span><b class="num">${x.antes}</b></span><span class="cr-d num">${x.dif ? (x.dif > 0 ? '+' : '') + x.dif : 'Cuadra'}</span></div>`;
+    abrirAccion({
+      titulo: `Revisar el conteo: ${e.bod}`, sub: difs.length ? `Contaste ${filas.length} ${filas.length === 1 ? 'artículo' : 'artículos'}: ${difs.length} no ${difs.length === 1 ? 'cuadra' : 'cuadran'} con la app.` : `Contaste ${filas.length} ${filas.length === 1 ? 'artículo' : 'artículos'}: todo cuadra con la app.`,
+      campos: `<div class="conteo-rev">${filas.slice().sort((a, b) => (b.dif !== 0) - (a.dif !== 0)).map(fila).join('')}</div>` + (sin ? `<p class="meta">Sin contar: ${sin}. Esos no se cambian.</p>` : '') +
+        (difs.length ? campoTxt('acMotivo', 'Motivo de las diferencias', '', 'Ej: se usaron sin registrar en la reunión', 160) : '') + `<div class="acc-rap">${boton('volverconteo', 'Volver a contar', 'atras', '', 'ghost small')}</div>`,
+      primario: 'Guardar conteo', icono: 'check', listo: 'Listo: conteo guardado.', alGuardar: () => borrarBorrador(e.bod),
+      ops: () => {
+        const ahora = difsDeConteo().filter(x => x.dif !== 0);
+        if (JSON.stringify(ahora.map(x => [x.a.id, x.antes])) !== e.revisado) { conteoRevisar(); fallar('Mientras revisabas cambió la cantidad de algún artículo. Revisa otra vez.'); return null; }
+        if (ahora.length && !valor('acMotivo')) return fallar(`Hay ${ahora.length} ${ahora.length === 1 ? 'diferencia' : 'diferencias'}: escribe el motivo.`, 'acMotivo');
+        accion.listo = ahora.length ? `Listo: conteo guardado. Se ajustaron ${ahora.length} ${ahora.length === 1 ? 'artículo' : 'artículos'}.` : 'Listo: conteo guardado. Todo cuadra con la app.';
+        if (!ahora.length) return [];
+        return ahora.flatMap(x => mover(x.a, x.dif, { articuloId: x.a.id, articulo: x.a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: x.dif, saldo: x.contado, nota: valor('acMotivo') })).concat([aviso('jefe', 'Conteo con diferencias', `${persona().nombre} contó la bodega de ${e.bod}: ${ahora.length} ${ahora.length === 1 ? 'artículo no cuadró' : 'artículos no cuadraron'} (${valor('acMotivo')}).`)]);
       }
     });
   }
@@ -1394,7 +1467,7 @@
       entregar: () => s && entregar(s), noentregar: () => s && noEntregar(s), sinaut: () => registrarCompra(null, true),
       entrada: () => entradaSalida('entrada', a ? a.id : ''), salida: () => entradaSalida('salida', a ? a.id : ''),
       nuevoart: () => editarArticulo(null), editart: () => a && editarArticulo(a), verart: () => a && verArticulo(a), pedirmat: () => a && pedirMaterial(a.id),
-      trasladar: () => a && trasladar(a), conteo: () => conteo(), excel: () => descargarExcel(b), bdexcel: () => descargarBase(b), exguardar: () => guardarExcelExistencias(), exdescartar: () => { previaEx = null; errorEx = ''; pintar(); }, monto: () => cambiarMonto(), kardex: () => a && kardex(a), excelkardex: () => a && descargarKardex(b, a),
+      trasladar: () => a && trasladar(a), conteo: () => conteo(), volverconteo: () => (conteoEst ? conteoContar(conteoEst.bod, conteoEst.cat) : conteo()), borrarborrador: () => { borrarBorrador(b.dataset.bod); conteo(b.dataset.bod); }, excel: () => descargarExcel(b), bdexcel: () => descargarBase(b), exguardar: () => guardarExcelExistencias(), exdescartar: () => { previaEx = null; errorEx = ''; pintar(); }, monto: () => cambiarMonto(), kardex: () => a && kardex(a), excelkardex: () => a && descargarKardex(b, a),
       masLinea: () => masLinea(), quitarLinea: () => quitarLinea(b.dataset.n),
       ir: () => { seccion = b.dataset.sec; if (b.dataset.subk) sub[b.dataset.subk] = b.dataset.subv; A().S.filtro.inventario = b.dataset.filtro || ''; $('qInventario').value = ''; A().pintarTodo(); }
     };

@@ -511,14 +511,37 @@ try {
   log('daño o pérdida pide la nota', await hasta(t.page, () => !document.getElementById('acErr').hidden && /nota/.test(document.getElementById('acErr').textContent)));
   await t.page.fill('#acNota', 'Se rompieron en campo'); await t.page.click('#acPrimario');
   log('la salida por daño resta y le avisa a la Jefe', await hasta(t.page, x => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.articulos['ar-004'].cantidad === x && Object.values(d.avisos).some(a => a.para === 'jefe' && /daño o pérdida/.test(a.texto)); }, guantes0 + 2));
-  // Conteo físico
+  // Conteo físico: por bodega, a ciegas y con borrador en el teléfono
   await t.page.click('#invSecciones [data-sec="conteo"]');
   await t.page.click('#invContenido [data-accion="conteo"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
-  const cafe0 = await art('ar-017');
-  await t.page.fill('#cn-ar-017', String(cafe0 - 2)); await t.page.click('#acPrimario');
+  log('el conteo empieza escogiendo la bodega y la categoría, y dice cuándo fue el último ajuste de cada una', await hasta(t.page, () => !!document.getElementById('acBod') && document.querySelectorAll('#acBod option').length === 3 && !!document.getElementById('acCat') && /Último ajuste por conteo: Riohacha: .*Guamal: .*Bogotá: /.test(document.getElementById('acCampos').textContent)));
+  await t.page.selectOption('#acBod', 'Bogotá');
+  log('al escoger Bogotá, las categorías son exactamente las de los artículos de esa bodega', await t.page.evaluate(() => { const d = Object.values(JSON.parse(localStorage.getItem('__fb_datos')).articulos).filter(a => a.bodega === 'Bogotá').map(a => a.categoria).filter(Boolean); const esperadas = ['Todas las categorías'].concat(Array.from(new Set(d)).sort((x, y) => x.localeCompare(y))); const o = [...document.querySelectorAll('#acCat option')].map(x => x.textContent); return JSON.stringify(o) === JSON.stringify(esperadas) && o.length >= 3; }));
+  await t.page.click('#acPrimario');
+  log('solo salen los artículos de Bogotá con su estante, y no dicen cuánto cree la app que hay (a ciegas)', await hasta(t.page, () => { const f = [...document.querySelectorAll('#acCampos .conteo-f')]; const x = document.getElementById('acCampos').textContent; return f.length >= 3 && !!document.getElementById('cn-ar-017') && !document.getElementById('cn-ar-003') && /Estante D2/.test(x) && !/La app dice/.test(x) && f.every(r => r.querySelector('input').placeholder === 'Contado'); }));
+  const vasos0 = await art('ar-017');
+  await t.page.fill('#cn-ar-017', String(vasos0 - 2));
+  log('lo que se escribe queda guardado en el teléfono (borrador)', await t.page.evaluate(() => { const j = JSON.parse(localStorage.getItem('conteo.Bogotá') || 'null'); return !!j && j.vals['ar-017'] != null; }));
+  await t.page.click('#acCerrar');
+  log('cerrar el conteo a medias no pregunta nada, porque el borrador queda guardado', await hasta(t.page, () => document.getElementById('shAccion').hidden && document.getElementById('shConfirmar').hidden));
+  await t.page.click('#invContenido [data-accion="conteo"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  await t.page.selectOption('#acBod', 'Bogotá');
+  log('al volver avisa «Tienes un conteo sin terminar de Bogotá»', await hasta(t.page, () => /Tienes un conteo sin terminar de Bogotá \(1 cantidad escrita/.test(document.getElementById('acBorrador').textContent)));
+  await t.page.click('#acPrimario');
+  log('y al empezar sigue donde iba: la cantidad escrita está en su lugar', await hasta(t.page, n => !!document.getElementById('cn-ar-017') && document.getElementById('cn-ar-017').value === String(n), vasos0 - 2));
+  await t.page.click('#acPrimario');
+  log('«Revisar» muestra lo contado, lo que decía la app y la diferencia (-2) solo en ese momento', await hasta(t.page, n => { const r = document.querySelector('#acCampos .conteo-r.difiere'); return !!r && /Vasos desechables/.test(r.textContent) && /-2/.test(r.querySelector('.cr-d').textContent) && r.querySelectorAll('.cr-v b')[1].textContent === String(n); }, vasos0));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '16-conteo-revisar.png') });
+  await t.page.click('#acCampos [data-accion="volverconteo"]');
+  log('«Volver a contar» regresa a los números escritos', await hasta(t.page, n => !!document.getElementById('cn-ar-017') && document.getElementById('cn-ar-017').value === String(n), vasos0 - 2));
+  await t.page.click('#acPrimario'); await t.page.click('#acPrimario');
   log('el conteo con diferencia pide el motivo', await hasta(t.page, () => !document.getElementById('acErr').hidden && /motivo/.test(document.getElementById('acErr').textContent)));
+  await t.page.evaluate(n => window.nube.lote([['update', 'articulos', 'ar-017', { cantidad: n }]]), vasos0 + 5);
   await t.page.fill('#acMotivo', 'Se usaron en la reunión'); await t.page.click('#acPrimario');
-  log('el conteo ajusta la cantidad y deja el ajuste', await hasta(t.page, x => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.articulos['ar-017'].cantidad === x && Object.values(d.movimientos).some(m => m.tipo === 'ajuste' && m.articuloId === 'ar-017' && m.cantidad === -2 && m.saldo === x); }, cafe0 - 2));
+  log('si mientras se revisa cambia la cantidad de un artículo, avisa y vuelve a mostrar la revisión sin guardar', await hasta(t.page, n => !document.getElementById('acErr').hidden && /cambió la cantidad/.test(document.getElementById('acErr').textContent) && document.querySelector('#acCampos .conteo-r.difiere').querySelectorAll('.cr-v b')[1].textContent === String(n), vasos0 + 5));
+  await t.page.fill('#acMotivo', 'Se usaron en la reunión'); await t.page.click('#acPrimario');
+  log('el conteo ajusta la cantidad y deja el ajuste con lo que había al revisar', await hasta(t.page, x => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.articulos['ar-017'].cantidad === x && Object.values(d.movimientos).some(m => m.tipo === 'ajuste' && m.motivo === 'conteo' && m.articuloId === 'ar-017' && m.cantidad === -7 && m.saldo === x); }, vasos0 - 2));
+  log('al guardar el conteo se borra el borrador del teléfono', await t.page.evaluate(() => localStorage.getItem('conteo.Bogotá') === null));
   // Artículo nuevo
   await t.page.click('#invSecciones [data-sec="existencias"]');
   await t.page.click('#invContenido [data-accion="nuevoart"]'); await t.page.waitForSelector('#shAccion:not([hidden])');

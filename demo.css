@@ -347,3 +347,14 @@ button.card .card-title { text-align: left; }
 .filtro-activo { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: .9rem; color: var(--muted); }
 .filtro-activo b { color: var(--fg); }
 .section-label.atrasadas { color: var(--danger); }
+
+/* Inventario: revisar el conteo (lo contado, lo que decía la app y la diferencia) */
+.conteo-rev { display: flex; flex-direction: column; gap: 8px; }
+.conteo-r { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px 12px; align-items: center; padding: 8px 10px; border-radius: 12px; background: var(--surface-2); }
+.conteo-r .cr-n { display: flex; flex-direction: column; gap: 2px; font-weight: 650; font-size: .92rem; min-width: 0; overflow-wrap: anywhere; }
+.conteo-r .cr-v { display: flex; flex-direction: column; align-items: flex-end; gap: 0; }
+.conteo-r .cr-v .meta { font-size: .72rem; }
+.conteo-r .cr-d { min-width: 3.4em; text-align: right; font-weight: 700; color: var(--muted); }
+.conteo-r.difiere { border-left: 4px solid var(--danger); }
+.conteo-r.difiere .cr-d { color: var(--danger); }
+@media (max-width: 420px) { .conteo-r { grid-template-columns: minmax(0, 1fr) auto auto; } .conteo-r .cr-n { grid-column: 1 / -1; } }
