@@ -274,6 +274,6 @@
     esqueletoCifras: n => Array.from({ length: n || 3 }, () => `<div class="sum esq esq-cifra" aria-hidden="true"><b></b><i></i><i></i></div>`).join(''),
     /** Huella de lo escrito en un formulario, para saber si hay cambios sin guardar. */
     foto: raiz => raiz ? JSON.stringify([...raiz.querySelectorAll('input, select, textarea, [aria-pressed]')].map(x =>
-      x.matches('[aria-pressed]') && !x.matches('input, select, textarea') ? x.getAttribute('aria-pressed') : x.type === 'checkbox' ? x.checked : x.value)) : ''
+      x.matches('[aria-pressed]') && !x.matches('input, select, textarea') ? x.getAttribute('aria-pressed') : x.type === 'checkbox' || x.type === 'radio' ? x.checked : x.value)) : ''
   });
 })();

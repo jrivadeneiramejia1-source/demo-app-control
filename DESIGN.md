@@ -1,21 +1,20 @@
 ---
 version: 1
 name: Demo app de control (mismo diseño de Equipos y Entregas)
-description: Herramientas de campo para soporte técnico en La Guajira. Encabezado verde petróleo, papel arena, tablero de cifras de colores que se toca para filtrar y seriales en monoespaciada. Vivas pero claras.
+description: Herramientas de campo para soporte técnico en La Guajira. Encabezado azul mar, fondo gris azulado claro, tablero de cifras de colores que se toca para filtrar y seriales en monoespaciada. Vivas pero claras.
 
 colors:
-  encabezado: "#0A5A4E → #12806C"  # banda de marca con brillo en la esquina (oscuro: #0D3B37 → #14594F)
-  arena: "#F4F1E8"            # fondo claro
-  papel: "#FFFFFF"            # superficies (claro)
-  arena-2: "#EEE9DC"          # superficies hundidas, notas
-  linea: "#DFD8C7"
-  tinta: "#14201C"            # texto (claro)
-  gris: "#56615B"             # texto suave (claro)
-  petroleo: "#0B7563"         # acento: acción principal, chip activo, pestaña activa, foco
+  encabezado: "#0B4058 → #156E8E"  # banda de marca con brillo en la esquina (oscuro: #0A2C3C → #12506A)
+  fondo: "#F1F4F7"           # fondo claro
+  superficie: "#FFFFFF"      # tarjetas (claro)
+  superficie-2: "#E8EEF2"    # superficies hundidas, notas
+  linea: "#DCE3E9"
+  tinta: "#102A38"           # texto (claro)
+  gris: "#50626E"            # texto suave (claro)
+  acento: "#0B5E7E"          # acción principal, chip activo, pestaña activa, foco (oscuro: #62BCDD)
   sol: "#F2A93B"              # solo insignias (cuántos faltan); texto oscuro encima
-  noche: "#0A1B1C"            # fondo oscuro: petróleo profundo, nunca negro puro
-  noche-sup: "#11292A"        # superficies (oscuro)
-  petroleo-claro: "#3FD1B0"   # acento en oscuro
+  noche: "#0A161D"            # fondo oscuro: azul profundo, nunca negro puro
+  noche-sup: "#112330"        # superficies (oscuro)
   estados:                    # solo para estados, nunca decorativos
     en-espera: naranja (#8F5200 / #F2B552)
     parcial: azul (#1D5BA6 / #8AB8F2)
@@ -23,7 +22,7 @@ colors:
     peligro: rojo (#B0281F / #FF8E84), solo errores y borrar
 
 typography:
-  familia: Bricolage Grotesque (variable 200-800, incluida en /fuentes)
+  familia: Nunito (variable, incluida en /fuentes; la define caribe.css)
   monoespaciada: JetBrains Mono 500 (seriales, fechas, cifras de tabla)
   titulo-vista: 1.55rem / 760 / ancho 92 / -0.02em
   titulo-hoja: 1.35rem / 760
@@ -39,6 +38,8 @@ shapes:
 
 icons: Phosphor regular (relleno en la pestaña activa), 1.25em, color heredado. Copiados en iconos.js para usar sin internet.
 ---
+
+> El verde petróleo, el papel arena y la letra Bricolage son de Equipos y Entregas (apps hermanas), no de esta demo.
 
 ## Overview
 Dos apps hermanas que usa un equipo pequeño en campo, casi siempre desde el teléfono y a veces sin señal.
@@ -58,7 +59,7 @@ y cada tipo de equipo tiene su placa de color con icono.
 - Todo se apaga con "reducir movimiento" del teléfono.
 
 ## Do
-- Un acento (petróleo) y el sol solo para insignias. Los colores de estado solo dicen estado.
+- Un acento (azul mar) y el sol solo para insignias. Los colores de estado solo dicen estado.
 - Cada propiedad moderna (color-mix, dvh) lleva antes un valor de respaldo para teléfonos viejos.
 - Tema automático (el del teléfono) con botón en el encabezado para escoger claro u oscuro; se guarda en el teléfono y lo comparten Equipos y Entregas. Probar los tres.
 - Español, voz activa, segunda persona. Los errores dicen qué hacer.

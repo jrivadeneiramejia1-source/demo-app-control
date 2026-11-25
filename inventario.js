@@ -1,5 +1,5 @@
 /* inventario.js — Módulo Inventario de la demo: bodega de consumibles con las compras adentro.
-   Partes: Qué hay que hacer · Bodega (3 bodegas: Riohacha, Guamal y Bogotá, con traslados) · Movimientos · Pedidos de material · Compras · Conteo · Resumen.
+   Partes: Qué hay que hacer · Bodega (3 bodegas: Riohacha, Guamal y Bogotá, con traslados) · Movimientos · Pedidos de material · Compras · Proveedores · Conteo · Resumen.
    Las tareas salen solas de los datos:
      artículo agotado o bajo sin compra abierta  -> Pedir compra        (bodega)
      pedido de material pendiente               -> Entregar            (bodega)
@@ -19,7 +19,7 @@
   const A = () => window.App;
   const $ = id => document.getElementById(id);
   const ABIERTA = ['pedido', 'por-gerente', 'autorizado', 'comprado'];
-  const SECCIONES = [['hacer', 'Qué hay que hacer'], ['existencias', 'Bodega'], ['movimientos', 'Movimientos'], ['solicitudes', 'Pedidos de material'], ['compras', 'Compras'], ['conteo', 'Conteo'], ['resumen', 'Resumen']];
+  const SECCIONES = [['hacer', 'Qué hay que hacer'], ['existencias', 'Bodega'], ['movimientos', 'Movimientos'], ['solicitudes', 'Pedidos de material'], ['compras', 'Compras'], ['proveedores', 'Proveedores'], ['conteo', 'Conteo'], ['resumen', 'Resumen']];
   const SEC = Object.fromEntries(SECCIONES);
   const sec = (...ks) => ks.map(k => [k, SEC[k]]);
   // Qué partes ve cada nivel. El Gerente ve todo a detalle pero sin lo del día a día; quien solo pide ve lo suyo y las existencias;
@@ -27,12 +27,12 @@
   const SECCIONES_NIVEL = {
     jefe: [['panorama', 'Panorama']].concat(SECCIONES),
     bodega: SECCIONES,
-    compra: sec('hacer', 'existencias', 'compras', 'solicitudes', 'movimientos', 'resumen'),
-    coordina: sec('hacer', 'compras', 'existencias', 'solicitudes', 'movimientos', 'resumen'),
+    compra: sec('hacer', 'existencias', 'compras', 'proveedores', 'solicitudes', 'movimientos', 'resumen'),
+    coordina: sec('hacer', 'compras', 'proveedores', 'existencias', 'solicitudes', 'movimientos', 'resumen'),
     pide: [['hacer', 'Lo mío']].concat(sec('existencias', 'solicitudes', 'compras')),
     ver: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'resumen'),
-    finanzas: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'resumen'),
-    gerente: sec('resumen', 'compras', 'existencias', 'solicitudes')
+    finanzas: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'proveedores', 'resumen'),
+    gerente: sec('resumen', 'compras', 'proveedores', 'existencias', 'solicitudes')
   };
   const PROYECTOS = ['Proyecto Costa Norte', 'Proyecto Ruta Alta', 'Oficina'];
   const CATEGORIAS = ['EPP', 'Eléctricos', 'Cómputo', 'Accesorios', 'Papelería', 'Aseo', 'Cafetería', 'Refrigerios', 'Herramientas', 'Otro'];
@@ -104,6 +104,99 @@
   const delMes = f => String(f || '').slice(0, 7) === A().hoyISO().slice(0, 7);
   const texto = (...partes) => partes.filter(Boolean).join(' ').toLowerCase();
 
+  /* ---------- código del artículo, vista de tabla, clase ABC y qué contar hoy ---------- */
+  const normCod = v => String(v == null ? '' : v).toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const LS_VISTA = 'inv.vista';
+  const ancho = () => { try { return window.matchMedia('(min-width: 900px)').matches; } catch (e) { return false; } };
+  const leerVista = () => { try { return localStorage.getItem(LS_VISTA) === 'tabla' ? 'tabla' : 'tarjetas'; } catch (e) { return 'tarjetas'; } };
+  const guardarVista = v => { try { localStorage.setItem(LS_VISTA, v === 'tabla' ? 'tabla' : 'tarjetas'); } catch (e) { /* sin guardar: igual se ve */ } };
+  const vistaTabla = () => ancho() && leerVista() === 'tabla';
+  let ordenT = { col: '', dir: 1 };
+  const verAbc = () => perm() !== 'pide';       // la clase sale de los movimientos, que quien solo pide no ve
+  /** Clase ABC con lo que salió de la bodega en 90 días (entregas y daños; los traslados no), valorizado: A = lo que suma el 80 % del valor,
+      B = el 15 % siguiente y C = el resto (lo que no salió nada, también). Sin ninguna salida, todo queda sin clase. */
+  function abcDe() {
+    const desde = Date.now() - 90 * 86400000, valores = new Map();
+    D().movimientos.forEach(m => {
+      if (m.tipo !== 'salida' || !['entrega', 'dano'].includes(m.motivo) || !(Date.parse(m.fecha) >= desde)) return;
+      const a = artPorId(m.articuloId); if (!a) return;
+      valores.set(a.id, (valores.get(a.id) || 0) + (m.valor != null ? num(m.valor) : Math.abs(num(m.cantidad)) * num(a.costo)));
+    });
+    const total = Array.from(valores.values()).reduce((x, v) => x + v, 0), out = new Map();
+    let antes = 0;
+    Array.from(valores.entries()).sort((x, y) => y[1] - x[1]).forEach(([id, v]) => { const p = total ? antes / total : 1; out.set(id, { clase: p < 0.8 ? 'A' : p < 0.95 ? 'B' : 'C', valor: v, pct: total ? v / total : 0 }); antes += v; });
+    articulos().forEach(a => { if (!out.has(a.id)) out.set(a.id, { clase: total ? 'C' : '', valor: 0, pct: 0 }); });
+    return out;
+  }
+  // Cada cuántos días se cuenta un artículo según su clase.
+  const FREC_CONTEO = { A: 30, B: 90, C: 180 };
+  /** Último conteo de un artículo: la fecha que se guarda al contarlo (cuadre o no) o, en datos viejos, su último ajuste por conteo. */
+  const ultimoConteoDe = a => {
+    const fs = D().movimientos.filter(m => m.articuloId === a.id && m.motivo === 'conteo').map(m => String(m.fecha).slice(0, 10));
+    if (/^\d{4}-\d{2}-\d{2}$/.test(a.ultimoConteo || '')) fs.push(a.ultimoConteo);
+    return fs.sort().pop() || '';
+  };
+  /** Lo que ya toca contar (nunca contado o pasado su plazo), lo más valioso y lo más viejo primero. */
+  function porContarHoy() {
+    const abc = abcDe();
+    return articulos().map(a => { const clase = (abc.get(a.id) || {}).clase || 'C', u = ultimoConteoDe(a), hace = u ? -A().diasHasta(u) : null; return { a, clase, u, hace, debe: hace == null || hace >= FREC_CONTEO[clase] }; })
+      .filter(x => x.debe).sort((x, y) => x.clase.localeCompare(y.clase) || (y.hace == null ? 1e9 : y.hace) - (x.hace == null ? 1e9 : x.hace) || String(x.a.nombre).localeCompare(String(y.a.nombre)));
+  }
+  const HOY_MAX = 10;
+  const contarHoyDe = bod => porContarHoy().slice(0, HOY_MAX).filter(x => bodegaDe(x.a) === bod).map(x => x.a.id);
+
+  /* ---------- proveedores ---------- */
+  const PESOS_NIT = [3, 7, 13, 17, 19, 23, 29, 37, 41, 43, 47, 53, 59, 67, 71];
+  /** Dígito de verificación de un NIT (el de la DIAN): cada cifra, de derecha a izquierda, se multiplica por su peso y se suma;
+      el resto de dividir esa suma entre 11 es el dígito (si el resto es 0 o 1, ese mismo; si no, 11 menos el resto). */
+  const dvNit = base => { const sum = String(base).split('').reverse().reduce((t, c, i) => t + Number(c) * PESOS_NIT[i], 0), r = sum % 11; return r > 1 ? 11 - r : r; };
+  /** Lee el NIT que escribió la persona: devuelve { nit } (vacío si no escribió nada) o { error } diciendo cómo arreglarlo. */
+  function leerNit(txt) {
+    const t = String(txt == null ? '' : txt).replace(/[.\s]/g, '').replace(/[–—−]/g, '-');
+    if (!t) return { nit: '' };
+    const m = /^(\d{5,15})-(\d)$/.exec(t);
+    if (!m) {
+      if (/^\d{6,16}$/.test(t) && Number(t.slice(-1)) === dvNit(t.slice(0, -1))) return { error: `Escríbelo con guion antes del último número: ${t.slice(0, -1)}-${t.slice(-1)}.` };
+      if (/^\d{5,15}$/.test(t)) return { error: `Falta el dígito de verificación. Si ${t} es el NIT sin dígito, escríbelo así: ${t}-${dvNit(t)}.` };
+      return { error: 'El NIT va con su dígito de verificación después de un guion, sin puntos. Ejemplo: 900000001-2.' };
+    }
+    const bueno = dvNit(m[1]);
+    if (Number(m[2]) !== bueno) return { error: `El dígito de verificación no cuadra: el NIT ${m[1]} termina en -${bueno}, no en -${m[2]}.` };
+    return { nit: m[1] + '-' + m[2] };
+  }
+  const provs = () => D().proveedores || [];
+  const normNom = v => String(v == null ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const provPorNombre = n => provs().find(p => normNom(p.nombre) === normNom(n)) || null;
+  const nitSolo = n => String(n || '').split('-')[0];
+  const veProv = () => ['compra', 'coordina', 'bodega', 'jefe', 'finanzas', 'gerente'].includes(perm());
+  // Agrega y cambia proveedores quien hace las compras (Compras, la Jefe y Bodega con el extra «compra»: lo mismo que piden las reglas).
+  const gestionaProv = () => puedoHacer('compras');
+  const HECHAS = ['comprado', 'recibido', 'sin-autorizar'];
+  const delAnio = f => String(f || '').slice(0, 4) === A().hoyISO().slice(0, 4);
+  /** Compras ya hechas a un proveedor: las que guardan su id y, en las de antes (solo con el nombre escrito), las del mismo nombre. */
+  const comprasDe = p => D().compras.filter(c => HECHAS.includes(c.estado) && (c.proveedorId ? c.proveedorId === p.id : normNom(c.proveedor) === normNom(p.nombre)))
+    .sort((x, y) => String(y.fechaCompra).localeCompare(String(x.fechaCompra)));
+  function statsProv(p) {
+    const cs = comprasDe(p);
+    return { cs, n: cs.length, anio: cs.filter(c => delAnio(c.fechaCompra)).reduce((t, c) => t + num(c.valorReal), 0), ultima: cs.length ? cs[0].fechaCompra : '' };
+  }
+  /** Último precio pagado por cada artículo en las compras de ese proveedor (con el anterior, para ver si subió). Lo pagado se anota por toda la compra:
+      en una compra con varios artículos se reparte según lo que valía cada uno al pedirlo. `cs` va de la más nueva a la más vieja. */
+  function preciosProv(cs) {
+    const por = new Map();
+    cs.forEach(c => {
+      const ls = lineasDe(c), suma = ls.reduce((t, l) => t + num(l.valor), 0), pagado = num(c.valorReal), factor = pagado > 0 && suma > 0 ? pagado / suma : 1;
+      ls.forEach(l => {
+        const pag = ls.length === 1 ? pagado : Math.round(num(l.valor) * factor);
+        if (!(num(l.cantidad) > 0) || !(pag > 0)) return;
+        const k = normNom(l.que), cada = Math.round(pag / num(l.cantidad)), x = por.get(k);
+        if (!x) por.set(k, { que: l.que, cada, fecha: c.fechaCompra, previo: 0 });
+        else if (!x.previo) { x.previo = cada; x.previoFecha = c.fechaCompra; }
+      });
+    });
+    return Array.from(por.values()).sort((x, y) => String(x.que).localeCompare(String(y.que), 'es'));
+  }
+
   /** Lista de tareas pendientes, de la más urgente a la menos. */
   function tareas() {
     const d = D(), out = [];
@@ -169,11 +262,12 @@
     const mias = resumen().mias;
     $('invSecciones').innerHTML = secciones().map(([k, n]) => `<button type="button" class="chip" data-sec="${k}" aria-pressed="${seccion === k}">${esH(n)}${k === 'hacer' && mias ? ` <span class="n">${mias}</span>` : ''}</button>`).join('');
     const q = $('qInventario');
-    q.hidden = !['existencias', 'movimientos', 'compras'].includes(seccion);
-    q.placeholder = seccion === 'movimientos' ? 'Buscar artículo, persona o proyecto' : seccion === 'compras' ? 'Buscar compra, proveedor o persona' : 'Buscar artículo, categoría o ubicación';
+    q.hidden = !['existencias', 'movimientos', 'compras', 'proveedores'].includes(seccion);
+    q.placeholder = seccion === 'movimientos' ? 'Buscar artículo, persona o proyecto' : seccion === 'compras' ? 'Buscar compra, proveedor o persona' : seccion === 'proveedores' ? 'Buscar proveedor, NIT o contacto' : 'Buscar artículo, categoría o ubicación';
     const c = $('invContenido');
-    if (['articulos', 'compras', 'solicitudes', 'movimientos'].some(App.cargando)) { UI.poner(c, UI.esqueleto(seccion === 'movimientos' ? 5 : 3, true, seccion === 'movimientos' ? 'fila' : undefined)); return; }
-    const html = { panorama: htmlPanorama, hacer: perm() === 'pide' ? htmlMios : () => htmlTareas(f), existencias: () => htmlExistencias(f), movimientos: htmlMovimientos, solicitudes: htmlSolicitudes, compras: htmlCompras, conteo: htmlConteo, resumen: htmlResumen }[seccion];
+    if (['articulos', 'compras', 'solicitudes', 'movimientos'].some(App.cargando) || (seccion === 'proveedores' && App.cargando('proveedores'))) { UI.poner(c, UI.esqueleto(seccion === 'movimientos' ? 5 : 3, true, seccion === 'movimientos' ? 'fila' : undefined)); return; }
+    $('vInventario').classList.toggle('ancha', seccion === 'existencias' && vistaTabla());
+    const html = { panorama: htmlPanorama, hacer: perm() === 'pide' ? htmlMios : () => htmlTareas(f), existencias: () => htmlExistencias(f), movimientos: htmlMovimientos, solicitudes: htmlSolicitudes, compras: htmlCompras, proveedores: htmlProveedores, conteo: htmlConteo, resumen: htmlResumen }[seccion];
     if (UI.poner(c, html())) window.llenarIconos(c);
   }
 
@@ -189,6 +283,9 @@
     const mias = lista.filter(esMia), otras = lista.filter(t => !esMia(t));
     const filtroTxt = f === 'entregar' ? ' (solo pedidos por entregar)' : f === 'compras' ? ' (solo compras en curso)' : '';
     let h = '';
+    // Con dos o más artículos por reponer, una sola compra con todos (en vez de una por artículo).
+    const nBajos = (esJefe() ? lista : mias).filter(t => t.tipo === 'pedir').length;
+    if (nBajos >= 2 && puedoPedirCompra() && !f) h += barraBotones([boton('pedirbajo', `Pedir compra de todo lo bajo (${nBajos})`, 'carrito', '', 'primary')]);
     if (esJefe()) {
       // La Jefe ve todo agrupado por quién tiene que hacerlo, y puede hacer cualquier paso ella misma.
       const grupos = {};
@@ -283,32 +380,56 @@
   }
 
   /* --- Existencias --- */
+  const vistaToggle = tabla => `<div class="vista-toggle" role="group" aria-label="Cómo ver los artículos"><button type="button" data-accion="vista" data-id="tarjetas" aria-pressed="${!tabla}">Tarjetas</button><button type="button" data-accion="vista" data-id="tabla" aria-pressed="${tabla}">Tabla</button></div>`;
+  const tarjetaArt = a => {
+    const App = A(), e = estadoArt(a), st = EST_ART[e], abierta = compraAbierta(a.id);
+    const pct = Math.max(0, Math.min(100, Math.round(num(a.cantidad) / Math.max(1, num(a.maximo)) * 100)));
+    const pctMin = Math.max(0, Math.min(100, Math.round(num(a.minimo) / Math.max(1, num(a.maximo)) * 100)));
+    return `<button type="button" class="card art st-${st[2]}" data-accion="verart" data-id="${esH(a.id)}">
+        <span class="card-head"><span class="card-title">${esH(a.nombre)}</span>${App.pill(st[0], st[1])}</span>
+        <span class="card-sub">${esH([a.codigo ? 'Cód. ' + a.codigo : '', a.categoria, 'Bodega ' + bodegaDe(a), a.ubicacion].filter(Boolean).join(' · '))}</span>
+        <span class="nivel"><span class="nivel-n">${esH(num(a.cantidad))} <small>${esH(a.unidad)}</small></span>
+          <span class="barra n-${e}" role="img" aria-label="${esH(`${num(a.cantidad)} de ${num(a.maximo)}; mínimo ${num(a.minimo)}`)}"><i style="width:${pct}%"></i><b style="left:${pctMin}%"></b></span>
+          <span class="meta">mínimo ${esH(num(a.minimo))} · máximo ${esH(num(a.maximo))}</span></span>
+        <span class="docs">${App.pill('Aprox. ' + App.cop(a.costo) + ' c/u', 's-pend')}${abierta ? App.pill('Compra en curso: ' + EST_CO[abierta.estado][0].toLowerCase(), 's-listo', 'carrito') : ''}</span>
+      </button>`;
+  };
+  // Tabla de existencias (solo en pantallas anchas): cada encabezado ordena, el encabezado queda fijo al bajar y el total suma lo que se ve.
+  const COLS_T = [['codigo', 'Código'], ['nombre', 'Artículo'], ['categoria', 'Categoría'], ['bodega', 'Bodega'], ['ubicacion', 'Ubicación'], ['cantidad', 'Hay', 1], ['minimo', 'Mín.', 1], ['maximo', 'Máx.', 1],
+    ['valor', 'Valor en bodega', 1], ['abc', 'ABC'], ['estado', 'Estado']];
+  function htmlTabla(vis, abc) {
+    const App = A(), cols = COLS_T.filter(([k]) => k !== 'abc' || verAbc());
+    const valorDe = a => num(a.cantidad) * num(a.costo);
+    const val = { codigo: a => a.codigo || '', nombre: a => a.nombre, categoria: a => a.categoria, bodega: a => bodegaDe(a), ubicacion: a => a.ubicacion || '', cantidad: a => num(a.cantidad), minimo: a => num(a.minimo), maximo: a => num(a.maximo),
+      valor: valorDe, abc: a => ({ A: 1, B: 2, C: 3 })[(abc.get(a.id) || {}).clase] || 4, estado: a => ({ agotado: 0, bajo: 1, bien: 2 })[estadoArt(a)] };
+    const filas = vis.slice();
+    if (ordenT.col && val[ordenT.col]) { const g = val[ordenT.col]; filas.sort((x, y) => { const p = g(x), r = g(y); return (typeof p === 'number' ? p - r : String(p).localeCompare(String(r), 'es', { numeric: true })) * ordenT.dir || String(x.nombre).localeCompare(String(y.nombre)); }); }
+    const th = ([k, t, n]) => { const act = ordenT.col === k; return `<th scope="col"${n ? ' class="num"' : ''} aria-sort="${act ? (ordenT.dir > 0 ? 'ascending' : 'descending') : 'none'}"><button type="button" class="th-orden" data-accion="ordenar" data-id="${k}">${esH(t)}<span aria-hidden="true">${act ? (ordenT.dir > 0 ? ' ▲' : ' ▼') : ''}</span></button></th>`; };
+    const fila = a => {
+      const e = estadoArt(a), st = EST_ART[e], c = abc.get(a.id) || {};
+      return `<tr data-accion="verart" data-id="${esH(a.id)}" class="fila-${e}"><td class="mono">${esH(a.codigo || '')}</td><td><button type="button" class="fila-nombre" data-accion="verart" data-id="${esH(a.id)}">${esH(a.nombre)}</button></td>
+        <td>${esH(a.categoria)}</td><td>${esH(bodegaDe(a))}</td><td>${esH(a.ubicacion || '')}</td><td class="num"><b>${esH(num(a.cantidad))}</b> <small>${esH(a.unidad)}</small></td><td class="num">${esH(num(a.minimo))}</td><td class="num">${esH(num(a.maximo))}</td>
+        <td class="num">${esH(App.cop(valorDe(a)))}</td>${verAbc() ? `<td>${c.clase ? `<span class="abc abc-${c.clase}" title="${esH(`Clase ${c.clase}: salieron ${App.cop(c.valor)} en 90 días`)}">${c.clase}</span>` : '—'}</td>` : ''}<td>${App.pill(st[0], st[1])}</td></tr>`;
+    };
+    const total = filas.reduce((x, a) => x + valorDe(a), 0);
+    return `<div class="tabla-inv-wrap"><table class="tabla-inv"><thead><tr>${cols.map(th).join('')}</tr></thead><tbody>${filas.map(fila).join('')}</tbody>
+      <tfoot><tr><th scope="row" colspan="8">Total de ${filas.length} ${filas.length === 1 ? 'artículo' : 'artículos'}</th><td class="num"><b>${esH(App.cop(total))}</b></td><td colspan="${cols.length - 9}"></td></tr></tfoot></table></div>`;
+  }
   function htmlExistencias(f) {
-    const App = A();
     const q = $('qInventario').value.trim().toLowerCase();
     const orden = { agotado: 0, bajo: 1, bien: 2 };
     const todos = articulos().slice().sort((a, b) => (orden[estadoArt(a)] - orden[estadoArt(b)]) || String(a.nombre).localeCompare(String(b.nombre)));
-    const vis = todos.filter(a => (!['agotado', 'bajo'].includes(f) || f === estadoArt(a)) && (sub.bodega === 'todas' || bodegaDe(a) === sub.bodega) && (!q || texto(a.nombre, a.categoria, bodegaDe(a), a.ubicacion, a.proveedor).includes(q)));
-    let h = barraBotones(esBodega() ? [boton('nuevoart', 'Agregar artículo', 'mas'), boton('entrada', 'Registrar entrada', 'importar'), boton('salida', 'Registrar salida', 'entrega'),
+    const vis = todos.filter(a => (!['agotado', 'bajo'].includes(f) || f === estadoArt(a)) && (sub.bodega === 'todas' || bodegaDe(a) === sub.bodega) && (!q || texto(a.nombre, a.categoria, bodegaDe(a), a.ubicacion, a.proveedor, a.codigo).includes(q)));
+    const tabla = vistaTabla();
+    let h = `<div class="row acciones-inv barra-vista">${boton('escanear', 'Escanear código', 'codigo', ' data-id=""')}${ancho() ? vistaToggle(tabla) : ''}</div>`;
+    h += barraBotones(esBodega() ? [boton('nuevoart', 'Agregar artículo', 'mas'), boton('entrada', 'Registrar entrada', 'importar'), boton('salida', 'Registrar salida', 'entrega'),
       boton('bdexcel', 'Descargar base de datos', 'excel'), `<label class="btn small foto-btn"><span data-ico="importar"></span>Subir Excel<input id="invArchivo" class="archivo-oculto" type="file" accept=".xlsx,.xls,.csv"></label>`] : []);
     if (esBodega() && errorEx) h += `<div class="err" role="alert">${esH(errorEx)}</div>`;
     if (esBodega() && previaEx) h += htmlPreviaEx();
     h += subChips('bodega', [['todas', 'Todas las bodegas', todos.length]].concat(BODEGAS.map(b => [b, b, todos.filter(a => bodegaDe(a) === b).length])));
     h += `<div class="count" aria-live="polite">${vis.length === todos.length ? todos.length + ' artículos' : vis.length + ' de ' + todos.length + ' artículos'}</div>`;
     if (!vis.length) return h + UI.vacio('vacio', 'No hay artículos con ese filtro', f ? 'Toca otra vez la cifra de arriba para ver todo.' : '');
-    return h + `<div class="list">${vis.map(a => {
-      const e = estadoArt(a), st = EST_ART[e], abierta = compraAbierta(a.id);
-      const pct = Math.max(0, Math.min(100, Math.round(num(a.cantidad) / Math.max(1, num(a.maximo)) * 100)));
-      const pctMin = Math.max(0, Math.min(100, Math.round(num(a.minimo) / Math.max(1, num(a.maximo)) * 100)));
-      return `<button type="button" class="card art st-${st[2]}" data-accion="verart" data-id="${esH(a.id)}">
-        <span class="card-head"><span class="card-title">${esH(a.nombre)}</span>${App.pill(st[0], st[1])}</span>
-        <span class="card-sub">${esH([a.categoria, 'Bodega ' + bodegaDe(a), a.ubicacion].filter(Boolean).join(' · '))}</span>
-        <span class="nivel"><span class="nivel-n">${esH(num(a.cantidad))} <small>${esH(a.unidad)}</small></span>
-          <span class="barra n-${e}" role="img" aria-label="${esH(`${num(a.cantidad)} de ${num(a.maximo)}; mínimo ${num(a.minimo)}`)}"><i style="width:${pct}%"></i><b style="left:${pctMin}%"></b></span>
-          <span class="meta">mínimo ${esH(num(a.minimo))} · máximo ${esH(num(a.maximo))}</span></span>
-        <span class="docs">${App.pill('Aprox. ' + App.cop(a.costo) + ' c/u', 's-pend')}${abierta ? App.pill('Compra en curso: ' + EST_CO[abierta.estado][0].toLowerCase(), 's-listo', 'carrito') : ''}</span>
-      </button>`;
-    }).join('')}</div>`;
+    return h + (tabla ? htmlTabla(vis, verAbc() ? abcDe() : new Map()) : `<div class="list">${vis.map(tarjetaArt).join('')}</div>`);
   }
 
   /* --- Movimientos --- */
@@ -381,18 +502,47 @@
     return h + (vis.length ? `<div class="list">${vis.map(tarjetaCompra).join('')}</div>` : UI.vacio('carrito', 'No hay compras aquí', `Cambia el filtro o toca «${hagoCompras() ? 'Hacer' : 'Pedir'} una compra».`));
   }
 
+  /* --- Proveedores --- */
+  function tarjetaProv(p, st) {
+    const App = A();
+    return `<button type="button" class="card tarea st-${st.n ? 'disco' : 'pend'}" data-accion="verprov" data-id="${esH(p.id)}">
+      <span class="card-head"><span class="card-title">${esH(p.nombre)}</span>${p.nit ? `<span class="serial-chip">${esH(p.nit)}</span>` : ''}</span>
+      <span class="meta">${esH(st.n ? `${st.n} ${st.n === 1 ? 'compra' : 'compras'} · ${st.anio ? App.cop(st.anio) + ' este año' : 'nada este año'} · la última el ${App.fechaCorta(st.ultima)}` : 'Todavía sin compras')}</span>
+      <span class="meta">${esH([p.contacto, p.telefono].filter(Boolean).join(' · ') || 'Sin contacto anotado')}</span>
+    </button>`;
+  }
+  function htmlProveedores() {
+    const q = $('qInventario').value.trim().toLowerCase();
+    const todos = provs().map(p => ({ p, st: statsProv(p) })).sort((x, y) => y.st.anio - x.st.anio || String(x.p.nombre).localeCompare(String(y.p.nombre), 'es'));
+    const vis = todos.filter(x => !q || texto(x.p.nombre, x.p.nit, x.p.contacto, x.p.telefono, x.p.correo, x.p.nota).includes(q));
+    let h = gestionaProv() ? barraBotones([boton('nuevoprov', 'Agregar proveedor', 'mas', '', 'primary small')]) : '<p class="meta">Aquí ves a quién se le compra y cuánto. Los agrega y cambia quien hace las compras.</p>';
+    h += `<div class="count" aria-live="polite">${vis.length === todos.length ? todos.length + (todos.length === 1 ? ' proveedor' : ' proveedores') : vis.length + ' de ' + todos.length + ' proveedores'}</div>`;
+    if (!vis.length) return h + (todos.length ? UI.vacio('vacio', 'Ningún proveedor con ese nombre', 'Quita lo que escribiste en el buscador para ver todos.') + `<div class="acc-rap">${boton('quitarq', 'Quitar la búsqueda', 'x', '', 'ghost small')}</div>`
+      : UI.vacio('carrito', 'Todavía no hay proveedores', gestionaProv() ? 'Toca «Agregar proveedor». También se agregan solos cuando registras una compra con un proveedor nuevo.' : 'Los agrega quien hace las compras.'));
+    return h + `<div class="list">${vis.map(x => tarjetaProv(x.p, x.st)).join('')}</div>`;
+  }
+
   /* --- Conteo --- */
+  /** «Te toca contar hoy»: lo que ya toca contar según su clase ABC (A cada 30 días, B cada 90 y C cada 180), de a 10, con un botón por bodega. */
+  function cuadroHoy() {
+    const lista = porContarHoy();
+    if (!lista.length) return '<div class="card cuadro-hoy"><b>Hoy no toca contar nada</b><span class="meta">Todo se contó dentro de su plazo: clase A cada 30 días, B cada 90 y C cada 180.</span></div>';
+    const hoy = lista.slice(0, HOY_MAX), bods = BODEGAS.map(b => [b, hoy.filter(x => bodegaDe(x.a) === b)]).filter(([, l]) => l.length);
+    return `<div class="card cuadro-hoy"><b>Te toca contar hoy (${hoy.length})</b><span class="meta">Primero lo que más valor mueve: clase A cada 30 días, B cada 90 y C cada 180.${lista.length > hoy.length ? ` Hay ${lista.length - hoy.length} más para los próximos días.` : ''}</span>
+      <ul class="hoy-lista">${hoy.map(x => `<li><span class="abc abc-${x.clase}" title="Clase ${x.clase}">${x.clase}</span><span class="hoy-n">${esH(x.a.nombre)}<span class="meta">${esH([bodegaDe(x.a), x.a.ubicacion].filter(Boolean).join(' · '))} · ${x.u ? (x.hace <= 0 ? 'contado hoy' : `contado hace ${x.hace} días`) : 'nunca contado'}</span></span></li>`).join('')}</ul>
+      <div class="acc-rap">${bods.map(([b, l]) => boton('contarhoy', `Contar en ${b} (${l.length})`, 'tarea', ` data-bod="${esH(b)}"`, 'primary small')).join('')}</div></div>`;
+  }
   function htmlConteo() {
     const App = A();
     const ajustes = D().movimientos.filter(m => m.motivo === 'conteo').sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
     let h = `<div class="note">El conteo físico compara lo que hay en los estantes con lo que dice la app. Las diferencias se ajustan con un motivo y quedan en Movimientos.</div>`;
-    h += esBodega() ? barraBotones([boton('conteo', 'Empezar conteo', 'tarea', '', 'primary')]) : '<p class="meta">El conteo lo hace la encargada de bodega.</p>';
+    h += esBodega() ? barraBotones([boton('conteo', 'Empezar conteo', 'tarea', '', 'primary')]) + cuadroHoy() : '<p class="meta">El conteo lo hace la encargada de bodega.</p>';
     if (!ajustes.length) return h + UI.vacio('tarea', 'Todavía no hay ajustes por conteo', '');
     const u = ajustes[0];
-    h += `<div class="card"><b>Último ajuste por conteo</b><span class="meta">${esH(`${u.por}, ${App.hace(u.fecha)}`)}</span></div>`;
+    h += `<div class="card"><b>Último ajuste por conteo</b><span class="meta">${esH(`${u.por}, ${App.hace(u.fecha)}`)}</span><span class="meta">${esH(textoUltimosAjustes())}</span></div>`;
     h += `<div class="section-label">Ajustes por conteo (${ajustes.length})</div><div class="list">${ajustes.slice(0, 30).map(m => `<div class="card mov st-org">
       <div class="card-head"><div class="card-title">${esH(m.articulo)}</div><span class="mov-n t-org">${esH((num(m.cantidad) > 0 ? '+' : '') + num(m.cantidad))}</span></div>
-      <span class="meta">${esH([`quedan ${num(m.saldo)}`, m.nota, `${m.por} ${App.hace(m.fecha)}`].filter(Boolean).join(' · '))}</span></div>`).join('')}</div>`;
+      <span class="meta">${esH([(a => (a ? bodegaDe(a) : ''))(artPorId(m.articuloId)), `quedan ${num(m.saldo)}`, m.nota, `${m.por} ${App.hace(m.fecha)}`].filter(Boolean).join(' · '))}</span></div>`).join('')}</div>`;
     return h;
   }
 
@@ -410,7 +560,7 @@
     const totalMes = comprasMes.reduce((s, c) => s + num(c.valorReal || c.valorAprox), 0);
     const sinAutMes = comprasMes.filter(c => c.estado === 'sin-autorizar').reduce((s, c) => s + num(c.valorReal || c.valorAprox), 0);
     const salidas = d.movimientos.filter(m => m.tipo === 'salida' && delMes(m.fecha));
-    const costoDe = m => num(m.cantidad) * num((artPorId(m.articuloId) || {}).costo);
+    const costoDe = m => (m.valor == null ? num(m.cantidad) * num((artPorId(m.articuloId) || {}).costo) : num(m.valor));
     const catDe = m => (artPorId(m.articuloId) || {}).categoria;
     let h = '';
     if (esGerenteGeneral()) {
@@ -469,7 +619,7 @@
     const hoyMes = App.hoyISO().slice(0, 7), g1 = gasto(hoyMes), g0 = gasto(mesAnterior());
     const delta = g0 > 0 ? Math.round((g1 / g0 - 1) * 100) : null;
     const salidas = d.movimientos.filter(m => m.tipo === 'salida' && delMes(m.fecha));
-    const costoDe = m => num(m.cantidad) * num((artPorId(m.articuloId) || {}).costo);
+    const costoDe = m => (m.valor == null ? num(m.cantidad) * num((artPorId(m.articuloId) || {}).costo) : num(m.valor));
     const comprasMes = d.compras.filter(c => ['comprado', 'recibido', 'sin-autorizar'].includes(c.estado) && delMes(c.fechaCompra));
     let h = `<div class="section-label">Lo urgente</div>` + (u.length ? `<div class="list">${u.join('')}</div>` : UI.vacio('checkCirculo', 'Todo en orden', 'No hay nada urgente en el inventario.'));
     h += barraBotones([boton('excel', 'Descargar Excel', 'excel', '', 'primary')]);
@@ -500,10 +650,13 @@
   /* ---------- hoja de acción ---------- */
   const campoNum = (id, lbl, v, min, max, ayuda) => `<div class="field"><label for="${id}">${lbl}</label><input id="${id}" type="number" inputmode="numeric" min="${min}"${max != null ? ` max="${max}"` : ''} step="1" value="${esH(v)}">${ayuda ? `<span class="meta" id="${id}Ay">${esH(ayuda)}</span>` : ''}</div>`;
   const campoTxt = (id, lbl, v, ph, max) => `<div class="field"><label for="${id}">${lbl}</label><input id="${id}" type="text" maxlength="${max || 120}" autocomplete="off" value="${esH(v || '')}" placeholder="${esH(ph || '')}"></div>`;
+  /** Campo de proveedor con lista para escoger (y escribir uno nuevo). Cada campo trae su propia lista con los proveedores que hay. */
+  const campoProv = (id, lbl, v, ph, max, ayuda) => `<div class="field"><label for="${id}">${lbl}</label><input id="${id}" type="text" maxlength="${max || 80}" autocomplete="off" list="${id}Lista" value="${esH(v || '')}" placeholder="${esH(ph || '')}"><datalist id="${id}Lista">${provs().map(x => `<option value="${esH(x.nombre)}">${esH(x.nit || '')}</option>`).join('')}</datalist>${ayuda ? `<span class="meta" id="${id}Ay">${esH(ayuda)}</span>` : ''}</div>`;
   const campoSel = (id, lbl, ops, v) => `<div class="field"><label for="${id}">${lbl}</label><select id="${id}">${ops.map(([val, txt]) => `<option value="${esH(val)}"${val === v ? ' selected' : ''}>${esH(txt)}</option>`).join('')}</select></div>`;
   const opsArt = vacio => (vacio ? [['', vacio]] : []).concat(articulos().slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map(a => [a.id, `${a.nombre} · ${bodegaDe(a)} (${num(a.cantidad) > 0 ? 'hay ' + cantTxt(a.cantidad, a.unidad) : 'agotado'})`]));
   function abrirAccion(o) {
     accion = o;
+    $('acCampos').oninput = null;
     $('acT').textContent = o.titulo; $('acSub').textContent = o.sub || '';
     $('acCampos').innerHTML = o.campos || '';
     window.llenarIconos($('acCampos'));
@@ -513,6 +666,7 @@
     $('acCerrar').textContent = o.primario ? 'Cancelar' : 'Cerrar';
     $('acErr').hidden = true;
     A().abrirHoja('shAccion');
+    A().vigilar('shAccion', () => $('acForm'), () => JSON.stringify([cotizaciones.length, extrasN, fotoFactura.length]));
     const sh = $('shAccion').querySelector('.sheet'); if (sh) sh.scrollTop = 0;
   }
   const valor = id => ($(id) ? $(id).value.trim() : '');
@@ -525,8 +679,25 @@
     return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'inventario', leido: {}, deUid: window.nube.uid() }];
   }
   /** Cambia la cantidad de un artículo y deja su movimiento en la misma escritura: el artículo apunta a su movimiento (ultimoMov) y las reglas lo comprueban. */
-  const mover = (a, delta, o) => { const id = window.nube.idNuevo('mo'); return [['update', 'articulos', a.id, { cantidad: window.nube.incremento(delta), ultimoMov: id }], movimiento(o, id)]; };
-  const movimiento = (o, id) => ['set', 'movimientos', id || window.nube.idNuevo('mo'), Object.assign({ persona: '', proyecto: '', nota: '', compraId: '', solicitudId: '', por: persona().nombre, porRol: persona().rol, fecha: ahora() }, o)];
+  /* Kárdex con plata: cada movimiento guarda a cuánto salió o entró cada unidad (costoUnit), cuánto vale el movimiento (valor)
+     y cuánto vale lo que quedó (valorSaldo, al costo promedio de ese momento). El costo del artículo es el promedio ponderado:
+     cuando llega una compra se recalcula con lo que había y lo que entra. Salidas, traslados y ajustes usan el costo vigente. */
+  const promedio = (hay, costoHay, n, costoN) => (hay + n > 0 ? Math.round((hay * costoHay + n * costoN) / (hay + n)) : Math.round(costoN));
+  const conPlata = o => {
+    if (o.costoUnit == null) return o;
+    const r = Object.assign({}, o, { valor: Math.round(Math.abs(num(o.cantidad)) * num(o.costoUnit)), valorSaldo: Math.round(num(o.saldo) * num(o.costoProm == null ? o.costoUnit : o.costoProm)) });
+    delete r.costoProm;
+    return r;
+  };
+  /** `o.costoUnit`: a cuánto entra o sale cada unidad (si no, al costo del artículo). `o.costoNuevo`: el nuevo costo promedio del artículo (solo cuando entra algo con otro precio). */
+  const mover = (a, delta, o) => {
+    const id = window.nube.idNuevo('mo'), cu = o.costoUnit == null ? num(a.costo) : num(o.costoUnit), prom = o.costoNuevo == null ? num(a.costo) : num(o.costoNuevo);
+    const resto = Object.assign({}, o, { costoUnit: cu, costoProm: prom }); delete resto.costoNuevo;
+    const datos = { cantidad: window.nube.incremento(delta), ultimoMov: id };
+    if (o.costoNuevo != null) datos.costo = prom;
+    return [['update', 'articulos', a.id, datos], movimiento(resto, id)];
+  };
+  const movimiento = (o, id) => ['set', 'movimientos', id || window.nube.idNuevo('mo'), Object.assign({ persona: '', proyecto: '', nota: '', compraId: '', solicitudId: '', por: persona().nombre, porRol: persona().rol, fecha: ahora() }, conPlata(o))];
   const historial = c => (Array.isArray(c.historial) ? c.historial : []).filter(h => h && typeof h === 'object');
   const paso = (c, txt) => historial(c).concat([{ fecha: ahora(), texto: txt, por: persona().nombre }]);
 
@@ -543,6 +714,7 @@
       A().cerrarHoja('shAccion');
       try { $('invContenido').focus({ preventScroll: true }); } catch (e) {}
       A().toast(accion.listo);
+      if (accion.alGuardar) accion.alGuardar();
       accion = null;
       notificar(envios);
     } catch (e) { fallar(window.nube.explicar(e)); }
@@ -563,7 +735,7 @@
     <div class="fields cols"><div class="field"><label for="lxCant${n}">Cantidad</label><input id="lxCant${n}" data-lx="cant" type="number" inputmode="numeric" min="1" step="1" value="1"></div>
       <div class="field"><label for="lxVal${n}">Valor total (pesos)</label><input id="lxVal${n}" data-lx="val" type="number" inputmode="numeric" min="0" step="1"></div></div>
     <button class="btn small ghost" type="button" data-accion="quitarLinea" data-n="${n}">Quitar este artículo</button></div>`;
-  function pedirCompra(artId, cantSug) {
+  function pedirCompra(artId, cantSug, otros) {
     const a = artId ? artPorId(artId) : null;
     const sug = cantSug || (a ? Math.max(1, num(a.maximo) - num(a.cantidad)) : 1);
     const general = esGerenteGeneral(), aut = autorizadorDe({ pideRol: persona().rol, estado: 'pedido' }), monto = A().montoGerente(), quienAut = aut === 'gerente' ? 'el Gerente general' : nombreRol(aut);
@@ -578,7 +750,7 @@
         `<div class="fields cols">${campoNum('acCant', 'Cantidad', sug, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), a ? a.unidad : 'unidades')}</div>` +
         `<div class="fields cols">${campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), a && CATEGORIAS.includes(a.categoria) ? a.categoria : 'Otro')}${campoNum('acValor', 'Valor total de este artículo (pesos)', a ? num(a.costo) * sug : '', 0, null)}</div>` +
         `<div id="acExtra"></div><div class="row"><button class="btn small ghost" type="button" data-accion="masLinea">${window.ico('mas')}Agregar otro artículo a esta compra</button></div>` +
-        campoTxt('acProvSug', 'A quién se le va a comprar (opcional)', a ? a.proveedor : '', 'Ej: Ferretería El Faro', 80) +
+        campoProv('acProvSug', 'A quién se le va a comprar (opcional)', a ? a.proveedor : '', 'Ej: Ferretería El Faro', 80) +
         campoTxt('acPara', 'Para qué', a ? 'Reponer la bodega' : '', 'Ej: para la cuadrilla de campo', 140) +
         campoSel('acProy', 'Proyecto', PROYECTOS.map(p => [p, p]), PROYECTOS[0]) +
         `<div class="field"><span class="lbl">Cotizaciones (opcional, hasta 3 fotos)</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="acCotTxt">Adjuntar fotos de cotizaciones</span><input id="acCot" class="archivo-oculto" type="file" accept="image/*" multiple></label><div id="acCotVer" class="cot-mini"></div></div>`,
@@ -615,6 +787,15 @@
             : aviso(ROL_DE[aut], 'Compra por autorizar', `${persona().nombre} pide comprar ${resumenTxt} por ${A().cop(total)}.`)];
       }
     });
+    // «Pedir todo lo bajo»: el primer artículo va en la línea de arriba y los demás en líneas extra, ya con su cantidad y su valor.
+    if (otros && otros.length) {
+      $('acProvSug').value = '';
+      otros.slice(0, MAX_EXTRA).forEach(x => {
+        masLinea();
+        const k = extrasN - 1, n = Math.max(1, num(x.maximo) - num(x.cantidad));
+        $('lxArt' + k).value = x.id; $('lxQue' + k).value = x.nombre; $('lxCant' + k).value = n; $('lxVal' + k).value = num(x.costo) * n;
+      });
+    }
     // Al escoger un artículo de bodega se llenan solos el nombre, la unidad, la categoría y el valor.
     $('acArt').addEventListener('change', () => {
       const x = artPorId(valor('acArt')); if (!x) return;
@@ -634,6 +815,15 @@
     });
   }
   // Agregar o quitar artículos extra de una compra (hasta 5 en total).
+  /** Una sola compra con todo lo agotado o bajo del mínimo (lo más urgente primero, hasta 5 artículos). */
+  function pedirBajo() {
+    const bajos = tareas().filter(t => t.tipo === 'pedir').map(t => t.art);
+    if (!bajos.length) return null;
+    const lote = bajos.slice(0, MAX_EXTRA + 1);
+    pedirCompra(lote[0].id, 0, lote.slice(1));
+    if (bajos.length > lote.length) A().toast(`Hay ${bajos.length} artículos por reponer: en esta compra van los ${lote.length} más urgentes. Después haces otra con el resto.`);
+    return true;
+  }
   function masLinea() {
     const cont = $('acExtra'); if (!cont) return;
     if (cont.querySelectorAll('.linea-extra').length >= MAX_EXTRA) { A().toast('Una compra lleva hasta 5 artículos. Haz otra compra para los demás.'); return; }
@@ -651,7 +841,7 @@
     return c ? { cada: Math.round(num(c.valorReal) / num(c.cantidad)), proveedor: c.proveedor, fecha: c.fechaCompra } : null;
   }
   /** Todo lo que hay que saber de una compra antes de decidir: líneas con precio de cada uno, para qué, a quién, cotizaciones, bodega y último precio. */
-  function detalleCompra(c, conMonto) {
+  function detalleCompra(c, conMonto, tablaPropia) {
     const App = A(), cop = App.cop, lineas = lineasDe(c);
     const filas = lineas.map(l => {
       const a = l.articuloId ? artPorId(l.articuloId) : null, ult = ultimoPrecio(l), cada = num(l.cantidad) > 0 ? Math.round(num(l.valor) / num(l.cantidad)) : 0;
@@ -660,12 +850,68 @@
         <td>${esH(String(num(l.cantidad)))} ${esH(l.unidad || '')}</td><td>${esH(cop(cada))}</td><td>${esH(cop(l.valor))}</td></tr>`;
     }).join('');
     const cots = Array.isArray(c.cotizaciones) ? c.cotizaciones.filter(x => /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(typeof x === 'string' ? x : '')) : [];
-    return `<table class="lineas-tabla"><thead><tr><th>Qué</th><th>Cantidad</th><th>Cada uno</th><th>Total</th></tr></thead><tbody>${filas}</tbody>
-      <tfoot><tr><td colspan="3"><b>Total aprox.</b></td><td><b>${esH(cop(c.valorAprox))}</b></td></tr></tfoot></table>
+    const tabla = `<table class="lineas-tabla"><thead><tr><th>Qué</th><th>Cantidad</th><th>Cada uno</th><th>Total</th></tr></thead><tbody>${filas}</tbody>
+      <tfoot><tr><td colspan="3"><b>Total aprox.</b></td><td><b>${esH(cop(c.valorAprox))}</b></td></tr></tfoot></table>`;
+    return `${tablaPropia || tabla}
       <dl class="datos"><dt>Pidió</dt><dd>${esH(c.pide)}${c.fechaPedido ? ' el ' + esH(App.fechaCorta(c.fechaPedido)) : ''}</dd><dt>Para qué</dt><dd>${esH(c.paraQue)}</dd>
         ${c.proveedorSug ? `<dt>A quién se le compra</dt><dd>${esH(c.proveedorSug)}</dd>` : ''}
         ${conMonto ? `<dt>Monto del Gerente</dt><dd>${esH(cop(App.montoGerente()))}: si la compra vale más de eso, también la autoriza el Gerente general</dd>` : ''}</dl>
       ${cots.length ? `<div class="field"><span class="lbl">Cotizaciones (${cots.length})</span><div class="cot-mini">${cots.map((x, i) => `<img src="${esH(x)}" alt="Cotización ${i + 1} de ${esH(c.que)}">`).join('')}</div></div>` : ''}`;
+  }
+
+  /** Lo autorizado, lo pagado y lo recibido de cada artículo, lado a lado, con las diferencias en rojo.
+      Lo pagado se anota por toda la compra: por artículo se reparte según lo que valía cada uno al pedirlo. Lo recibido sale de los movimientos de bodega. */
+  function cuadroCompra(c) {
+    const App = A(), cop = App.cop, lineas = lineasDe(c), pagado = num(c.valorReal), recibida = c.estado === 'recibido';
+    const suma = lineas.reduce((s, l) => s + num(l.valor), 0), factor = pagado > 0 && suma > 0 ? pagado / suma : 1;
+    const movs = D().movimientos.filter(m => m.compraId === c.id && m.motivo === 'compra');
+    const aviso = txt => `<span class="err-txt">${window.ico('aviso')} ${esH(txt)}</span>`;
+    let faltaron = 0;
+    const filas = lineas.map(l => {
+      const pag = lineas.length === 1 ? pagado : Math.round(num(l.valor) * factor);
+      const mas = num(l.valor) > 0 && pag > num(l.valor) * 1.1;
+      let rec;
+      if (!recibida) rec = '<span class="meta">Falta recibir</span>';
+      else if (!l.articuloId) rec = `<span class="meta">No va a bodega${c.entregadoA ? ': se entregó a ' + esH(c.entregadoA) : ''}</span>`;
+      else if (!veMovs()) rec = '<span class="meta">—</span>';
+      else {
+        const llego = movs.filter(m => m.articuloId === l.articuloId).reduce((s, m) => s + num(m.cantidad), 0);
+        if (llego < num(l.cantidad)) faltaron++;
+        rec = `${esH(String(llego))} ${esH(l.unidad || '')}${llego < num(l.cantidad) ? `<br>${aviso(`faltan ${num(l.cantidad) - llego}`)}` : ''}`;
+      }
+      return `<tr><td><b>${esH(l.que)}</b></td><td>${esH(String(num(l.cantidad)))} ${esH(l.unidad || '')}<span class="meta">${esH(cop(l.valor))}</span></td>
+        <td>${esH(cop(pag))}${mas ? `<br>${aviso(`+${Math.round((pag / num(l.valor) - 1) * 100)} %`)}` : ''}</td><td>${rec}</td></tr>`;
+    }).join('');
+    const sobre = sobrecosto(c);
+    return `<table class="lineas-tabla cuadro-compra"><thead><tr><th>Qué</th><th>Autorizado</th><th>Pagado</th><th>Recibido</th></tr></thead><tbody>${filas}</tbody>
+      <tfoot><tr><td><b>Total aprox.</b></td><td><b>${esH(cop(c.valorAprox))}</b></td><td><b>${esH(cop(c.valorReal))}</b>${sobre ? `<br>${aviso(`+${sobre.pct} %`)}` : ''}</td><td>${faltaron ? aviso(faltaron === 1 ? 'llegó menos en 1 artículo' : `llegó menos en ${faltaron} artículos`) : ''}</td></tr></tfoot></table>
+      <p class="meta">Lo pagado se anota por toda la compra; por artículo se reparte según lo que valía cada uno al pedirlo.</p>`;
+  }
+
+  /** Orden de compra para mandar al proveedor. Se arma con los datos de la compra autorizada y se imprime solo ese documento
+      (en el teléfono sale «Guardar como PDF»). El número es el código corto de la compra. */
+  function imprimirOrden(c) {
+    const App = A(), cop = App.cop, lineas = lineasDe(c);
+    const numero = 'OC-' + String(c.id).replace(/^co-/i, '').slice(-6).toUpperCase();
+    const quien = [c.autorizaJefe, c.autoriza].filter(Boolean).filter((x, i, l) => l.indexOf(x) === i);
+    const doc = `<article class="acta-doc" id="ordenDoc">
+      <header class="acta-cab"><span class="acta-logo"><img src="iconos/logo-empresa.png" alt="Logo de la empresa" width="54" height="49"></span><b>ORDEN DE COMPRA</b><span class="acta-cod">Orden ${esH(numero)}<br>Código: FT-DEMO<br>Versión: 01</span></header>
+      <dl class="acta-datos"><dt>FECHA:</dt><dd>${esH(App.fechaCorta(App.hoyISO()))}</dd><dt>PEDIDA EL:</dt><dd>${esH(c.fechaPedido ? App.fechaCorta(c.fechaPedido) : '')}</dd>
+        <dt>PROVEEDOR:</dt><dd>${esH(c.proveedor || c.proveedorSug || 'Por definir')}</dd><dt>PARA:</dt><dd>${esH(c.paraQue || '')}</dd></dl>
+      <table class="acta-tabla"><thead><tr><th>ARTÍCULO</th><th>CANTIDAD</th><th>UNIDAD</th><th>VALOR APROX.</th></tr></thead>
+        <tbody>${lineas.map(l => `<tr class="llena"><td>${esH(l.que)}</td><td>${esH(String(num(l.cantidad)))}</td><td>${esH(l.unidad || '')}</td><td>${esH(cop(l.valor))}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td colspan="3"><b>TOTAL APROX.</b></td><td><b>${esH(cop(c.valorAprox))}</b></td></tr></tfoot></table>
+      <dl class="acta-datos"><dt>PIDIÓ:</dt><dd>${esH(c.pide || '')}</dd><dt>AUTORIZÓ:</dt><dd>${esH(quien.join(' y '))}</dd></dl>
+      <p class="acta-pie">Orden ${esH(numero)} · Documento de prueba: no es una orden de compra real.</p>
+    </article>`;
+    const previo = document.getElementById('impresion'); if (previo) previo.remove();
+    const cont = document.createElement('div'); cont.id = 'impresion'; cont.innerHTML = doc;
+    document.body.appendChild(cont); document.body.classList.add('imprimiendo');
+    const fin = () => { document.body.classList.remove('imprimiendo'); cont.remove(); window.removeEventListener('afterprint', fin); };
+    window.addEventListener('afterprint', fin);
+    try { window.print(); } catch (e) {}
+    setTimeout(fin, 60000);
+    return true;
   }
 
   function autorizar(c) {
@@ -739,7 +985,7 @@
       titulo: sinAutorizacion ? 'Registrar compra hecha sin autorización' : 'Registrar compra',
       sub: sinAutorizacion ? 'Para que quede el registro: la Coordinadora de compras recibe el aviso y la compra se ve en rojo en el resumen.' : `${c.que}: ${cantTxt(c.cantidad, c.unidad)}, autorizada por ${c.autoriza || 'la Coordinadora'}.`,
       campos: (sinAutorizacion ? campoTxt('acQue', 'Qué se compró', '', 'Ej: garrafones de agua', 100) + `<div class="fields cols">${campoNum('acCant', 'Cantidad', 1, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), 'unidades')}</div>` + campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), 'Otro') + campoTxt('acPara', 'Para qué', '', 'Ej: para la reunión de hoy', 140) + campoTxt('acQuien', 'Quién compró', '', 'Nombre', 60) : '') +
-        campoTxt('acProv', 'Proveedor', (a && a.proveedor) || (c && c.proveedor) || '', 'Dónde se compró') +
+        campoProv('acProv', 'Proveedor', (a && a.proveedor) || (c && c.proveedor) || '', 'Escribe o escoge de la lista', 80, 'Si no está en la lista, se agrega solo a Proveedores.') +
         campoNum('acValor', 'Valor pagado (pesos)', c ? c.valorAprox : '', 0, null, c ? `Autorizado: aprox. ${A().cop(c.valorAprox)}.` : '') +
         `<div class="field"><span class="lbl">Foto de la factura</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="acFotoTxt">Tomar o escoger foto</span><input id="acFoto" class="archivo-oculto" type="file" accept="image/*" capture="environment"></label><img id="acFotoVer" class="factura-mini" alt="Foto de la factura" hidden></div>`,
       primario: 'Guardar compra', icono: 'check',
@@ -749,24 +995,31 @@
         if (sinAutorizacion && !valor('acQue')) return fallar('Escribe qué se compró.', 'acQue');
         if (sinAutorizacion && !(entero('acCant') > 0)) return fallar('Escribe una cantidad entera mayor que 0.', 'acCant');
         if (sinAutorizacion && !valor('acQuien')) return fallar('Escribe quién compró.', 'acQuien');
-        if (!valor('acProv')) return fallar('Escribe el proveedor.', 'acProv');
+        if (valor('acProv').length < 2) return fallar('Escribe el proveedor.', 'acProv');
         if (!(v > 0)) return fallar('Escribe el valor pagado en pesos, sin puntos ni comas.', 'acValor');
+        // Si el proveedor ya está en la lista (aunque cambie una mayúscula o una tilde) se usa ese; si no, se agrega a Proveedores en la misma escritura.
+        const conocido = provPorNombre(valor('acProv')), provId = conocido ? conocido.id : window.nube.idNuevo('pv'), provNom = conocido ? conocido.nombre : valor('acProv');
+        const opsProv = conocido ? [] : [['set', 'proveedores', provId, { nombre: provNom, nit: '', contacto: '', telefono: '', correo: '', nota: '', por: persona().nombre, porRol: persona().rol, en: A().hoyISO() }]];
         if (sinAutorizacion) {
-          return [['set', 'compras', window.nube.idNuevo('co'), { que: valor('acQue'), cantidad: entero('acCant'), unidad: valor('acUni'), categoria: valor('acCat'), valorAprox: v, paraQue: valor('acPara') || 'Sin dato',
-            pide: valor('acQuien'), pideRol: persona().rol, autoriza: '', estado: 'sin-autorizar', proveedor: valor('acProv'), valorReal: v, fechaPedido: A().hoyISO(), fechaCompra: A().hoyISO(), entregadoA: '', motivoRechazo: '', articuloId: '',
-            factura: fotoFactura, revisada: false, historial: [{ fecha: ahora(), texto: `Registró una compra de ${valor('acQuien')} hecha sin autorización en ${valor('acProv')}`, por: persona().nombre }], ...misMarcas() }],
-            aviso('coordcompras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} en ${valor('acProv')} (${A().cop(v)}) sin autorización.`),
+          return [...opsProv, ['set', 'compras', window.nube.idNuevo('co'), { que: valor('acQue'), cantidad: entero('acCant'), unidad: valor('acUni'), categoria: valor('acCat'), valorAprox: v, paraQue: valor('acPara') || 'Sin dato',
+            pide: valor('acQuien'), pideRol: persona().rol, autoriza: '', estado: 'sin-autorizar', proveedor: provNom, proveedorId: provId, valorReal: v, fechaPedido: A().hoyISO(), fechaCompra: A().hoyISO(), entregadoA: '', motivoRechazo: '', articuloId: '',
+            factura: fotoFactura, revisada: false, historial: [{ fecha: ahora(), texto: `Registró una compra de ${valor('acQuien')} hecha sin autorización en ${provNom}`, por: persona().nombre }], ...misMarcas() }],
+            aviso('coordcompras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} en ${provNom} (${A().cop(v)}) sin autorización.`),
             aviso('compras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} (${A().cop(v)}) sin autorización.`)];
         }
         // Más del 10 % sobre lo autorizado: queda dicho en el historial y le avisa a la Coordinadora (y al Gerente general si él la había autorizado).
         const sobre = num(c.valorAprox) > 0 && v > num(c.valorAprox) * 1.1, pct = Math.round((v / Math.max(1, num(c.valorAprox)) - 1) * 100);
-        return [['mezclar', 'compras', c.id, { estado: 'comprado', proveedor: valor('acProv'), valorReal: v, fechaCompra: A().hoyISO(), factura: fotoFactura || c.factura || '', historial: paso(c, `Compró en ${valor('acProv')} por ${A().cop(v)}${sobre ? ` (${pct} % más de lo autorizado)` : ''}`) }],
-          aviso('asistente', 'Compra en camino: hay que recibirla', `${persona().nombre} compró ${cantTxt(c.cantidad, c.unidad)} de ${c.que} en ${valor('acProv')}. ${a ? 'Recíbela en bodega cuando llegue.' : `Cuando llegue, entrégala a ${c.pide}.`}`),
-          c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Ya se compró', `Se compró ${c.que} en ${valor('acProv')}.`) : null,
+        return [...opsProv, ['mezclar', 'compras', c.id, { estado: 'comprado', proveedor: provNom, proveedorId: provId, valorReal: v, fechaCompra: A().hoyISO(), factura: fotoFactura || c.factura || '', historial: paso(c, `Compró en ${provNom} por ${A().cop(v)}${sobre ? ` (${pct} % más de lo autorizado)` : ''}`) }],
+          aviso('asistente', 'Compra en camino: hay que recibirla', `${persona().nombre} compró ${cantTxt(c.cantidad, c.unidad)} de ${c.que} en ${provNom}. ${a ? 'Recíbela en bodega cuando llegue.' : `Cuando llegue, entrégala a ${c.pide}.`}`),
+          c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Ya se compró', `Se compró ${c.que} en ${provNom}.`) : null,
           sobre ? aviso('coordcompras', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null,
           sobre && c.estado === 'autorizado' && c.autorizaJefe && c.autoriza !== c.autorizaJefe ? aviso('gerente', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null];
       }
     });
+    // Mientras escribe, la app dice si ese proveedor ya existe o se va a agregar.
+    const avisoProv = () => { const t = valor('acProv'), ay = $('acProvAy'); if (!ay) return; const k = provPorNombre(t); ay.textContent = t.length < 2 ? 'Si no está en la lista, se agrega solo a Proveedores.' : k ? `Es «${k.nombre}»${k.nit ? ', NIT ' + k.nit : ''}.` : `«${t}» es nuevo: se agrega a Proveedores al guardar.`; };
+    $('acCampos').oninput = e => { if (e.target && e.target.id === 'acProv') avisoProv(); };
+    avisoProv();
     $('acFoto').addEventListener('change', async e => {
       const f = e.target.files && e.target.files[0]; if (!f) return;
       $('acFotoTxt').textContent = 'Preparando la foto…';
@@ -793,13 +1046,17 @@
         const llegaron = lineas.map((l, i) => entero('rl' + i));
         if (llegaron.some(n => !(n >= 0))) return fallar('Escribe un número entero (0 o más) en cada artículo.');
         if (hayFuera && !valor('acQuien')) return fallar('Escribe a quién se entregó lo que no va a bodega.', 'acQuien');
-        const stock = {}, ops = [], faltan = [];
+        const stock = {}, costos = {}, ops = [], faltan = [];
+        // Lo pagado se reparte entre las líneas en proporción a lo que valía cada una al pedirla; cada unidad entra a ese precio.
+        const suma = lineas.reduce((s, l) => s + num(l.valor), 0), pagado = num(c.valorReal), factor = pagado > 0 && suma > 0 ? pagado / suma : 1;
         lineas.forEach((l, i) => {
           const n = llegaron[i], a = l.articuloId ? artPorId(l.articuloId) : null;
           if (n < num(l.cantidad)) faltan.push(`${l.que}: ${n} de ${num(l.cantidad)}`);
           if (!a || n === 0) return;
-          stock[a.id] = (stock[a.id] === undefined ? num(a.cantidad) : stock[a.id]) + n;
-          ops.push(...mover(a, n, { articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: stock[a.id], persona: c.proveedor || '', nota: [valor('acNota'), n < num(l.cantidad) ? `Llegaron ${n} de ${num(l.cantidad)}` : ''].filter(Boolean).join('. '), compraId: c.id }));
+          const hayAntes = stock[a.id] === undefined ? num(a.cantidad) : stock[a.id], costoAntes = costos[a.id] === undefined ? num(a.costo) : costos[a.id];
+          const unit = num(l.valor) > 0 && num(l.cantidad) > 0 ? Math.round(num(l.valor) * factor / num(l.cantidad)) : num(a.costo);
+          stock[a.id] = hayAntes + n; costos[a.id] = promedio(hayAntes, costoAntes, n, unit);
+          ops.push(...mover(a, n, { costoUnit: unit, costoNuevo: costos[a.id], articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: stock[a.id], persona: c.proveedor || '', nota: [valor('acNota'), n < num(l.cantidad) ? `Llegaron ${n} de ${num(l.cantidad)}` : ''].filter(Boolean).join('. '), compraId: c.id }));
         });
         const nota = [valor('acNota'), faltan.length ? 'Llegó menos: ' + faltan.join('; ') : ''].filter(Boolean).join('. ');
         return [['mezclar', 'compras', c.id, { estado: 'recibido', entregadoA: hayFuera ? valor('acQuien') : '', historial: paso(c, `Recibida${nota ? '. ' + nota : ''}`) }]].concat(ops,
@@ -822,12 +1079,14 @@
           return [['mezclar', 'compras', c.id, { estado: 'recibido', entregadoA: valor('acQuien'), historial: paso(c, `Entregado a ${valor('acQuien')}${valor('acNota') ? '. ' + valor('acNota') : ''}`) }],
             aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya llegó y se entregó a ${valor('acQuien')}.`)];
         }
-        const n = entero('acCant'), hay = num((artPorId(a.id) || a).cantidad);
+        const act = artPorId(a.id) || a, n = entero('acCant'), hay = num(act.cantidad);
         if (!(n > 0)) return fallar('Escribe una cantidad entera mayor que 0.', 'acCant');
+        // Cada unidad entra a lo que se pagó por ella (total pagado ÷ cantidad comprada) y el costo del artículo pasa a ser el promedio.
+        const unit = num(c.valorReal) > 0 && num(c.cantidad) > 0 ? Math.round(num(c.valorReal) / num(c.cantidad)) : num(act.costo);
         const nota = [valor('acNota'), n < num(c.cantidad) ? `Llegaron ${n} de ${num(c.cantidad)}` : ''].filter(Boolean).join('. ');
         return [
           ['mezclar', 'compras', c.id, { estado: 'recibido', historial: paso(c, `Recibido en bodega: ${cantTxt(n, a.unidad)}${nota ? '. ' + nota : ''}`) }],
-          ...mover(a, n, { articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: hay + n, persona: c.proveedor || '', nota, compraId: c.id }),
+          ...mover(a, n, { costoUnit: unit, costoNuevo: promedio(hay, num(act.costo), n, unit), articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: hay + n, persona: c.proveedor || '', nota, compraId: c.id }),
           c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya está en bodega.`) : null,
           n < num(c.cantidad) ? aviso('coordcompras', 'Llegó menos de lo comprado', `${c.que}: llegaron ${n} de ${num(c.cantidad)}.`) : null
         ];
@@ -848,13 +1107,14 @@
     const botones = [];
     if (puedoDecidir(c)) botones.push(boton('autorizar', 'Autorizar', 'check', ` data-id="${esH(c.id)}"`, 'primary small'), boton('rechazar', 'Rechazar', '', ` data-id="${esH(c.id)}"`, 'ghost small'));
     if (c.estado === 'autorizado' && puedoHacer('compras')) botones.push(boton('comprar', 'Registrar compra', 'carrito', ` data-id="${esH(c.id)}"`, 'primary small'));
+    if (['autorizado', 'comprado'].includes(c.estado)) botones.push(boton('imprimirorden', 'Orden de compra (imprimir o PDF)', 'pdf', ` data-id="${esH(c.id)}"`, 'small'));
     if (c.estado === 'comprado' && puedoHacer('asistente')) botones.push(boton('recibir', lineasDe(c).length > 1 ? 'Recibir la compra' : c.articuloId ? 'Recibir en bodega' : 'Marcar como recibida', 'caja', ` data-id="${esH(c.id)}"`, 'primary small'));
     if (c.estado === 'sin-autorizar' && !c.revisada && (esCoordinador() || esGerenteGeneral())) botones.push(boton('revisada', 'Marcar como revisada', 'check', ` data-id="${esH(c.id)}"`, 'small'));
     const hist = historial(c).sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)));
     abrirAccion({
       titulo: c.que, sub: `${lineasDe(c).length > 1 ? lineasDe(c).length + ' artículos' : cantTxt(c.cantidad, c.unidad)} · ${c.categoria}`,
       campos: `<div class="row">${App.pill(e[0], e[1])}${esPorAutorizar(c) ? App.pill('Le toca a ' + nombreRol(autorizadorDe(c)), 'none', 'persona') : ''}${sobre ? App.pill(`Pagó ${sobre.pct} % más de lo autorizado`, 's-peligro', 'aviso') : ''}${c.pideRol === 'gerente' ? App.pill('La pidió el Gerente', 's-pend', 'info') : ''}</div>
-        ${detalleCompra(c, esPorAutorizar(c))}
+        ${detalleCompra(c, esPorAutorizar(c), ['comprado', 'recibido'].includes(c.estado) && num(c.valorReal) > 0 ? cuadroCompra(c) : '')}
         <dl class="datos">
           ${num(c.valorReal) ? `<dt>Pagado</dt><dd>${esH(App.cop(c.valorReal))}${sobre ? ' (' + esH(String(sobre.pct)) + ' % más)' : ''}</dd>` : ''}
           ${c.autorizaJefe ? `<dt>Primero autorizó</dt><dd>${esH(c.autorizaJefe)}</dd>` : ''}
@@ -867,6 +1127,62 @@
         ${botones.length ? `<div class="tarea-pie">${botones.join('')}</div>` : ''}
         <div class="section-label">Cómo va</div>
         <ol class="linea">${hist.length ? hist.map(h => `<li><b>${esH(h.texto)}</b><span class="meta">${esH(h.por)} · ${esH(App.hace(h.fecha))}</span></li>`).join('') : '<li><span class="meta">Sin historial.</span></li>'}</ol>`
+    });
+  }
+
+  /* ---------- proveedores: ficha, agregar, editar y borrar ---------- */
+  function verProv(p) {
+    const App = A(), st = statsProv(p), precios = preciosProv(st.cs);
+    const botones = [];
+    if (gestionaProv()) botones.push(boton('editprov', 'Editar', 'lapiz', ` data-id="${esH(p.id)}"`));
+    if (esJefe() && !st.n) botones.push(boton('borrarprov', 'Borrar', 'borrar', ` data-id="${esH(p.id)}"`, 'ghost small'));
+    const cambio = x => { if (!x.previo) return '<span class="meta">Una sola compra</span>'; const pct = Math.round((x.cada / x.previo - 1) * 100);
+      return pct > 0 ? `<span class="err-txt">Subió ${pct} %</span><span class="meta">antes ${esH(App.cop(x.previo))}</span>` : pct < 0 ? `<span>Bajó ${-pct} %</span><span class="meta">antes ${esH(App.cop(x.previo))}</span>` : `<span class="meta">Igual que antes</span>`; };
+    abrirAccion({
+      titulo: p.nombre, sub: p.nit ? 'Proveedor' : 'Proveedor · sin NIT anotado',
+      campos: `<dl class="datos">${p.nit ? `<dt>NIT</dt><dd><span class="serial-chip">${esH(p.nit)}</span></dd>` : ''}${p.contacto ? `<dt>Contacto</dt><dd>${esH(p.contacto)}</dd>` : ''}${p.telefono ? `<dt>Teléfono</dt><dd>${esH(p.telefono)}</dd>` : ''}${p.correo ? `<dt>Correo</dt><dd>${esH(p.correo)}</dd>` : ''}${p.nota ? `<dt>Nota</dt><dd>${esH(p.nota)}</dd>` : ''}
+          <dt>Compras hechas</dt><dd><b>${esH(String(st.n))}</b>${st.ultima ? `<span class="meta"> · la última el ${esH(App.fechaCorta(st.ultima))}</span>` : ''}</dd><dt>Este año</dt><dd><b>${esH(App.cop(st.anio))}</b></dd></dl>
+        ${botones.length ? `<div class="tarea-pie">${botones.join('')}</div>` : ''}
+        <div class="section-label">Último precio por artículo</div>
+        ${precios.length ? `<table class="lineas-tabla"><thead><tr><th>Artículo</th><th>Cada uno</th><th>Cambio</th></tr></thead><tbody>${precios.map(x => `<tr><td><b>${esH(x.que)}</b><span class="meta">${esH(App.fechaCorta(x.fecha))}</span></td><td>${esH(App.cop(x.cada))}</td><td>${cambio(x)}</td></tr>`).join('')}</tbody></table>
+        <p class="meta">Lo pagado se anota por toda la compra; en las de varios artículos se reparte según lo que valía cada uno al pedirlo.</p>` : '<p class="meta">Todavía no hay compras con precio.</p>'}
+        <div class="section-label">Compras hechas${st.n ? ` (${st.n})` : ''}</div>
+        ${st.n ? `<ol class="linea">${st.cs.slice(0, 8).map(c => `<li><b>${esH(c.que)} · ${esH(App.cop(c.valorReal))}</b><span class="meta">${esH([App.fechaCorta(c.fechaCompra), (EST_CO[c.estado] || [''])[0], 'pidió ' + c.pide].filter(Boolean).join(' · '))}</span></li>`).join('')}</ol>${st.n > 8 ? `<p class="meta">Se ven las 8 más nuevas. Todas están en Compras.</p>` : ''}` : '<p class="meta">Todavía no se le ha comprado nada.</p>'}`
+    });
+  }
+  function formProv(p) {
+    const nuevoP = !p;
+    abrirAccion({
+      titulo: nuevoP ? 'Agregar proveedor' : 'Editar proveedor', sub: nuevoP ? 'Con el nombre basta; lo demás se puede completar después.' : `Cambia los datos de ${p.nombre}. Las compras que ya se le hicieron siguen siendo suyas.`,
+      campos: campoTxt('pvNombre', 'Nombre', p ? p.nombre : '', 'Ej: Ferretería El Faro', 80) +
+        `<div class="field"><label for="pvNit">NIT con su dígito (opcional)</label><input id="pvNit" type="text" inputmode="numeric" maxlength="20" autocomplete="off" value="${esH(p ? p.nit || '' : '')}" placeholder="Ej: 900000001-2"><span class="meta">Sin puntos, con un guion y el dígito de verificación. La app revisa que el dígito esté bien.</span></div>` +
+        campoTxt('pvContacto', 'Persona de contacto (opcional)', p ? p.contacto : '', 'Nombre', 60) +
+        `<div class="fields cols">${campoTxt('pvTel', 'Teléfono (opcional)', p ? p.telefono : '', 'Ej: 300 000 0000', 25)}${campoTxt('pvCorreo', 'Correo (opcional)', p ? p.correo : '', 'Ej: ventas@ejemplo.com', 80)}</div>` +
+        campoTxt('pvNota', 'Nota (opcional)', p ? p.nota : '', 'Ej: entrega en 2 días, fía a 30', 200),
+      primario: nuevoP ? 'Agregar' : 'Guardar cambios', icono: 'check', listo: nuevoP ? 'Listo: proveedor agregado.' : 'Listo: proveedor actualizado.',
+      ops: () => {
+        const nom = valor('pvNombre'), tel = valor('pvTel'), correo = valor('pvCorreo');
+        if (nom.length < 2) return fallar('Escribe el nombre del proveedor.', 'pvNombre');
+        const igual = provs().find(x => (!p || x.id !== p.id) && normNom(x.nombre) === normNom(nom));
+        if (igual) return fallar(`Ya hay un proveedor llamado «${igual.nombre}».`, 'pvNombre');
+        const n = leerNit(valor('pvNit'));
+        if (n.error) return fallar(n.error, 'pvNit');
+        const dueno = n.nit && provs().find(x => (!p || x.id !== p.id) && x.nit && nitSolo(x.nit) === nitSolo(n.nit));
+        if (dueno) return fallar(`Ese NIT ya lo tiene «${dueno.nombre}».`, 'pvNit');
+        if (!/^[0-9 +()-]*$/.test(tel)) return fallar('El teléfono lleva solo números, espacios, + o guiones.', 'pvTel');
+        if (correo && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(correo)) return fallar('Ese correo no está bien escrito.', 'pvCorreo');
+        const datos = { nombre: nom, nit: n.nit, contacto: valor('pvContacto'), telefono: tel, correo, nota: valor('pvNota') };
+        if (p) return [['mezclar', 'proveedores', p.id, datos]];
+        return [['set', 'proveedores', window.nube.idNuevo('pv'), Object.assign(datos, { por: persona().nombre, porRol: persona().rol, en: A().hoyISO() })]];
+      }
+    });
+  }
+  function borrarProv(p) {
+    abrirAccion({
+      titulo: 'Borrar proveedor', sub: `${p.nombre} no tiene compras. Si lo borras, se pierden sus datos de contacto.`,
+      campos: '<div class="note">Un proveedor con compras no se puede borrar: así no se pierde de dónde salió lo que se compró.</div>',
+      primario: 'Borrar el proveedor', icono: 'borrar', listo: 'Listo: proveedor borrado.',
+      ops: () => (comprasDe(p).length ? fallar('Ya tiene compras: no se puede borrar.') : [['borrar', 'proveedores', p.id]])
     });
   }
 
@@ -957,29 +1273,34 @@
       titulo: nuevo ? 'Agregar artículo' : 'Editar artículo', sub: nuevo ? 'Un artículo nuevo para una de las 3 bodegas.' : `Cambia los datos de ${a.nombre} (bodega ${bodegaDe(a)}). La cantidad se cambia con entradas, salidas o conteo, y de bodega con un traslado.`,
       campos: (nuevo ? campoSel('acBod', 'Bodega', BODEGAS.map(b => [b, b]), BODEGAS.includes(sub.bodega) ? sub.bodega : BODEGAS[0]) : '') +
         campoTxt('acNom', 'Nombre', a ? a.nombre : '', 'Ej: guantes de nitrilo talla M', 80) +
+        `<div class="field"><label for="acCodigo">Código de barras o el que tú uses (opcional)</label><div class="con-scan"><input id="acCodigo" type="text" maxlength="30" autocomplete="off" value="${esH(a ? a.codigo || '' : '')}" placeholder="Ej: BOT042 o el de la etiqueta"><button type="button" class="btn-scan" data-accion="escancodigo" data-id="" aria-label="Escanear el código con la cámara" title="Escanear el código"><span data-ico="codigo"></span></button></div><span class="meta">De 3 a 30 letras o números, sin espacios ni guiones. Con él se encuentra el artículo escaneándolo.</span></div>` +
         `<div class="fields cols">${campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), a && CATEGORIAS.includes(a.categoria) ? a.categoria : 'EPP')}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), a ? a.unidad : 'unidades')}</div>` +
         (nuevo ? campoNum('acCantIni', 'Cantidad que hay ahora', 0, 0, 99999) : '') +
         `<div class="fields cols">${campoNum('acMin', 'Mínimo (avisa al bajar de aquí)', a ? a.minimo : 2, 0, 99999)}${campoNum('acMax', 'Máximo (hasta dónde se compra)', a ? a.maximo : 10, 1, 99999)}</div>` +
         campoTxt('acUbi', 'Ubicación dentro de la bodega', a ? a.ubicacion : 'Estante ', 'Ej: Estante B1', 80) +
-        `<div class="fields cols">${campoNum('acCosto', 'Precio aprox. por unidad (pesos)', a ? a.costo : '', 0, null)}${campoTxt('acProvH', 'Proveedor habitual', a ? a.proveedor : '', 'Ej: Ferretería El Faro', 60)}</div>`,
+        `<div class="fields cols">${campoNum('acCosto', 'Precio aprox. por unidad (pesos)', a ? a.costo : '', 0, null)}${campoProv('acProvH', 'Proveedor habitual', a ? a.proveedor : '', 'Ej: Ferretería El Faro', 60)}</div>`,
       primario: nuevo ? 'Agregar' : 'Guardar cambios', icono: 'check', listo: nuevo ? 'Listo: artículo agregado a la bodega.' : 'Listo: artículo actualizado.',
       ops: () => {
         const mn = entero('acMin'), mx = entero('acMax'), costo = entero('acCosto'), ini = nuevo ? entero('acCantIni') : 0;
         if (!valor('acNom')) return fallar('Escribe el nombre.', 'acNom');
+        const cod = valor('acCodigo').toUpperCase();
+        if (cod && !/^[A-Z0-9]{3,30}$/.test(cod)) return fallar('El código lleva de 3 a 30 letras o números, sin espacios ni guiones.', 'acCodigo');
         const bod = nuevo ? valor('acBod') : bodegaDe(a);
         if (!BODEGAS.includes(bod)) return fallar('Escoge una de las 3 bodegas.', 'acBod');
         if (articulos().some(x => String(x.nombre).toLowerCase() === valor('acNom').toLowerCase() && bodegaDe(x) === bod && (!a || x.id !== a.id))) return fallar(`Ya hay un artículo con ese nombre en la bodega de ${bod}.`, 'acNom');
+        const dueno = cod && articulos().find(x => x.codigo && normCod(x.codigo) === cod && bodegaDe(x) === bod && (!a || x.id !== a.id));
+        if (dueno) return fallar(`Ese código ya lo tiene «${dueno.nombre}» en la bodega de ${bod}.`, 'acCodigo');
         if (!(mn >= 0)) return fallar('El mínimo debe ser un número entero, 0 o más.', 'acMin');
         if (!(mx > mn)) return fallar('El máximo debe ser mayor que el mínimo.', 'acMax');
         if (!(costo >= 0)) return fallar('Escribe el precio en pesos, sin puntos ni comas.', 'acCosto');
         if (nuevo && !(ini >= 0)) return fallar('La cantidad debe ser un número entero, 0 o más.', 'acCantIni');
-        const datos = { nombre: valor('acNom'), categoria: valor('acCat'), unidad: valor('acUni'), minimo: mn, maximo: mx, ubicacion: valor('acUbi'), costo, proveedor: valor('acProvH') };
+        const datos = { nombre: valor('acNom'), codigo: cod, categoria: valor('acCat'), unidad: valor('acUni'), minimo: mn, maximo: mx, ubicacion: valor('acUbi'), costo, proveedor: valor('acProvH') };
         if (!nuevo) return [['mezclar', 'articulos', a.id, datos]];
         datos.bodega = bod;
         const id = window.nube.idNuevo('ar');
         const movId = window.nube.idNuevo('mo');
         return [['set', 'articulos', id, Object.assign({ cantidad: ini }, ini > 0 ? { ultimoMov: movId } : {}, datos)],
-          ini > 0 ? movimiento({ articuloId: id, articulo: datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo' }, movId) : null];
+          ini > 0 ? movimiento({ costoUnit: datos.costo, articuloId: id, articulo: datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo' }, movId) : null];
       }
     });
   }
@@ -999,10 +1320,11 @@
         const tid = window.nube.idNuevo('tr'), d = articulos().find(x => x.id !== a.id && String(x.nombre).toLowerCase() === String(a.nombre).toLowerCase() && bodegaDe(x) === dest);
         const sale = mover(a, -n, { articuloId: a.id, articulo: a.nombre, tipo: 'salida', motivo: 'traslado', cantidad: n, saldo: hay - n, nota: `Traslado a ${dest}${nota ? ': ' + nota : ''}`, trasladoId: tid });
         const notaIn = `Traslado desde ${origen}${nota ? ': ' + nota : ''}`;
-        if (d) return [...sale, ...mover(d, n, { articuloId: d.id, articulo: d.nombre, tipo: 'entrada', motivo: 'traslado', cantidad: n, saldo: num(d.cantidad) + n, nota: notaIn, trasladoId: tid })];
+        if (d) return [...sale, ...mover(d, n, { costoUnit: num(a.costo), costoNuevo: promedio(num(d.cantidad), num(d.costo), n, num(a.costo)), articuloId: d.id, articulo: d.nombre, tipo: 'entrada', motivo: 'traslado', cantidad: n, saldo: num(d.cantidad) + n, nota: notaIn, trasladoId: tid })];
         const id = window.nube.idNuevo('ar'), movId = window.nube.idNuevo('mo');
-        return [...sale, ['set', 'articulos', id, { nombre: a.nombre, categoria: a.categoria, unidad: a.unidad, cantidad: n, ultimoMov: movId, minimo: num(a.minimo), maximo: num(a.maximo), ubicacion: '', costo: num(a.costo), proveedor: a.proveedor || '', bodega: dest }],
-          movimiento({ articuloId: id, articulo: a.nombre, tipo: 'entrada', motivo: 'traslado', cantidad: n, saldo: n, nota: notaIn, trasladoId: tid }, movId)];
+        const codigoAlla = a.codigo && !articulos().some(x => x.codigo === a.codigo && bodegaDe(x) === dest) ? a.codigo : '';
+        return [...sale, ['set', 'articulos', id, { nombre: a.nombre, codigo: codigoAlla, categoria: a.categoria, unidad: a.unidad, cantidad: n, ultimoMov: movId, minimo: num(a.minimo), maximo: num(a.maximo), ubicacion: '', costo: num(a.costo), proveedor: a.proveedor || '', bodega: dest }],
+          movimiento({ costoUnit: num(a.costo), articuloId: id, articulo: a.nombre, tipo: 'entrada', motivo: 'traslado', cantidad: n, saldo: n, nota: notaIn, trasladoId: tid }, movId)];
       }
     });
   }
@@ -1018,7 +1340,7 @@
   const signoMov = m => (m.tipo === 'entrada' ? '+' : m.tipo === 'salida' ? '-' : (num(m.cantidad) > 0 ? '+' : '')) + Math.abs(num(m.cantidad));
   function verArticulo(a) {
     const App = A(), e = estadoArt(a), movs = movsDe(a).slice(0, 8), sug = sugerido(a);
-    const abierta = compraAbierta(a.id);
+    const abierta = compraAbierta(a.id), clase = verAbc() ? abcDe().get(a.id) : null, ultC = ultimoConteoDe(a);
     const botones = (esBodega()
       ? [boton('entrada', 'Entrada', 'importar', ` data-id="${esH(a.id)}"`), boton('salida', 'Salida', 'entrega', ` data-id="${esH(a.id)}"`), boton('trasladar', 'Trasladar', 'entrega', ` data-id="${esH(a.id)}"`), boton('editart', 'Editar', 'lapiz', ` data-id="${esH(a.id)}"`)].concat(abierta || !puedoPedirCompra() ? [] : [boton('pedir', 'Pedir compra', 'carrito', ` data-id="${esH(a.id)}"`)])
       : puedoPedirMaterial() ? [boton('pedirmat', 'Pedir de este artículo', 'mas', ` data-id="${esH(a.id)}"`, 'primary small')] : [])
@@ -1026,8 +1348,8 @@
     abrirAccion({
       titulo: a.nombre, sub: [a.categoria, 'Bodega ' + bodegaDe(a), a.ubicacion].filter(Boolean).join(' · '),
       campos: `<div class="row">${App.pill(EST_ART[e][0], EST_ART[e][1])}${abierta ? App.pill('Compra en curso: ' + EST_CO[abierta.estado][0].toLowerCase(), 's-listo', 'carrito') : ''}</div>
-        <dl class="datos"><dt>Bodega</dt><dd>${esH(bodegaDe(a))}${a.ubicacion ? ' · ' + esH(a.ubicacion) : ''}</dd><dt>Hay</dt><dd><b>${esH(cantTxt(a.cantidad, a.unidad))}</b></dd><dt>Mínimo y máximo</dt><dd>${esH(num(a.minimo))} y ${esH(num(a.maximo))}</dd>
-          <dt>Precio aprox.</dt><dd>${esH(App.cop(a.costo))} por ${esH(SINGULAR[a.unidad] || 'unidad')}</dd><dt>Proveedor</dt><dd>${esH(a.proveedor || 'Sin dato')}</dd></dl>
+        <dl class="datos">${a.codigo ? `<dt>Código</dt><dd><span class="serial-chip">${esH(a.codigo)}</span></dd>` : ''}<dt>Bodega</dt><dd>${esH(bodegaDe(a))}${a.ubicacion ? ' · ' + esH(a.ubicacion) : ''}</dd><dt>Hay</dt><dd><b>${esH(cantTxt(a.cantidad, a.unidad))}</b></dd><dt>Mínimo y máximo</dt><dd>${esH(num(a.minimo))} y ${esH(num(a.maximo))}</dd>
+          <dt>Precio aprox.</dt><dd>${esH(App.cop(a.costo))} por ${esH(SINGULAR[a.unidad] || 'unidad')}</dd><dt>Proveedor</dt><dd>${esH(a.proveedor || 'Sin dato')}</dd>${clase ? `<dt>Clase ABC</dt><dd><span class="abc abc-${clase.clase}">${clase.clase}</span> <span class="meta">${clase.valor ? `salieron ${esH(App.cop(clase.valor))} en 90 días (el ${esH(Math.round(clase.pct * 100))} % del total)` : 'no salió nada en 90 días'}</span></dd>` : ''}${ultC ? `<dt>Último conteo</dt><dd>${esH(A().fechaCorta(ultC))}</dd>` : ''}</dl>
         ${veMovs() && sug ? `<div class="note">En los últimos 30 días salieron ${esH(num(sug.total))} (unas ${esH(sug.semana)} por semana). Un mínimo de ${esH(sug.minimo)} alcanza para unos 10 días.${sug.minimo > num(a.minimo) ? ` <b>Tu mínimo (${esH(num(a.minimo))}) está bajo.</b>` : ' Tu mínimo está bien.'}</div>` : ''}
         ${botones.length ? `<div class="tarea-pie">${botones.join('')}</div>` : ''}
         ${veMovs() ? `<div class="section-label">Últimos movimientos</div>
@@ -1036,43 +1358,123 @@
   }
   /** Kárdex: todas las entradas y salidas de un artículo, con su saldo, y el Excel de ese artículo. */
   function kardex(a) {
-    const movs = movsDe(a);
-    // Un artículo puede tener cientos de movimientos: se muestran de 50 en 50.
-    const pg = UI.pagina('kardex-' + a.id, movs.map(m => `<tr><td>${esH(fechaLocal(m.fecha, false))}</td><td>${esH(MOTIVO_MOV[m.motivo] || m.motivo)}<span class="meta">${esH([m.persona, m.proyecto, m.por].filter(Boolean).join(' · '))}</span></td><td>${esH(signoMov(m))}</td><td>${esH(num(m.saldo))}</td></tr>`), { reiniciar: true });
+    const App = A(), movs = movsDe(a), cop = App.cop, sinDato = '<span class="meta">sin dato</span>';
+    // Un artículo puede tener cientos de movimientos: se muestran de 50 en 50. Los movimientos viejos, de antes del kárdex con plata, no traen valores.
+    const pg = UI.pagina('kardex-' + a.id, movs.map(m => `<tr><td>${esH(App.fechaCorta(m.fecha))}</td><td>${esH(MOTIVO_MOV[m.motivo] || m.motivo)}<span class="meta">${esH([m.persona, m.proyecto, m.por].filter(Boolean).join(' · '))}</span></td><td class="num">${esH(signoMov(m))}</td><td class="num">${m.valor == null ? sinDato : `${esH((m.tipo === 'salida' || (m.tipo === 'ajuste' && num(m.cantidad) < 0) ? '-' : '') + cop(m.valor))}<span class="meta">a ${esH(cop(m.costoUnit))} c/u</span>`}</td><td class="num">${esH(num(m.saldo))}${m.valorSaldo == null ? '' : `<span class="meta">${esH(cop(m.valorSaldo))}</span>`}</td></tr>`), { reiniciar: true });
     abrirAccion({
-      titulo: `Kárdex: ${a.nombre}`, sub: `Hay ${cantTxt(a.cantidad, a.unidad)}. Cada entrada y salida con lo que quedó.`,
+      titulo: `Kárdex: ${a.nombre}`, sub: `Hay ${cantTxt(a.cantidad, a.unidad)}, que valen ${cop(num(a.cantidad) * num(a.costo))} (costo promedio ${cop(a.costo)} por unidad). Cada entrada y salida con su valor y lo que quedó.`,
       campos: `<div class="row">${boton('excelkardex', 'Descargar Excel de este artículo', 'excel', ` data-id="${esH(a.id)}"`, 'primary small')}</div>` +
-        (movs.length ? `<table class="lineas-tabla"><thead><tr><th>Fecha</th><th>Movimiento</th><th>Cant.</th><th>Quedó</th></tr></thead><tbody>${pg.html}</tbody></table>${pg.mas}` : '<p class="meta">Sin movimientos.</p>')
+        (movs.length ? `<table class="lineas-tabla kardex-tabla"><thead><tr><th>Fecha</th><th>Movimiento</th><th>Cant.</th><th>Valor</th><th>Quedó</th></tr></thead><tbody>${pg.html}</tbody></table>${pg.mas}` : '<p class="meta">Sin movimientos.</p>')
     });
   }
   async function descargarKardex(b, a) {
     b.disabled = true;
     try {
       const hojas = [];
-      const filas = movsDe(a).reverse().map(m => ({ Fecha: fechaLocal(m.fecha, true), Movimiento: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: signoMov(m), Quedó: num(m.saldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota }));
-      hojas.push(window.Excel.deObjetos('Kárdex', `Kárdex: ${a.nombre}`, `Cada entrada y salida con lo que quedó. Hoy hay ${cantTxt(a.cantidad, a.unidad)}. Generado el ${A().hoyISO()}.`, filas));
+      const filas = movsDe(a).reverse().map(m => ({ Fecha: fechaLocal(m.fecha, true), Movimiento: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: signoMov(m), 'Costo unitario': m.costoUnit == null ? '' : num(m.costoUnit), Valor: m.valor == null ? '' : num(m.valor), Quedó: num(m.saldo), 'Valor que quedó': m.valorSaldo == null ? '' : num(m.valorSaldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota }));
+      hojas.push(window.Excel.deObjetos('Kárdex', `Kárdex: ${a.nombre}`, `Cada entrada y salida con su valor y lo que quedó. Hoy hay ${cantTxt(a.cantidad, a.unidad)}, que valen ${A().cop(num(a.cantidad) * num(a.costo))} (costo promedio ${A().cop(a.costo)}). Los movimientos viejos no traen valores. Generado el ${A().hoyISO()}.`, filas));
       await window.Excel.descargar({ archivo: `Kardex ${String(a.nombre).slice(0, 40)} ${A().hoyISO()}`, hojas });
       A().toast('Listo: Excel descargado');
     } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
     finally { b.disabled = false; }
   }
-  function conteo() {
-    const arts = articulos().slice().sort((a, b) => String(a.categoria).localeCompare(String(b.categoria)) || String(a.nombre).localeCompare(String(b.nombre)));
+  /* ---------- conteo físico: por bodega, a ciegas y con borrador en el teléfono ----------
+     Pasos: 1) escoger bodega y categoría, 2) contar (la app no dice cuánto cree que hay), 3) revisar las diferencias y guardar. */
+  let conteoEst = null;
+  const LS_CONTEO = b => 'conteo.' + b;
+  const leerBorrador = b => {
+    try {
+      const j = JSON.parse(localStorage.getItem(LS_CONTEO(b)) || 'null');
+      if (!j || typeof j !== 'object' || !j.vals || typeof j.vals !== 'object') return null;
+      const vals = Object.fromEntries(Object.entries(j.vals).filter(([, v]) => /^\d{1,9}$/.test(String(v))).map(([k, v]) => [k, String(v)]));
+      return Object.keys(vals).length ? { vals, en: String(j.en || '') } : null;
+    } catch (e) { return null; }
+  };
+  const guardarBorrador = b => {
+    // Si se cuentan solo algunos artículos, lo escrito antes de otros artículos de la bodega se conserva.
+    const vals = Object.assign({}, (leerBorrador(b) || { vals: {} }).vals);
+    $('acCampos').querySelectorAll('input[data-art]').forEach(i => { if (i.value.trim() !== '') vals[i.dataset.art] = i.value.trim(); else delete vals[i.dataset.art]; });
+    try { if (Object.keys(vals).length) localStorage.setItem(LS_CONTEO(b), JSON.stringify({ vals, en: new Date().toISOString() })); else localStorage.removeItem(LS_CONTEO(b)); } catch (e) {}
+  };
+  const borrarBorrador = b => { try { localStorage.removeItem(LS_CONTEO(b)); } catch (e) {} };
+  /** Al terminar un conteo de solo algunos artículos, se quita del borrador lo de ellos y se guarda lo demás. */
+  const quitarDeBorrador = (b, ids) => {
+    const br = leerBorrador(b); if (!br) return;
+    ids.forEach(id => { delete br.vals[id]; });
+    try { if (Object.keys(br.vals).length) localStorage.setItem(LS_CONTEO(b), JSON.stringify({ vals: br.vals, en: br.en })); else localStorage.removeItem(LS_CONTEO(b)); } catch (e) {}
+  };
+  /** Último ajuste por conteo de una bodega. Si un conteo cuadró del todo no deja ajustes, así que no cuenta aquí. */
+  function ultimoAjusteConteo(b) {
+    const fs = D().movimientos.filter(m => m.motivo === 'conteo' && (a => a && bodegaDe(a) === b)(artPorId(m.articuloId))).map(m => String(m.fecha)).sort();
+    return fs.length ? fs[fs.length - 1] : '';
+  }
+  const textoUltimosAjustes = () => BODEGAS.map(b => { const f = ultimoAjusteConteo(b); return `${b}: ${f ? A().hace(f) : 'nunca'}`; }).join(' · ');
+
+  function conteo(bodIni) {
+    const bod0 = BODEGAS.includes(bodIni) ? bodIni : (BODEGAS.includes(sub.bodega) ? sub.bodega : BODEGAS[0]);
     abrirAccion({
-      titulo: 'Conteo físico', sub: 'Cuenta en los estantes y escribe cuánto hay de verdad. Deja en blanco lo que no contaste.',
-      campos: `<div class="conteo">${arts.map(a => `<div class="conteo-f"><label for="cn-${esH(a.id)}">${esH(a.nombre)}<span class="meta">La app dice ${esH(cantTxt(a.cantidad, a.unidad))}</span></label><input id="cn-${esH(a.id)}" data-art="${esH(a.id)}" type="number" inputmode="numeric" min="0" step="1" placeholder="${esH(num(a.cantidad))}"></div>`).join('')}</div>` +
-        campoTxt('acMotivo', 'Motivo de las diferencias (si hay)', '', 'Ej: se usaron sin registrar en la reunión', 160),
-      primario: 'Guardar conteo', icono: 'check', listo: 'Listo: conteo guardado.',
+      titulo: 'Conteo físico', sub: 'Escoge en qué bodega vas a contar. Cuentas sin ver lo que dice la app.',
+      campos: campoSel('acBod', 'Bodega', BODEGAS.map(b => [b, b]), bod0) + '<div class="field"><label for="acCat">Categoría</label><select id="acCat"></select></div><div id="acBorrador"></div>' +
+        `<p class="meta">Último ajuste por conteo: ${esH(textoUltimosAjustes())}</p>`,
+      primario: 'Empezar a contar', icono: 'tarea',
+      ops: () => { conteoContar(valor('acBod'), valor('acCat')); return null; }
+    });
+    A().vigilar('shAccion', () => null);   // escoger bodega no es algo que se pierda
+    const refrescar = () => {
+      const b = valor('acBod'), previa = valor('acCat');
+      const cats = Array.from(new Set(articulos().filter(a => bodegaDe(a) === b).map(a => a.categoria).filter(Boolean))).sort((x, y) => String(x).localeCompare(String(y)));
+      $('acCat').innerHTML = [['', 'Todas las categorías']].concat(cats.map(c => [c, c])).map(([v, tx]) => `<option value="${esH(v)}"${v === previa ? ' selected' : ''}>${esH(tx)}</option>`).join('');
+      const br = leerBorrador(b), n = br ? Object.keys(br.vals).length : 0;
+      $('acBorrador').innerHTML = br ? `<div class="note">Tienes un conteo sin terminar de ${esH(b)} (${n} ${n === 1 ? 'cantidad escrita' : 'cantidades escritas'}${br.en ? ', ' + esH(A().hace(br.en)) : ''}). Al empezar sigues donde ibas.</div><div class="acc-rap">${boton('borrarborrador', 'Empezar de cero (borra lo escrito)', 'borrar', ` data-bod="${esH(b)}"`, 'ghost small')}</div>` : '';
+      window.llenarIconos($('acBorrador'));
+    };
+    $('acBod').onchange = refrescar; refrescar();
+  }
+  function conteoContar(bod, cat, solo) {
+    if (!BODEGAS.includes(bod)) return fallar('Escoge una de las 3 bodegas.', 'acBod');
+    const arts = articulos().filter(a => bodegaDe(a) === bod && (!cat || a.categoria === cat) && (!solo || solo.includes(a.id)))
+      .sort((a, b) => String(a.ubicacion).localeCompare(String(b.ubicacion), 'es', { numeric: true }) || String(a.nombre).localeCompare(String(b.nombre)));
+    if (!arts.length) return fallar('No hay artículos en esa bodega y categoría.', 'acCat');
+    const vals = (leerBorrador(bod) || { vals: {} }).vals;
+    conteoEst = { bod, cat, solo: solo || null, ids: arts.map(a => a.id), conteos: {}, revisado: '' };
+    abrirAccion({
+      titulo: `Conteo físico: ${bod}${cat ? ' · ' + cat : ''}${solo ? ' · los de hoy' : ''}`, sub: 'Cuenta en los estantes y escribe cuánto hay de verdad. La app no dice cuánto cree que hay, para que cuentes sin pistas. Deja en blanco lo que no contaste. Lo que escribes se guarda en este teléfono.',
+      campos: `<div class="conteo">${arts.map(a => `<div class="conteo-f"><label for="cn-${esH(a.id)}">${esH(a.nombre)}<span class="meta">${esH([a.categoria, a.ubicacion, a.unidad].filter(Boolean).join(' · '))}</span></label><input id="cn-${esH(a.id)}" data-art="${esH(a.id)}" type="number" inputmode="numeric" min="0" step="1" placeholder="Contado" value="${esH(vals[a.id] == null ? '' : vals[a.id])}"></div>`).join('')}</div>`,
+      primario: 'Revisar', icono: 'check',
       ops: () => {
-        const filas = [...$('acCampos').querySelectorAll('input[data-art]')].filter(i => i.value.trim() !== '');
+        const filas = Array.from($('acCampos').querySelectorAll('input[data-art]')).filter(i => i.value.trim() !== '');
         if (!filas.length) return fallar('Escribe al menos una cantidad contada.');
-        const malas = filas.find(i => !/^\d+$/.test(i.value.trim()));
-        if (malas) return fallar('Las cantidades deben ser números enteros, 0 o más.', malas.id);
-        const difs = filas.map(i => { const a = artPorId(i.dataset.art), contado = Number(i.value.trim()); return { a, contado, dif: a ? contado - num(a.cantidad) : 0 }; }).filter(x => x.a && x.dif !== 0);
-        if (difs.length && !valor('acMotivo')) return fallar(`Hay ${difs.length} ${difs.length === 1 ? 'diferencia' : 'diferencias'}: escribe el motivo.`, 'acMotivo');
-        accion.listo = difs.length ? `Listo: conteo guardado. Se ajustaron ${difs.length} ${difs.length === 1 ? 'artículo' : 'artículos'}.` : 'Listo: conteo guardado. Todo cuadra con la app.';
-        if (!difs.length) return [];
-        return difs.flatMap(x => mover(x.a, x.dif, { articuloId: x.a.id, articulo: x.a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: x.dif, saldo: x.contado, nota: valor('acMotivo') })).concat([aviso('jefe', 'Conteo con diferencias', `${persona().nombre} contó la bodega: ${difs.length} ${difs.length === 1 ? 'artículo no cuadró' : 'artículos no cuadraron'} (${valor('acMotivo')}).`)]);
+        const mala = filas.find(i => !/^\d+$/.test(i.value.trim()));
+        if (mala) return fallar('Las cantidades deben ser números enteros, 0 o más.', mala.id);
+        conteoEst.conteos = Object.fromEntries(filas.map(i => [i.dataset.art, Number(i.value.trim())]));
+        conteoRevisar();
+        return null;
+      }
+    });
+    // Lo escrito ya queda guardado en el teléfono: cerrar esta hoja no pierde nada, así que no pregunta «¿Salir sin guardar?».
+    A().vigilar('shAccion', () => null);
+    $('acCampos').oninput = e => { if (e.target.matches && e.target.matches('input[data-art]')) guardarBorrador(bod); };
+  }
+  const difsDeConteo = () => conteoEst.ids.filter(id => id in conteoEst.conteos).map(id => artPorId(id)).filter(Boolean)
+    .map(a => ({ a, contado: conteoEst.conteos[a.id], antes: num(a.cantidad), dif: conteoEst.conteos[a.id] - num(a.cantidad) }));
+  function conteoRevisar() {
+    const e = conteoEst, filas = difsDeConteo(), difs = filas.filter(x => x.dif !== 0), sin = e.ids.length - filas.length;
+    e.revisado = JSON.stringify(difs.map(x => [x.a.id, x.antes]));
+    const fila = x => `<div class="conteo-r${x.dif ? ' difiere' : ''}"><span class="cr-n">${esH(x.a.nombre)}<span class="meta">${esH([x.a.ubicacion, x.a.unidad].filter(Boolean).join(' · '))}</span></span><span class="cr-v"><span class="meta">Contaste</span><b class="num">${x.contado}</b></span><span class="cr-v"><span class="meta">La app decía</span><b class="num">${x.antes}</b></span><span class="cr-d num">${x.dif ? (x.dif > 0 ? '+' : '') + x.dif : 'Cuadra'}</span></div>`;
+    abrirAccion({
+      titulo: `Revisar el conteo: ${e.bod}`, sub: difs.length ? `Contaste ${filas.length} ${filas.length === 1 ? 'artículo' : 'artículos'}: ${difs.length} no ${difs.length === 1 ? 'cuadra' : 'cuadran'} con la app.` : `Contaste ${filas.length} ${filas.length === 1 ? 'artículo' : 'artículos'}: todo cuadra con la app.`,
+      campos: `<div class="conteo-rev">${filas.slice().sort((a, b) => (b.dif !== 0) - (a.dif !== 0)).map(fila).join('')}</div>` + (sin ? `<p class="meta">Sin contar: ${sin}. Esos no se cambian.</p>` : '') +
+        (difs.length ? campoTxt('acMotivo', 'Motivo de las diferencias', '', 'Ej: se usaron sin registrar en la reunión', 160) : '') + `<div class="acc-rap">${boton('volverconteo', 'Volver a contar', 'atras', '', 'ghost small')}</div>`,
+      primario: 'Guardar conteo', icono: 'check', listo: 'Listo: conteo guardado.', alGuardar: () => (e.solo ? quitarDeBorrador(e.bod, e.ids) : borrarBorrador(e.bod)),
+      ops: () => {
+        const ahora = difsDeConteo().filter(x => x.dif !== 0);
+        if (JSON.stringify(ahora.map(x => [x.a.id, x.antes])) !== e.revisado) { conteoRevisar(); fallar('Mientras revisabas cambió la cantidad de algún artículo. Revisa otra vez.'); return null; }
+        if (ahora.length && !valor('acMotivo')) return fallar(`Hay ${ahora.length} ${ahora.length === 1 ? 'diferencia' : 'diferencias'}: escribe el motivo.`, 'acMotivo');
+        accion.listo = ahora.length ? `Listo: conteo guardado. Se ajustaron ${ahora.length} ${ahora.length === 1 ? 'artículo' : 'artículos'}.` : 'Listo: conteo guardado. Todo cuadra con la app.';
+        // Cada artículo contado, cuadre o no, queda con la fecha de hoy como su último conteo (así se sabe cuándo le toca de nuevo).
+        const hoyC = A().hoyISO(), cuadran = difsDeConteo().filter(x => x.dif === 0).map(x => ['mezclar', 'articulos', x.a.id, { ultimoConteo: hoyC }]);
+        if (!ahora.length) return cuadran;
+        return ahora.flatMap(x => { const o = mover(x.a, x.dif, { articuloId: x.a.id, articulo: x.a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: x.dif, saldo: x.contado, nota: valor('acMotivo') }); o[0][3].ultimoConteo = hoyC; return o; }).concat(cuadran, [aviso('jefe', 'Conteo con diferencias', `${persona().nombre} contó la bodega de ${e.bod}: ${ahora.length} ${ahora.length === 1 ? 'artículo no cuadró' : 'artículos no cuadraron'} (${valor('acMotivo')}).`)]);
       }
     });
   }
@@ -1096,11 +1498,12 @@
     try {
       const d = D(), hojas = [], gen = `Generado el ${A().hoyISO()}.`;
       const TIT = { Bodega: ['Bodega: lo que hay en cada bodega', 'Cuánto hay de cada artículo en Riohacha, Guamal y Bogotá, su estado y su valor.'], Movimientos: ['Movimientos de la bodega', 'Cada entrada, salida y ajuste, del más nuevo al más viejo.'],
-        Compras: ['Compras', 'Todas las compras: quién pidió, quién autorizó, cuánto costó y en qué va.'], 'Pedidos de material': ['Pedidos de material', 'Lo que pidió cada persona a la bodega y si se entregó.'] };
+        Compras: ['Compras', 'Todas las compras: quién pidió, quién autorizó, cuánto costó y en qué va.'], Proveedores: ['Proveedores', 'A quién se le compra: NIT, contacto, compras hechas y lo que se le ha pagado este año.'], 'Pedidos de material': ['Pedidos de material', 'Lo que pidió cada persona a la bodega y si se entregó.'] };
       const hoja = (nombre, filas) => hojas.push(window.Excel.deObjetos(nombre, TIT[nombre][0], `${TIT[nombre][1]} ${gen}`, filas));
       hoja('Bodega', articulos().map(a => ({ Bodega: bodegaDe(a), Artículo: a.nombre, Categoría: a.categoria, Cantidad: num(a.cantidad), Unidad: a.unidad, Mínimo: num(a.minimo), Máximo: num(a.maximo), Estado: EST_ART[estadoArt(a)][0], Ubicación: a.ubicacion, 'Precio aprox.': num(a.costo), 'Valor en bodega': num(a.cantidad) * num(a.costo), Proveedor: a.proveedor })));
       hoja('Movimientos', d.movimientos.slice().sort((x, y) => String(y.fecha).localeCompare(String(x.fecha))).map(m => ({ Fecha: fechaLocal(m.fecha, true), Artículo: m.articulo, Tipo: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: num(m.cantidad), Saldo: num(m.saldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota })));
       hoja('Compras', d.compras.map(c => ({ Qué: c.que, Cantidad: num(c.cantidad), Unidad: c.unidad, Categoría: c.categoria, Estado: (EST_CO[c.estado] || [c.estado])[0], Pidió: c.pide, Autoriza: c.autoriza, 'Valor aprox.': num(c.valorAprox), 'Valor pagado': num(c.valorReal), Proveedor: c.proveedor, 'Fecha pedido': c.fechaPedido, 'Fecha compra': c.fechaCompra, 'Para qué': c.paraQue })));
+      if (veProv()) hoja('Proveedores', provs().map(p => { const st = statsProv(p); return { Proveedor: p.nombre, NIT: p.nit, Contacto: p.contacto, Teléfono: p.telefono, Correo: p.correo, 'Compras hechas': st.n, 'Pagado este año': st.anio, 'Última compra': st.ultima, Nota: p.nota }; }));
       hoja('Pedidos de material', d.solicitudes.map(s => ({ Fecha: fechaLocal(s.fecha, false), Artículo: s.articulo, Cantidad: num(s.cantidad), Pidió: s.pide, 'Para qué': s.paraQue, Proyecto: s.proyecto, Estado: (EST_SOL[s.estado] || [s.estado])[0], Entregó: s.entregadaPor, Motivo: s.motivo })));
       await window.Excel.descargar({ archivo: `Inventario ${A().hoyISO()}`, hojas });
       A().toast('Listo: Excel descargado');
@@ -1279,13 +1682,13 @@
     if (x.tipo === 'agregar') {
       const id = window.nube.idNuevo('ar'), movId = window.nube.idNuevo('mo'), ini = x.real || 0;
       return [['set', 'articulos', id, Object.assign({ cantidad: ini }, ini > 0 ? { ultimoMov: movId } : {}, x.datos)],
-        ini > 0 ? movimiento({ articuloId: id, articulo: x.datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo (desde el Excel)' }, movId) : null].filter(Boolean);
+        ini > 0 ? movimiento({ costoUnit: num(x.datos.costo), articuloId: id, articulo: x.datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo (desde el Excel)' }, movId) : null].filter(Boolean);
     }
     const a = x.a;
     if (x.real === null) return Object.keys(x.datos).length ? [['mezclar', 'articulos', a.id, x.datos]] : [];
     const dif = x.real - num(a.cantidad), movId = window.nube.idNuevo('mo');
-    return [['update', 'articulos', a.id, Object.assign({}, x.datos, { cantidad: window.nube.incremento(dif), ultimoMov: movId })],
-      movimiento({ articuloId: a.id, articulo: x.datos.nombre || a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: dif, saldo: x.real, nota: 'Ajuste desde el Excel' }, movId)];
+    return [['update', 'articulos', a.id, Object.assign({}, x.datos, { cantidad: window.nube.incremento(dif), ultimoMov: movId, ultimoConteo: A().hoyISO() })],
+      movimiento({ costoUnit: num(x.datos.costo != null ? x.datos.costo : a.costo), articuloId: a.id, articulo: x.datos.nombre || a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: dif, saldo: x.real, nota: 'Ajuste desde el Excel' }, movId)];
   }
   const pl = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
   async function guardarExcelExistencias() {
@@ -1381,19 +1784,47 @@
   $('qInventario').addEventListener('input', UI.retardar(() => pintar(), 300));
   $('btnPedirMaterial').addEventListener('click', () => pedirMaterial());
   $('btnPedirCompra').addEventListener('click', () => pedirCompra());
+  /* ---------- escanear el código de un artículo ---------- */
+  async function leerCodigoArt(titulo) {
+    try { await UI.cargarScript('codigos.js?v=1'); }
+    catch (e) { A().toast('No se pudo abrir el lector de códigos. Revisa la conexión o escribe el código.'); return null; }
+    return window.Codigos.leer({ titulo, conocidos: articulos().map(a => a.codigo).filter(Boolean) });
+  }
+  /** Escanea y abre el artículo con ese código; si no hay (o hay uno en cada bodega) deja el código en el buscador. */
+  async function escanearArt() {
+    const s = await leerCodigoArt('Escanear el código del artículo');
+    if (!s) return true;
+    const c = normCod(s), hay = articulos().filter(a => a.codigo && normCod(a.codigo) === c);
+    if (hay.length === 1) { verArticulo(hay[0]); return true; }
+    $('qInventario').value = s; sub.bodega = 'todas'; A().S.filtro.inventario = ''; pintar();
+    A().toast(hay.length ? `Hay ${hay.length} artículos con el código ${s}: escoge el de tu bodega.` : `No hay un artículo con el código ${s}`);
+    return true;
+  }
+  /** En el formulario del artículo: escanea y escribe el código en su campo. */
+  async function escanearParaCampo() {
+    const s = await leerCodigoArt('Escanear el código del artículo');
+    if (!s || !accion || $('shAccion').hidden || !$('acCodigo')) return true;
+    $('acCodigo').value = normCod(s).slice(0, 30);
+    return true;
+  }
   function alTocar(e) {
     const sb = e.target.closest('[data-sub]');
     if (sb) { sub[sb.dataset.sub] = sb.dataset.val; pintar(); return; }
     const b = e.target.closest('[data-accion]'); if (!b) return;
     const d = D(), id = b.dataset.id;
-    const c = d.compras.find(x => x.id === id) || null, s = d.solicitudes.find(x => x.id === id) || null, a = artPorId(id);
+    const c = d.compras.find(x => x.id === id) || null, s = d.solicitudes.find(x => x.id === id) || null, a = artPorId(id), pv = provs().find(x => x.id === id) || null;
     const mapa = {
-      pedir: () => a && pedirCompra(a.id, Number(b.dataset.cant) || 0), autorizar: () => c && autorizar(c), rechazar: () => c && rechazar(c),
-      comprar: () => c && registrarCompra(c), recibir: () => c && recibir(c), revisada: () => c && marcarRevisada(c), vercompra: () => c && verCompra(c),
+      pedir: () => a && pedirCompra(a.id, Number(b.dataset.cant) || 0), pedirbajo: () => pedirBajo(), autorizar: () => c && autorizar(c), rechazar: () => c && rechazar(c),
+      comprar: () => c && registrarCompra(c), imprimirorden: () => c && imprimirOrden(c), recibir: () => c && recibir(c), revisada: () => c && marcarRevisada(c), vercompra: () => c && verCompra(c),
       entregar: () => s && entregar(s), noentregar: () => s && noEntregar(s), sinaut: () => registrarCompra(null, true),
       entrada: () => entradaSalida('entrada', a ? a.id : ''), salida: () => entradaSalida('salida', a ? a.id : ''),
       nuevoart: () => editarArticulo(null), editart: () => a && editarArticulo(a), verart: () => a && verArticulo(a), pedirmat: () => a && pedirMaterial(a.id),
-      trasladar: () => a && trasladar(a), conteo: () => conteo(), excel: () => descargarExcel(b), bdexcel: () => descargarBase(b), exguardar: () => guardarExcelExistencias(), exdescartar: () => { previaEx = null; errorEx = ''; pintar(); }, monto: () => cambiarMonto(), kardex: () => a && kardex(a), excelkardex: () => a && descargarKardex(b, a),
+      trasladar: () => a && trasladar(a), conteo: () => conteo(), volverconteo: () => (conteoEst ? conteoContar(conteoEst.bod, conteoEst.cat, conteoEst.solo) : conteo()), contarhoy: () => { const ids = contarHoyDe(b.dataset.bod); if (!ids.length) { A().toast('Ya no queda nada por contar hoy en esa bodega.'); return true; } return conteoContar(b.dataset.bod, '', ids); }, borrarborrador: () => { borrarBorrador(b.dataset.bod); conteo(b.dataset.bod); }, excel: () => descargarExcel(b), bdexcel: () => descargarBase(b), exguardar: () => guardarExcelExistencias(), exdescartar: () => { previaEx = null; errorEx = ''; pintar(); }, monto: () => cambiarMonto(), kardex: () => a && kardex(a), excelkardex: () => a && descargarKardex(b, a),
+      escanear: () => escanearArt(), escancodigo: () => escanearParaCampo(),
+      verprov: () => pv && verProv(pv), nuevoprov: () => gestionaProv() && (formProv(null), true), editprov: () => pv && gestionaProv() && (formProv(pv), true), borrarprov: () => pv && esJefe() && (borrarProv(pv), true),
+      quitarq: () => { $('qInventario').value = ''; pintar(); return true; },
+      vista: () => { guardarVista(id); pintar(); return true; },
+      ordenar: () => { ordenT = ordenT.col === id ? { col: id, dir: -ordenT.dir } : { col: id, dir: 1 }; pintar(); return true; },
       masLinea: () => masLinea(), quitarLinea: () => quitarLinea(b.dataset.n),
       ir: () => { seccion = b.dataset.sec; if (b.dataset.subk) sub[b.dataset.subk] = b.dataset.subv; A().S.filtro.inventario = b.dataset.filtro || ''; $('qInventario').value = ''; A().pintarTodo(); }
     };
@@ -1421,5 +1852,7 @@
     f.querySelector('[data-lx="que"]').value = x.nombre; f.querySelector('[data-lx="cant"]').value = n; f.querySelector('[data-lx="val"]').value = num(x.costo) * n;
   });
 
+  // Al agrandar o achicar la ventana cruzando los 900 px, la tabla aparece o se vuelve tarjetas.
+  try { window.matchMedia('(min-width: 900px)').addEventListener('change', () => { if (A().S.persona && A().S.vista === 'inventario' && seccion === 'existencias') pintar(); }); } catch (e) { /* navegador viejo: se repinta al tocar algo */ }
   window.Inventario = Object.freeze({ pintar, resumen, tareas, leerFoto, cargarXlsx, fechaLocal, funcion: miFuncion, irA: s => { if (secciones().some(x => x[0] === s)) seccion = s; } });
 })();

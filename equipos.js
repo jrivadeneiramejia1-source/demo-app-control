@@ -7,7 +7,9 @@
    Soporte (Ángel): le llegan las actas; con el permiso extra «actas» las revisa (bien o con problema).
      También le programa mantenimientos y backups al Encargado.
    La Jefe puede hacer todo menos revisar sus propias actas; el Gerente ve todo a detalle sin botones.
-   El acta se puede imprimir o guardar en PDF. */
+   El acta se puede imprimir o guardar en PDF.
+   Ciclo de vida: el Encargado anota la compra y la garantía; Soporte y la Jefe verifican los equipos con el escáner; el Encargado pide la
+   baja (dañado, robado, perdido u obsoleto) y solo la Jefe la aprueba. Un equipo de baja sale de las cifras y su hoja de vida queda en «De baja». */
 (function () {
   'use strict';
   const A = () => window.App;
@@ -26,7 +28,8 @@
   const programa = () => esJefe() || esSoporte();                          // programa tareas al Encargado
   const ahora = () => new Date().toISOString();
   const hoy = () => A().hoyISO();
-  const EST = { asignado: ['Asignado', 's-disco', 'disco'], bodega: ['En bodega', 's-pend', 'pend'], recibido: ['En Recibidos', 's-org', 'org'] };
+  const EST = { asignado: ['Asignado', 's-disco', 'disco'], bodega: ['En bodega', 's-pend', 'pend'], recibido: ['En Recibidos', 's-org', 'org'], baja: ['De baja', 'none', 'pend'] };
+  const MOTIVO_BAJA = { danado: 'Dañado sin arreglo', robado: 'Robado', perdido: 'Perdido', obsoleto: 'Obsoleto' };
   const REV = { pendiente: ['Por revisar', 's-org', 'reloj'], ok: ['Revisada', 's-disco', 'check'], problema: ['Con problema', 's-peligro', 'aviso'] };
   const TIPO_TAREA = { mantenimiento: 'Mantenimiento', backup: 'Backup', revision: 'Revisión' };
   const TIPOS_EQ = ['Portátil', 'Computador de escritorio', 'Monitor', 'GPS', 'Tableta', 'Cámara semi', 'Cámara digital', 'Celular', 'Video beam', 'Impresora', 'Bafle', 'Radio', 'Disco duro externo', 'Otro'];
@@ -37,7 +40,7 @@
   const OTROS = ['Base portátil', 'Base monitor', 'Mouse', 'Teclado', 'Pad mouse', 'Pad teclado', 'Descansapiés', 'Morral', 'Diadema', 'Cargador'];
   const PROYECTOS = [['Proyecto Costa Norte', 'PCN-01'], ['Proyecto Ruta Alta', 'PRA-02']];
   const MAX_FIRMA = 79000;
-  let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], buscar = '';
+  let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], buscar = '', tipoEq = '', buscarActa = '', buscarPers = '', hechasAbiertas = false, bajasAbiertas = false, verif = null;
 
   /* ---------- datos derivados ---------- */
   const equipos = () => D().equipos.slice().sort((a, b) => String(a.serial).localeCompare(String(b.serial)));
@@ -58,6 +61,15 @@
   const recibidos = () => equipos().filter(e => e.estado === 'recibido');
   const dias = f => A().diasHasta(f);
   const viejoMtto = e => { const d = dias(e.ultimoMtto); return d == null || d < -180; };
+  /* ciclo de vida: baja, verificación y garantía */
+  const activos = () => equipos().filter(e => e.estado !== 'baja');
+  const deBaja = () => equipos().filter(e => e.estado === 'baja');
+  const bajaDe = e => (e && e.bajaPedida && typeof e.bajaPedida === 'object' ? e.bajaPedida : null);
+  /** Bajas pedidas que esperan a la Jefe (solo cuentan los equipos que siguen en bodega o en Recibidos). */
+  const bajasPend = () => equipos().filter(e => ['bodega', 'recibido'].includes(e.estado) && bajaDe(e)).sort((a, b) => String(bajaDe(a).en).localeCompare(String(bajaDe(b).en)));
+  const sinVerificar = e => { const d = dias(e.verificadoEn); return d == null || d < -180; };
+  const garantiaPronto = e => { const d = dias(e.garantiaHasta); return d != null && d >= 0 && d <= 30; };
+  const textoGarantia = e => { const d = dias(e.garantiaHasta); return d == null ? '' : d < 0 ? `venció hace ${-d} días` : d === 0 ? 'vence hoy' : `vence en ${d} días`; };
   const numActa = h => 'AC-' + String(h.numero || 0).padStart(4, '0');
   /** Personas con equipos o actas. Se agrupan por cédula (dos personas pueden llamarse igual). */
   function personas() {
@@ -75,7 +87,7 @@
   }
   function resumen() {
     const es = D().equipos;
-    const mias = (esEncargado() ? recibidos().length + tareasPend().length + conProblema().length : 0) + (revisaActas() ? porRevisar().filter(h => h.porRol !== miRol()).length : 0);
+    const mias = (esEncargado() ? recibidos().length + tareasPend().length + conProblema().length : 0) + (esJefe() ? bajasPend().length : 0) + (revisaActas() ? porRevisar().filter(h => h.porRol !== miRol()).length : 0);
     return {
       asignados: es.filter(e => e.estado === 'asignado').length, bodega: es.filter(e => e.estado === 'bodega').length,
       recibidos: es.filter(e => e.estado === 'recibido').length, actas: porRevisar().length,
@@ -96,12 +108,14 @@
     try {
       const gen = `Generado el ${A().hoyISO()}.`, f = window.Inventario.fechaLocal, E = window.Excel;
       const equipos = D().equipos.slice().sort((x, y) => String(x.serial).localeCompare(String(y.serial))).map(e => ({ Serial: e.serial, Tipo: e.tipo, Marca: e.marca, Modelo: e.modelo, Estado: (EST[e.estado] || [e.estado])[0],
-        'Asignado a': e.asignadoA || '', Proyecto: e.proyecto || '', 'Último mantenimiento': e.ultimoMtto || '', 'Último backup': e.ultimoBackup || '', Observaciones: e.obs || '' }));
+        'Asignado a': e.asignadoA || '', Proyecto: e.proyecto || '', 'Último mantenimiento': e.ultimoMtto || '', 'Último backup': e.ultimoBackup || '', 'Última verificación': e.verificadoEn || '',
+        'Fecha de compra': e.fechaCompra || '', 'Garantía hasta': e.garantiaHasta || '', Proveedor: e.proveedor || '', Costo: Number(e.costo) || 0,
+        'Motivo de la baja': e.estado === 'baja' && bajaDe(e) ? `${MOTIVO_BAJA[bajaDe(e).motivo] || bajaDe(e).motivo}: ${bajaDe(e).nota}` : '', Observaciones: e.obs || '' }));
       const actas = D().hojas.slice().sort((x, y) => Number(y.numero) - Number(x.numero)).map(h => ({ 'Acta N.°': Number(h.numero) || 0, Fecha: f(h.en, false) || h.fecha || '', 'Recibió': h.persona, Proyecto: h.proyecto || '',
         'Equipos entregados': lista(h.equipos).map(x => `${x.serial} (${x.tipo})`).join(', '), 'Otros elementos': lista(h.otros).map(x => `${x.nombre} x${x.cantidad}`).join(', '), 'Devoluciones': lista(h.devoluciones).length,
         'Revisión': ({ pendiente: 'Por revisar', ok: 'Bien', problema: 'Con problema' })[h.revision] || h.revision, 'Nota de la revisión': h.notaRevision || '', Entregó: h.encargado || h.por || '' }));
       await E.descargar({ archivo: `Equipos ${A().hoyISO()}`, hojas: [
-        E.deObjetos('Equipos', 'Equipos', `Cada equipo con su estado, a quién está asignado y su último mantenimiento y backup. ${gen}`, equipos),
+        E.deObjetos('Equipos', 'Equipos', `Cada equipo con su estado, a quién está asignado, su último mantenimiento, backup y verificación, su compra y garantía, y el motivo si está de baja. ${gen}`, equipos),
         E.deObjetos('Actas de entrega', 'Actas de entrega', `Cada acta con lo que se entregó y cómo salió la revisión. No trae cédulas ni firmas. ${gen}`, actas)] });
       A().toast('Listo: Excel descargado');
     } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
@@ -111,7 +125,7 @@
   function pintar() {
     const App = A(), S = App.S;
     if (!S.persona) return;
-    if (rolPintado !== S.persona.rol) { rolPintado = S.persona.rol; seccion = secciones()[0][0]; }
+    if (rolPintado !== S.persona.rol) { rolPintado = S.persona.rol; seccion = secciones()[0][0]; tipoEq = buscarActa = buscarPers = ''; }
     const f = S.filtro.equipos;
     if (['asignado', 'bodega', 'recibido'].includes(f)) seccion = 'equipos';
     if (f === 'actas') seccion = 'actas';
@@ -135,8 +149,23 @@
   const seriales = h => lista(h.equipos).map(x => x.serial).join(', ');
 
   /* --- Lo que me toca --- */
+  const botonVerificar = clase => boton('verificar', 'Verificar equipos', 'codigo', '', clase || 'small');
+  /** Una baja pedida: la Jefe la aprueba o no; el Encargado ve que sigue esperando. */
+  function tarjetaBaja(e) {
+    const b = bajaDe(e);
+    return `<div class="card tarea st-org">
+      <div class="tarea-t"><b><span class="serial-chip">${esH(e.serial)}</span> ${esH(e.tipo)} ${esH(e.marca)} ${esH(e.modelo)}</b>
+        <span class="meta">${esH(MOTIVO_BAJA[b.motivo] || b.motivo)}: ${esH(b.nota)}</span><span class="meta">La pidió ${esH(b.por)} · ${esH(A().fechaCorta(b.en))} · ${esH(quienTiene(e))}</span></div>
+      <div class="tarea-pie">${esJefe() ? boton('aprobarbaja', 'Aprobar la baja', 'check', e.id, 'primary small') + boton('noaprobarbaja', 'No aprobar', 'x', e.id, 'small') : A().pill('Esperando a la Jefe', 's-org', 'reloj')}${boton('ver', 'Hoja de vida', '', e.id, 'ghost small')}</div>
+    </div>`;
+  }
   function htmlHacer() {
     let h = '';
+    if (programa()) h += `<div class="barra-botones">${botonVerificar('small')}</div>`;
+    if (esEncargado()) {
+      const bs = bajasPend();
+      if (bs.length) h += `<div class="section-label">${esJefe() ? 'Bajas por aprobar' : 'Bajas que pediste (esperan a la Jefe)'} (${bs.length})</div><div class="list">${bs.map(tarjetaBaja).join('')}</div>`;
+    }
     if (esEncargado()) {
       const rs = recibidos(), ts = tareasPend(), ps = conProblema();
       h += `<div class="section-label">Recibidos: mantenimiento y backup (${rs.length})</div>`;
@@ -193,47 +222,80 @@
       <div class="tarea-pie">${t.estado === 'pendiente' && esEncargado() ? boton('hecha', 'Marcar hecha', 'check', t.id, 'primary small') : A().pill(t.estado === 'hecha' ? 'Hecha' : atrasada ? 'Atrasada' : 'Pendiente', t.estado === 'hecha' ? 's-disco' : atrasada ? 's-peligro' : 's-org')}${e ? boton('ver', 'Hoja de vida', '', e.id, 'ghost small') : ''}</div>
     </div>`;
   }
-  const quienTiene = e => (e.estado === 'bodega' ? 'En bodega' : e.estado === 'recibido' ? `En Recibidos (lo trajo ${e.asignadoA || 'alguien'})` : e.asignadoA || 'Sin asignar');
+  const quienTiene = e => (e.estado === 'baja' ? 'Retirado (de baja)' : e.estado === 'bodega' ? 'En bodega' : e.estado === 'recibido' ? `En Recibidos (lo trajo ${e.asignadoA || 'alguien'})` : e.asignadoA || 'Sin asignar');
 
   /* --- Equipos --- */
-  function htmlEquipos(f) {
-    const App = A(), q = buscar.trim().toLowerCase();
-    const vis = equipos().filter(e => (!['asignado', 'bodega', 'recibido'].includes(f) || e.estado === f) && (!q || [e.serial, e.asignadoA, e.marca, e.modelo, e.tipo, e.proyecto].join(' ').toLowerCase().includes(q)));
-    let h = `<input class="search" id="qEq" type="search" placeholder="Buscar serial, persona o modelo" autocomplete="off" aria-label="Buscar equipo" value="${esH(buscar)}">`;
-    h += window.ExcelBD.html(cfgEquipos());
-    h += `<div class="count" aria-live="polite">${vis.length} de ${D().equipos.length} equipos</div>`;
-    if (!vis.length) return h + UI.vacio('equipos', 'No hay equipos con ese filtro', '');
-    return h + `<div class="list">${vis.map(e => {
-      const st = EST[e.estado] || ['Sin estado', 'none', 'pend'];
-      return `<button type="button" class="card st-${st[2]}" data-accion="ver" data-id="${esH(e.id)}">
+  const buscador = (id, valor, ph, aria) => `<input class="search" id="${id}" type="search" placeholder="${esH(ph)}" autocomplete="off" aria-label="${esH(aria)}" value="${esH(valor)}">`;
+  const cardEquipo = e => {
+    const App = A(), st = EST[e.estado] || ['Sin estado', 'none', 'pend'];
+    return `<button type="button" class="card st-${st[2]}" data-accion="ver" data-id="${esH(e.id)}">
         <span class="card-head"><span class="card-title"><small>${esH(e.serial)}</small>${esH(e.tipo)} ${esH(e.marca)}</span>${App.pill(st[0], st[1])}</span>
         <span class="card-sub">${esH(e.modelo)}</span>
         <span class="facts"><span>${window.ico('persona')} <b>${esH(quienTiene(e))}</b></span>${e.proyecto ? `<span>${esH(e.proyecto)}</span>` : ''}</span>
-        <span class="docs">${e.ultimoMtto ? App.pill('Mantenimiento ' + App.fechaCorta(e.ultimoMtto), viejoMtto(e) ? 's-warn' : 's-pend', 'mantenimiento') : App.pill('Sin mantenimiento', 's-warn', 'mantenimiento')}${e.ultimoBackup ? App.pill('Backup ' + App.fechaCorta(e.ultimoBackup), 's-pend', 'backup') : ''}</span>
+        <span class="docs">${e.estado === 'baja' ? '' : (e.ultimoMtto ? App.pill('Mantenimiento ' + App.fechaCorta(e.ultimoMtto), viejoMtto(e) ? 's-warn' : 's-pend', 'mantenimiento') : App.pill('Sin mantenimiento', 's-warn', 'mantenimiento')) + (e.ultimoBackup ? App.pill('Backup ' + App.fechaCorta(e.ultimoBackup), 's-pend', 'backup') : '')}${e.estado !== 'baja' && bajaDe(e) ? App.pill('Baja pedida', 's-org', 'aviso') : ''}${e.estado !== 'baja' && garantiaPronto(e) ? App.pill('Garantía ' + textoGarantia(e), 's-warn', 'aviso') : ''}${e.estado === 'baja' && bajaDe(e) ? App.pill(MOTIVO_BAJA[bajaDe(e).motivo] || 'De baja', 's-warn', 'aviso') : ''}</span>
         ${e.obs ? `<span class="meta">${esH(e.obs)}</span>` : ''}
       </button>`;
-    }).join('')}</div>`;
+  };
+  /** «De baja»: los equipos retirados quedan fuera de las cifras y de la lista; su hoja de vida se sigue pudiendo abrir. */
+  function seccionBaja(f, q) {
+    if (['asignado', 'bodega', 'recibido'].includes(f)) return '';
+    const bs = deBaja().filter(e => !q || [e.serial, e.asignadoA, e.marca, e.modelo, e.tipo].join(' ').toLowerCase().includes(q));
+    if (!bs.length) return '';
+    const abierta = bajasAbiertas || !!q;
+    return `<div class="section-label">De baja (${bs.length})</div>` + (abierta ? `<div class="list">${bs.map(cardEquipo).join('')}</div>` : '') +
+      (q ? '' : `<div class="barra-botones">${boton('verbaja', abierta ? 'Ocultar los de baja' : 'Ver los de baja', abierta ? 'arriba' : 'abajo', '', 'ghost small')}</div>`);
+  }
+  function htmlEquipos(f) {
+    const q = buscar.trim().toLowerCase();
+    const base = activos().filter(e => (!['asignado', 'bodega', 'recibido'].includes(f) || e.estado === f) && (!q || [e.serial, e.asignadoA, e.marca, e.modelo, e.tipo, e.proyecto].join(' ').toLowerCase().includes(q)));
+    const vis = tipoEq ? base.filter(e => e.tipo === tipoEq) : base;
+    // Chips por tipo: solo los tipos que hay (con su número), más el escogido aunque ya no tenga equipos.
+    const tipos = Array.from(new Set(base.map(e => e.tipo).concat(tipoEq ? [tipoEq] : []))).sort((a, b) => String(a).localeCompare(String(b)));
+    const chipTipo = (t, txt, n) => `<button type="button" class="chip" data-accion="tipoeq" data-id="${esH(t)}" aria-pressed="${tipoEq === t}">${esH(txt)} <span class="n">${n}</span></button>`;
+    const rotuloEstado = { asignado: 'Asignados', bodega: 'En bodega', recibido: 'En Recibidos' }[f];
+    const filtros = [rotuloEstado, tipoEq].filter(Boolean);
+    let h = `<div class="con-scan"><input class="search" id="qEq" type="search" placeholder="Buscar serial, persona o modelo" autocomplete="off" aria-label="Buscar equipo" value="${esH(buscar)}"><button type="button" class="btn-scan" data-accion="escanear" data-id="" aria-label="Escanear el serial con la cámara" title="Escanear el serial"><span data-ico="codigo"></span></button></div>`;
+    h += window.ExcelBD.html(cfgEquipos());
+    if (programa()) h += `<div class="barra-botones">${botonVerificar('small')}</div>`;
+    if (tipos.length > 1 || tipoEq) h += `<div class="chips" role="group" aria-label="Filtrar por tipo de equipo">${chipTipo('', 'Todos', base.length)}${tipos.map(t => chipTipo(t, t, base.filter(e => e.tipo === t).length)).join('')}</div>`;
+    if (filtros.length) h += `<div class="filtro-activo"><span>Filtro: <b>${esH(filtros.join(' · '))}</b></span>${boton('quitarfiltro', 'Quitar', 'x', '', 'ghost small')}</div>`;
+    h += `<div class="count" aria-live="polite">${vis.length} de ${activos().length} equipos</div>`;
+    if (!vis.length) return h + UI.vacio('equipos', 'No hay equipos con ese filtro', '') + (filtros.length || q ? `<div class="barra-botones">${boton('quitarfiltro', 'Quitar filtro', 'x', '', 'primary', ' data-modo="todo"')}</div>` : '') + seccionBaja(f, q);
+    return h + `<div class="list">${vis.map(cardEquipo).join('')}</div>` + seccionBaja(f, q);
   }
   /* --- Actas --- */
   function htmlActas(f) {
-    const hs = D().hojas.slice().sort((a, b) => String(b.en).localeCompare(String(a.en)));
+    const q = buscarActa.trim().toLowerCase();
+    const hs = D().hojas.slice().sort((a, b) => String(b.en).localeCompare(String(a.en))).filter(h => !q || [numActa(h), h.persona, h.cedula, seriales(h), h.proyecto].join(' ').toLowerCase().includes(q));
     const ps = hs.filter(h => h.revision !== 'ok'), ok = hs.filter(h => h.revision === 'ok');
-    let h = f === 'actas' ? '<p class="meta">Mostrando primero las actas por revisar.</p>' : '';
+    let h = buscador('qAc', buscarActa, 'Buscar persona, serial o número de acta', 'Buscar acta');
+    if (q && !hs.length) return h + UI.vacio('hojas', 'No hay actas con esa búsqueda', '') + `<div class="barra-botones">${boton('quitarfiltro', 'Quitar búsqueda', 'x', '', 'primary', ' data-modo="actas"')}</div>`;
+    h += f === 'actas' ? '<p class="meta">Mostrando primero las actas por revisar.</p>' : '';
     h += `<div class="section-label">Por revisar o con problema (${ps.length})</div>` + (ps.length ? `<div class="list">${ps.map(tarjetaActa).join('')}</div>` : '<p class="meta">Ninguna.</p>');
     h += `<div class="section-label">Revisadas (${ok.length})</div>` + (ok.length ? `<div class="list">${ok.map(tarjetaActa).join('')}</div>` : '<p class="meta">Todavía no hay actas revisadas.</p>');
     return h;
   }
   /* --- Agenda --- */
   function htmlAgenda() {
-    const ts = D().tareasEq.slice().sort((a, b) => (a.estado === b.estado ? String(a.fecha).localeCompare(String(b.fecha)) : a.estado === 'pendiente' ? -1 : 1));
     const h = programa() ? `<div class="barra-botones">${boton('programar', 'Programar mantenimiento o backup', 'programar', '', 'primary')}</div>` : '';
-    return h + (ts.length ? `<div class="list">${ts.map(tarjetaTarea).join('')}</div>` : UI.vacio('calendario', 'No hay tareas', 'Soporte o la Jefe le programan al Encargado los mantenimientos y backups.'));
+    if (!D().tareasEq.length) return h + UI.vacio('calendario', 'No hay tareas', 'Soporte o la Jefe le programan al Encargado los mantenimientos y backups.');
+    // Pendientes en tres grupos: atrasadas, las de esta semana (hasta el domingo) y las de después. Las hechas, al final y plegadas.
+    const ps = tareasPend(), hechas = D().tareasEq.filter(t => t.estado !== 'pendiente').sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    const domingo = (7 - new Date().getDay()) % 7;
+    const atras = ps.filter(t => String(t.fecha) < hoy()), semana = ps.filter(t => String(t.fecha) >= hoy() && dias(t.fecha) <= domingo);
+    const despues = ps.filter(t => !atras.includes(t) && !semana.includes(t));
+    const grupo = (rotulo, ts, vacio, clase) => `<div class="section-label${clase || ''}">${rotulo} (${ts.length})</div>` + (ts.length ? `<div class="list">${ts.map(tarjetaTarea).join('')}</div>` : `<p class="meta">${vacio}</p>`);
+    return h + (atras.length ? grupo('Atrasadas', atras, '', ' atrasadas') : '') + grupo('Esta semana', semana, 'Nada para esta semana.') + grupo('Después', despues, 'Nada programado más adelante.')
+      + (hechas.length ? `<div class="barra-botones">${boton('verhechas', hechasAbiertas ? 'Ocultar hechas' : `Ver hechas (${hechas.length})`, hechasAbiertas ? 'arriba' : 'abajo', '', 'ghost small')}</div>` + (hechasAbiertas ? `<div class="list">${hechas.map(tarjetaTarea).join('')}</div>` : '') : '');
   }
   /* --- Personas --- */
   function htmlPersonas() {
-    const ps = personas();
-    if (!ps.length) return UI.vacio('persona', 'Nadie tiene equipos todavía', '');
-    return `<div class="list">${ps.map(p => `<button type="button" class="card" data-accion="persona" data-clave="${esH(p.clave)}">
+    const todas = personas(), q = buscarPers.trim().toLowerCase();
+    if (!todas.length) return UI.vacio('persona', 'Nadie tiene equipos todavía', '');
+    const ps = todas.filter(p => !q || [p.nombre, p.cedula, p.equipos.map(e => e.serial).join(' ')].join(' ').toLowerCase().includes(q));
+    const caja = buscador('qPe', buscarPers, 'Buscar nombre, cédula o serial', 'Buscar persona');
+    if (!ps.length) return caja + UI.vacio('persona', 'No hay nadie con esa búsqueda', '') + `<div class="barra-botones">${boton('quitarfiltro', 'Quitar búsqueda', 'x', '', 'primary', ' data-modo="personas"')}</div>`;
+    return caja + `<div class="list">${ps.map(p => `<button type="button" class="card" data-accion="persona" data-clave="${esH(p.clave)}">
       <span class="card-head"><span class="card-title">${esH(p.nombre)}</span>${A().pill(`${p.equipos.length} ${p.equipos.length === 1 ? 'equipo' : 'equipos'}`, p.equipos.length ? 's-disco' : 'none', 'equipos')}</span>
       <span class="meta">${p.cedula ? 'C.C. ' + esH(p.cedula) + ' · ' : ''}${p.hojas.length} ${p.hojas.length === 1 ? 'acta' : 'actas'}${p.equipos.length ? ' · ' + esH(p.equipos.map(e => e.serial).join(', ')) : ''}</span>
     </button>`).join('')}</div>`;
@@ -243,14 +305,17 @@
     const App = A(), n = resumen(), mes = hoy().slice(0, 7), hs = D().hojas;
     const entregas = hs.filter(h => String(h.fecha).slice(0, 7) === mes).length;
     const devs = hs.reduce((c, h) => c + lista(h.devoluciones).filter(d => String(d.fecha).slice(0, 7) === mes).length, 0);
-    const viejos = D().equipos.filter(viejoMtto);
+    const viejos = activos().filter(viejoMtto), sv = activos().filter(sinVerificar), gp = activos().filter(garantiaPronto).sort((a, b) => String(a.garantiaHasta).localeCompare(String(b.garantiaHasta)));
     let h = `<div class="resumen-grid">
-      <div class="card"><span class="meta">Equipos</span><span class="rm-n">${D().equipos.length}</span><span class="meta">${n.asignados} asignados · ${n.bodega} en bodega · ${n.recibidos} en Recibidos</span></div>
+      <div class="card"><span class="meta">Equipos</span><span class="rm-n">${activos().length}</span><span class="meta">${n.asignados} asignados · ${n.bodega} en bodega · ${n.recibidos} en Recibidos${deBaja().length ? ` · ${deBaja().length} de baja (fuera de la cifra)` : ''}</span></div>
       <div class="card"><span class="meta">Actas este mes</span><span class="rm-n">${entregas + devs}</span><span class="meta">${entregas} entregas · ${devs} devoluciones</span></div>
       <div class="card"><span class="meta">Actas por revisar</span><span class="rm-n">${n.actas}</span>${conProblema().length ? App.pill(`${conProblema().length} con problema`, 's-peligro', 'aviso') : App.pill('Sin problemas', 's-disco', 'check')}</div>
       <div class="card"><span class="meta">Agenda</span><span class="rm-n">${n.tareas}</span>${n.atrasadas ? App.pill(`${n.atrasadas} atrasadas`, 's-peligro', 'aviso') : App.pill('Al día', 's-disco', 'check')}</div>
     </div>`;
     h += `<div class="section-label">Sin mantenimiento hace más de 6 meses (${viejos.length})</div>` + (viejos.length ? `<div class="list">${viejos.map(e => `<button type="button" class="card" data-accion="ver" data-id="${esH(e.id)}"><span class="card-head"><span class="card-title"><small>${esH(e.serial)}</small>${esH(e.tipo)} ${esH(e.marca)}</span>${App.pill(e.ultimoMtto ? 'Último: ' + App.fechaCorta(e.ultimoMtto) : 'Nunca', 's-warn', 'mantenimiento')}</span><span class="meta">${esH(quienTiene(e))}</span></button>`).join('')}</div>` : '<p class="meta">Todos los equipos tienen mantenimiento reciente.</p>');
+    const fila = (e, pill) => `<button type="button" class="card" data-accion="ver" data-id="${esH(e.id)}"><span class="card-head"><span class="card-title"><small>${esH(e.serial)}</small>${esH(e.tipo)} ${esH(e.marca)}</span>${pill}</span><span class="meta">${esH(quienTiene(e))}</span></button>`;
+    h += `<div class="section-label">Sin verificar hace más de 6 meses (${sv.length})</div>` + (sv.length ? `<div class="list">${sv.map(e => fila(e, App.pill(e.verificadoEn ? 'Verificado: ' + App.fechaCorta(e.verificadoEn) : 'Nunca verificado', 's-warn', 'codigo'))).join('')}</div>` : '<p class="meta">Todos los equipos se verificaron en los últimos 6 meses.</p>');
+    h += `<div class="section-label">Garantías que vencen en 30 días (${gp.length})</div>` + (gp.length ? `<div class="list">${gp.map(e => fila(e, App.pill('Garantía ' + textoGarantia(e), 's-warn', 'aviso'))).join('')}</div>` : '<p class="meta">Ninguna garantía vence en los próximos 30 días.</p>');
     return h;
   }
 
@@ -270,6 +335,7 @@
     $('eqCerrar').textContent = o.primario ? 'Cancelar' : 'Cerrar';
     $('eqErr').hidden = true;
     A().abrirHoja('shEq');
+    A().vigilar('shEq', () => $('eqForm'), () => Object.keys(pads).filter(id => $(id) && $('eqCampos').contains($(id))).map(id => pads[id].puntos).join());
     const sh = $('shEq').querySelector('.sheet'); if (sh) sh.scrollTop = 0;
   }
   function aviso(para, titulo, txt, soloActas) {
@@ -349,14 +415,14 @@
     return out;
   }
   function entrega(preId) {
-    const libres = equipos().filter(e => e.estado === 'bodega' || (e.estado === 'recibido' && !pend(e).mtto && !pend(e).backup));
+    const libres = equipos().filter(e => !bajaDe(e) && (e.estado === 'bodega' || (e.estado === 'recibido' && !pend(e).mtto && !pend(e).backup)));
     const nombres = personas().map(p => p.nombre);
     abrir({ titulo: 'Entrega de equipos y herramientas', sub: 'El acta se llena y se firma aquí mismo, sin papel. Después Soporte la revisa.',
       campos: `<datalist id="ehNombres">${nombres.map(n => `<option value="${esH(n)}">`).join('')}</datalist>` +
         `<div class="fields cols">${campoTxt('ehFecha', 'Fecha', hoy(), '', 10, 'date')}${campoTxt('ehCedula', 'Cédula', '', 'Solo números', 12, 'text')}</div>` +
         campoTxt('ehPersona', 'Nombre', '', 'Nombre completo de quien recibe', 80, 'text', 'ehNombres') +
         `<div class="fields cols">${campoSel('ehProy', 'Proyecto', PROYECTOS.map(p => [p[0], p[0]]), PROYECTOS[0][0])}${campoTxt('ehCodigo', 'Código del proyecto', PROYECTOS[0][1], '', 20)}</div>` +
-        `<div class="field"><span class="lbl">Equipos (serial, cantidad y observaciones)</span>${libres.length ? libres.map(e => filaEq(e, e.id === preId)).join('') : '<p class="meta">No hay equipos en bodega para entregar.</p>'}</div>` +
+        `<div class="field"><span class="lbl">Equipos (serial, cantidad y observaciones)</span>${libres.length ? boton('escanear', 'Escanear un equipo', 'codigo', '', 'small', ' data-modo="entrega"') + libres.map(e => filaEq(e, e.id === preId)).join('') : '<p class="meta">No hay equipos en bodega para entregar.</p>'}</div>` +
         `<div class="field"><span class="lbl">Otros (cantidad)</span><div class="otros">${OTROS.map(filaOtro).join('')}${filaOtroLibre(0)}${filaOtroLibre(1)}</div></div>` +
         campoFirma('ehFirmaP', 'Firma de quien recibe', '—'),
       primario: 'Guardar el acta', icono: 'entrega', listo: 'Listo: acta guardada. Soporte ya la tiene para revisarla.', base: fotoBase(libres), numerada: true,
@@ -386,7 +452,7 @@
     const elegido = conEquipos.find(p => p.clave === clave) || conEquipos[0];
     abrir({ titulo: 'Devolución de equipos', sub: 'Se anota en la misma acta de la entrega, con la fecha de devolución y la firma. Lo que llega queda en Recibidos.',
       campos: campoSel('ehQuien', 'Quién devuelve', conEquipos.map(p => [p.clave, `${p.nombre}${p.cedula ? ' · C.C. ' + p.cedula : ''}`]), elegido.clave) +
-        campoTxt('ehFecha', 'Fecha de devolución', hoy(), '', 10, 'date') + '<div class="field" id="ehLista"></div>' +
+        campoTxt('ehFecha', 'Fecha de devolución', hoy(), '', 10, 'date') + `<div class="acc-rap">${boton('escanear', 'Escanear un equipo', 'codigo', '', 'small', ' data-modo="devolucion"')}</div><div class="field" id="ehLista"></div>` +
         campoFirma('ehFirmaP', 'Firma de quien devuelve', elegido.cedula || '—'),
       primario: 'Guardar la devolución', icono: 'devolucion', listo: 'Listo: devolución anotada en el acta. Los equipos quedaron en Recibidos.',
       base: fotoBase(D().equipos.filter(e => e.estado === 'asignado')),
@@ -477,7 +543,7 @@
     activarFirma('ehFirmaP');
   }
   function programar(e) {
-    const ops = equipos().map(x => [x.id, `${x.serial} · ${x.tipo} ${x.marca} (${x.estado === 'bodega' ? 'bodega' : x.asignadoA || x.estado})`]);
+    const ops = activos().map(x => [x.id, `${x.serial} · ${x.tipo} ${x.marca} (${x.estado === 'bodega' ? 'bodega' : x.asignadoA || x.estado})`]);
     const manana = (() => { const d = new Date(hoy() + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
     abrir({ titulo: 'Programar mantenimiento o backup', sub: 'Le llega al Encargado de equipos con aviso.',
       campos: campoSel('ehEq', 'Equipo', ops, e ? e.id : ops[0][0]) + `<div class="fields cols">${campoSel('ehTipo', 'Qué hay que hacer', Object.keys(TIPO_TAREA).map(k => [k, TIPO_TAREA[k]]), 'mantenimiento')}${campoTxt('ehFecha', 'Para cuándo', manana, '', 10, 'date')}</div>` +
@@ -501,7 +567,7 @@
         const nota = valor('ehNota'); if (nota.length < 4) return fallar('Cuenta en pocas palabras qué se hizo.', 'ehNota');
         if (e && cambiaron([e.id])) return fallar('El equipo cambió mientras tenías esto abierto. Ciérralo y ábrelo otra vez.');
         const ops = [['mezclar', 'tareasEq', t.id, { estado: 'hecha', hechaPor: persona().nombre, hechaEn: ahora(), resultado: nota }]];
-        if (e) {
+        if (e && e.estado !== 'baja') {
           const tipo = t.tipo === 'backup' ? 'backup' : t.tipo === 'mantenimiento' ? 'mantenimiento' : 'revision';
           const cambio = { historial: conPaso(e, { tipo, persona: persona().nombre, nota }) };
           if (tipo === 'mantenimiento') cambio.ultimoMtto = hoy();
@@ -517,37 +583,165 @@
   function nuevo() {
     abrir({ titulo: 'Registrar equipo nuevo', sub: 'Queda en bodega, listo para entregar.',
       campos: `<div class="fields cols">${campoTxt('ehSerial', 'Serial', '', 'Ej: DEMO-0013', 30)}${campoSel('ehTipo', 'Tipo', TIPOS_EQ.map(t => [t, t]), 'Portátil')}</div>` +
-        `<div class="fields cols">${campoTxt('ehMarca', 'Marca', '', 'Ej: Lenovo', 40)}${campoTxt('ehModelo', 'Modelo', '', 'Ej: ThinkPad E14', 60)}</div>` + campoTxt('ehObs', 'Observaciones', '', '', 160),
+        `<div class="fields cols">${campoTxt('ehMarca', 'Marca', '', 'Ej: Lenovo', 40)}${campoTxt('ehModelo', 'Modelo', '', 'Ej: ThinkPad E14', 60)}</div>` + campoTxt('ehObs', 'Observaciones', '', '', 160) + camposCompra({}),
       primario: 'Registrar', icono: 'mas', listo: 'Listo: equipo registrado en bodega.',
       ops: () => {
         const serial = valor('ehSerial').toUpperCase(), marcaV = valor('ehMarca'), modelo = valor('ehModelo');
         if (!/^[A-Z0-9-]{4,30}$/.test(serial)) return fallar('Escribe el serial (letras, números y guiones).', 'ehSerial');
         if (D().equipos.some(e => String(e.serial).toUpperCase() === serial)) return fallar('Ya hay un equipo con ese serial.', 'ehSerial');
         if (!marcaV) return fallar('Escribe la marca.', 'ehMarca');
-        return [['set', 'equipos', window.nube.idNuevo('eq'), { serial, tipo: valor('ehTipo'), marca: marcaV, modelo, estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', ultimoMtto: '', ultimoBackup: '', obs: valor('ehObs'),
+        const compra = leerCompra(); if (typeof compra === 'string') return false;
+        return [['set', 'equipos', window.nube.idNuevo('eq'), { serial, tipo: valor('ehTipo'), marca: marcaV, modelo, estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', ultimoMtto: '', ultimoBackup: '', obs: valor('ehObs'), ...compra,
           pendientes: { mtto: false, backup: false }, historial: [{ fecha: hoy(), tipo: 'registro', persona: persona().nombre, nota: 'Equipo registrado en bodega', por: persona().nombre }] }]];
       } });
   }
 
+  /* ---------- compra y garantía ---------- */
+  /** Los 4 datos de compra (todos opcionales): fecha de compra, garantía hasta, proveedor y costo en pesos. */
+  const camposCompra = e => `<div class="section-label">Compra y garantía (opcional)</div><div class="fields cols">${campoTxt('ehFCompra', 'Fecha de compra', e.fechaCompra || '', '', 10, 'date')}${campoTxt('ehGarantia', 'Garantía hasta', e.garantiaHasta || '', '', 10, 'date')}</div>` +
+    campoTxt('ehProveedor', 'Proveedor', e.proveedor || '', 'Ej: Tecnoventas Ejemplo S. A. S.', 60) + campoTxt('ehCosto', 'Costo en pesos', Number(e.costo) > 0 ? e.costo : '', 'Solo números', 12, 'text');
+  /** Lee y revisa esos 4 datos: devuelve el objeto o falla con un aviso (y devuelve un texto). */
+  function leerCompra() {
+    const fc = valor('ehFCompra'), gh = valor('ehGarantia'), pv = valor('ehProveedor'), cs = valor('ehCosto').replace(/[\s$.]/g, '');
+    if (fc && (!/^\d{4}-\d{2}-\d{2}$/.test(fc) || fc > hoy())) return fallar('Revisa la fecha de compra: no puede ser de mañana.', 'ehFCompra') || 'x';
+    if (gh && !/^\d{4}-\d{2}-\d{2}$/.test(gh)) return fallar('Revisa la fecha en que termina la garantía.', 'ehGarantia') || 'x';
+    if (fc && gh && gh < fc) return fallar('La garantía no puede terminar antes de la compra.', 'ehGarantia') || 'x';
+    if (cs && !/^\d{1,10}$/.test(cs)) return fallar('Escribe el costo en pesos, solo números.', 'ehCosto') || 'x';
+    return { fechaCompra: fc, garantiaHasta: gh, proveedor: pv, costo: cs ? Number(cs) : 0 };
+  }
+  function datosCompra(e) {
+    abrir({ titulo: `Compra y garantía del ${e.serial}`, sub: `${e.tipo} ${e.marca} ${e.modelo}. Todo es opcional.`, campos: camposCompra(e),
+      primario: 'Guardar', icono: 'check', listo: 'Listo: datos de compra y garantía guardados.', base: fotoBase([e]),
+      ops: () => {
+        const c = leerCompra(); if (typeof c === 'string') return false;
+        if (cambiaron([e.id])) return fallar('El equipo cambió mientras tenías esto abierto. Ciérralo y ábrelo otra vez.');
+        return [['mezclar', 'equipos', e.id, Object.assign({}, c, { historial: conPaso(e, { tipo: 'compra', persona: persona().nombre, nota: [c.fechaCompra ? 'compra ' + A().fechaCorta(c.fechaCompra) : '', c.garantiaHasta ? 'garantía hasta ' + A().fechaCorta(c.garantiaHasta) : '', c.proveedor, c.costo ? A().cop(c.costo) : ''].filter(Boolean).join(' · ') || 'Se borraron los datos de compra' }) })]];
+      } });
+  }
+
+  /* ---------- baja de un equipo ---------- */
+  /** Pedir la baja (Encargado) o darla directamente (la Jefe): motivo y una nota obligatoria. */
+  function baja(e) {
+    const directa = esJefe();
+    abrir({ titulo: `${directa ? 'Dar de baja' : 'Pedir la baja del'} ${directa ? 'el ' : ''}${e.serial}`, sub: directa ? 'El equipo sale de las cifras y ya no se puede entregar. Su hoja de vida queda en «De baja».' : 'La Jefe decide. Mientras tanto el equipo sigue donde está.',
+      campos: `<p class="meta">${esH(`${e.tipo} ${e.marca} ${e.modelo}`)} · ${esH(quienTiene(e))}</p>` + campoSel('ebMotivo', 'Por qué', Object.keys(MOTIVO_BAJA).map(k => [k, MOTIVO_BAJA[k]]), 'danado') +
+        campoTxt('ebNota', 'Cuenta qué pasó (obligatorio)', '', 'Ej: no enciende y el arreglo cuesta más que uno nuevo', 200),
+      primario: directa ? 'Dar de baja' : 'Pedir la baja', icono: 'borrar', listo: directa ? 'Listo: el equipo quedó de baja.' : 'Listo: la baja quedó pedida. La Jefe ya tiene el aviso.', base: fotoBase([e]),
+      ops: () => {
+        const motivo = valor('ebMotivo'), nota = valor('ebNota');
+        if (nota.length < 5) return fallar('Cuenta qué pasó (al menos unas palabras).', 'ebNota');
+        if (!['bodega', 'recibido'].includes(e.estado)) return fallar('Un equipo asignado primero se recibe (devolución) y después se da de baja.');
+        if (cambiaron([e.id])) return fallar('El equipo cambió mientras tenías esto abierto. Ciérralo y ábrelo otra vez.');
+        const pedida = { motivo, nota, por: persona().nombre, porRol: miRol(), en: hoy() }, texto = `${MOTIVO_BAJA[motivo]}: ${nota}`;
+        if (!directa) return [['mezclar', 'equipos', e.id, { bajaPedida: pedida, historial: conPaso(e, { tipo: 'baja-pedida', persona: persona().nombre, nota: texto }) }],
+          aviso('jefe', 'Piden la baja de un equipo', `${persona().nombre} pide dar de baja el ${e.serial} (${e.tipo} ${e.marca}). ${texto}`)];
+        return cerrarBaja(e, pedida, texto);
+      } });
+  }
+  /** Lo que se escribe al dar de baja: el equipo pasa a «baja» y las tareas pendientes de la agenda se cierran. */
+  function cerrarBaja(e, pedida, texto) {
+    const ops = [['mezclar', 'equipos', e.id, { estado: 'baja', bajaPedida: pedida, bajaPor: persona().nombre, bajaEn: hoy(), historial: conPaso(e, { tipo: 'baja', persona: persona().nombre, nota: texto }) }]];
+    tareasPend().filter(t => t.equipoId === e.id).forEach(t => ops.push(['mezclar', 'tareasEq', t.id, { estado: 'hecha', hechaPor: persona().nombre, hechaEn: ahora(), resultado: 'El equipo se dio de baja' }]));
+    if (pedida.porRol && pedida.porRol !== miRol()) ops.push(aviso(pedida.porRol, 'Aprobaron la baja', `${persona().nombre} aprobó la baja del ${e.serial}. ${texto}`));
+    return ops;
+  }
+  function aprobarBaja(e) {
+    const b = bajaDe(e);
+    abrir({ titulo: `Aprobar la baja del ${e.serial}`, sub: `${e.tipo} ${e.marca} ${e.modelo}`,
+      campos: `<p><b>${esH(MOTIVO_BAJA[b.motivo] || b.motivo)}:</b> ${esH(b.nota)}</p><p class="meta">La pidió ${esH(b.por)} el ${esH(A().fechaCorta(b.en))}. Al aprobarla, el equipo sale de las cifras, ya no se puede entregar y las tareas pendientes de la agenda se cierran. La hoja de vida queda en «De baja».</p>`,
+      primario: 'Aprobar la baja', icono: 'check', listo: 'Listo: el equipo quedó de baja.', base: fotoBase([e]),
+      ops: () => (cambiaron([e.id]) ? fallar('El equipo cambió mientras tenías esto abierto. Ciérralo y ábrelo otra vez.') : cerrarBaja(e, b, `${MOTIVO_BAJA[b.motivo] || b.motivo}: ${b.nota}`)) });
+  }
+  function noAprobarBaja(e) {
+    const b = bajaDe(e);
+    abrir({ titulo: `No aprobar la baja del ${e.serial}`, sub: `${MOTIVO_BAJA[b.motivo] || b.motivo}: ${b.nota}`,
+      campos: campoTxt('ebPorque', 'Por qué no (obligatorio)', '', 'Ej: todavía sirve, se arregla con una pieza', 160),
+      primario: 'No aprobar', icono: 'x', listo: 'Listo: no se aprobó la baja. El equipo sigue igual.', base: fotoBase([e]),
+      ops: () => {
+        const por = valor('ebPorque'); if (por.length < 5) return fallar('Cuenta por qué no se aprueba.', 'ebPorque');
+        if (cambiaron([e.id])) return fallar('El equipo cambió mientras tenías esto abierto. Ciérralo y ábrelo otra vez.');
+        return [['mezclar', 'equipos', e.id, { bajaPedida: null, historial: conPaso(e, { tipo: 'baja-no', persona: persona().nombre, nota: `No se aprobó la baja (${MOTIVO_BAJA[b.motivo] || b.motivo}): ${por}` }) }],
+          b.porRol && b.porRol !== miRol() ? aviso(b.porRol, 'No aprobaron la baja', `${persona().nombre} no aprobó la baja del ${e.serial}: ${por}`) : null];
+      } });
+  }
+
+  /* ---------- verificar equipos (contar con el escáner) ---------- */
+  const ALCANCES = [['bodega', 'Los que están en bodega y en Recibidos'], ['asignado', 'Los asignados a personas'], ['todos', 'Todos']];
+  const esperados = () => activos().filter(e => verif.alcance === 'todos' || (verif.alcance === 'asignado' ? e.estado === 'asignado' : e.estado !== 'asignado'));
+  const filaVerif = e => `<li><span class="serial-chip">${esH(e.serial)}</span> <span class="meta">${esH(e.tipo)} ${esH(e.marca)} · ${esH(quienTiene(e))}</span></li>`;
+  /** Lo que se ve debajo del escáner: el resumen en vivo («Verificados 18 · Sin encontrar 2») y las dos listas. */
+  function pintarVerif() {
+    const c = $('evLista'); if (!c || !verif) return;
+    const hechos = Array.from(verif.hechos).map(eqPorId).filter(Boolean), faltan = esperados().filter(e => !verif.hechos.has(e.id));
+    c.innerHTML = `<p class="ver-resumen" role="status"><b>Verificados ${hechos.length}</b> · <b>Sin encontrar ${faltan.length}</b></p>` +
+      `<div class="section-label">Verificados (${hechos.length})</div>${hechos.length ? `<ul class="ver-lista">${hechos.slice().reverse().map(filaVerif).join('')}</ul>` : '<p class="meta">Todavía no has escaneado ninguno.</p>'}` +
+      `<div class="section-label">Sin encontrar todavía (${faltan.length})</div>${faltan.length ? `<ul class="ver-lista">${faltan.map(filaVerif).join('')}</ul>` : '<p class="meta">Ya está todo lo que esperabas.</p>'}`;
+  }
+  function verificar() {
+    verif = { alcance: 'bodega', hechos: new Set() };
+    const viejos = activos().filter(sinVerificar).length;
+    abrir({ titulo: 'Verificar equipos', sub: viejos ? `${viejos} ${viejos === 1 ? 'equipo lleva' : 'equipos llevan'} más de 6 meses sin verificarse.` : 'Todos se verificaron en los últimos 6 meses.',
+      campos: campoSel('evAlcance', 'Qué vas a revisar', ALCANCES, 'bodega') + `<div class="acc-rap">${boton('verescanear', 'Escanear equipos', 'codigo', '', 'primary small')}</div>` +
+        `<div class="field"><label for="evSerial">O escribe el serial</label><div class="con-scan"><input id="evSerial" type="text" maxlength="40" autocomplete="off" placeholder="Ej: DEMO-0001"><button type="button" class="btn small" data-accion="veragregar" data-id="">Agregar</button></div></div><div id="evLista"></div>`,
+      primario: 'Guardar la verificación', icono: 'check', listo: 'Listo: equipos verificados.', esVerif: true,
+      ops: () => {
+        const ids = Array.from(verif.hechos).map(eqPorId).filter(e => e && e.estado !== 'baja');
+        if (!ids.length) return fallar('Escanea o escribe al menos un equipo.');
+        if (ids.length > 400) return fallar('Son muchos equipos para guardar de una vez: guarda esta parte y sigue con la otra.');
+        accion.listo = `Listo: Verificados ${ids.length} · Sin encontrar ${esperados().filter(e => !verif.hechos.has(e.id)).length}.`;
+        return ids.map(e => ['mezclar', 'equipos', e.id, { verificadoEn: hoy(), verificadoPor: persona().nombre }]);
+      } });
+    A().vigilar('shEq', () => $('eqForm'), () => (verif ? verif.hechos.size : 0));
+    pintarVerif();
+  }
+  /** Marca un equipo como verificado (por escáner o escrito a mano). */
+  function agregarVerif(s) {
+    if (!verif || !accion || !accion.esVerif) return;
+    const e = porSerial(s);
+    if (!e) { A().toast(`No hay un equipo con el serial ${s}`); return; }
+    if (e.estado === 'baja') { A().toast(`El ${e.serial} está de baja: no se verifica.`); return; }
+    if (verif.hechos.has(e.id)) { A().toast(`${e.serial} ya estaba verificado.`); return; }
+    verif.hechos.add(e.id); pintarVerif();
+    A().toast(`Verificado: ${e.serial}`);
+  }
+  /** Escanea uno tras otro hasta que se cierre la cámara. */
+  async function escanearVerif() {
+    while (accion && accion.esVerif && !$('shEq').hidden) {
+      const s = await leerSerial('Escanear un equipo para verificarlo', activos().map(e => e.serial));
+      if (!s || !accion || !accion.esVerif || $('shEq').hidden) break;
+      agregarVerif(s);
+    }
+    return true;
+  }
+
   /* ---------- hoja de vida, acta y persona ---------- */
-  const TIPO_PASO = { entrega: 'Entrega', devolucion: 'Devolución', mantenimiento: 'Mantenimiento', backup: 'Backup', bodega: 'A bodega', registro: 'Registro', revision: 'Revisión', correccion: 'Corrección del acta' };
+  const TIPO_PASO = { entrega: 'Entrega', devolucion: 'Devolución', mantenimiento: 'Mantenimiento', backup: 'Backup', bodega: 'A bodega', registro: 'Registro', revision: 'Revisión', correccion: 'Corrección del acta', compra: 'Compra y garantía', 'baja-pedida': 'Baja pedida', baja: 'De baja', 'baja-no': 'Baja no aprobada' };
   function ver(e) {
     const App = A(), st = EST[e.estado] || ['Sin estado', 'none'], hs = hojasDe(e.id), ts = D().tareasEq.filter(t => t.equipoId === e.id && t.estado === 'pendiente');
     const pasos = historial(e).slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
     // El historial de un equipo crece con cada mantenimiento y backup: se muestra de 30 en 30.
     const pgH = UI.pagina('hist-eq-' + e.id, pasos.map(x => `<li><b>${esH(TIPO_PASO[x.tipo] || x.tipo)}${x.persona ? ': ' + esH(x.persona) : ''}</b><span class="meta">${esH(App.fechaCorta(x.fecha))}${x.nota ? ' · ' + esH(x.nota) : ''}</span></li>`), { n: 30, reiniciar: true });
-    const bts = [];
-    if (esEncargado()) {
-      if (e.estado === 'bodega') bts.push(boton('entregar', 'Entregar', 'entrega', e.id, 'primary small'));
+    const bts = [], b = bajaDe(e), enBaja = e.estado === 'baja', gd = dias(e.garantiaHasta);
+    if (esEncargado() && !enBaja) {
+      if (e.estado === 'bodega' && !b) bts.push(boton('entregar', 'Entregar', 'entrega', e.id, 'primary small'));
       if (e.estado === 'asignado') { const p = personas().find(x => x.equipos.some(y => y.id === e.id)); if (p) bts.push(boton('devolver', 'Recibir (devolución)', 'devolucion', '', 'small', ` data-clave="${esH(p.clave)}"`)); }
       if (e.estado === 'recibido' && pend(e).mtto) bts.push(boton('mtto', 'Mantenimiento hecho', 'mantenimiento', e.id, 'primary small'));
       if (e.estado === 'recibido' && pend(e).backup) bts.push(boton('backup', 'Backup hecho', 'backup', e.id, 'small'));
+      if (['bodega', 'recibido'].includes(e.estado) && !b) bts.push(boton('pedirbaja', esJefe() ? 'Dar de baja' : 'Pedir la baja', 'borrar', e.id, 'ghost small'));
+      bts.push(boton('datoscompra', 'Compra y garantía', 'lapiz', e.id, 'ghost small'));
     }
-    if (programa()) bts.push(boton('programar', 'Programar tarea', 'programar', e.id, 'ghost small'));
+    if (esJefe() && b && !enBaja) bts.push(boton('aprobarbaja', 'Aprobar la baja', 'check', e.id, 'primary small'), boton('noaprobarbaja', 'No aprobar', 'x', e.id, 'small'));
+    if (programa() && !enBaja) bts.push(boton('programar', 'Programar tarea', 'programar', e.id, 'ghost small'));
     abrir({ titulo: `${e.serial} · ${e.tipo} ${e.marca}`, sub: e.modelo,
       campos: `<div class="row">${App.pill(st[0], st[1])}</div>
         <dl class="datos"><dt>Dónde está</dt><dd>${esH(quienTiene(e))}</dd>${e.proyecto ? `<dt>Proyecto</dt><dd>${esH(e.proyecto)}</dd>` : ''}
-        <dt>Último mantenimiento</dt><dd>${esH(e.ultimoMtto ? App.fechaCorta(e.ultimoMtto) : 'Nunca')}</dd><dt>Último backup</dt><dd>${esH(e.ultimoBackup ? App.fechaCorta(e.ultimoBackup) : 'Nunca')}</dd></dl>
+        <dt>Último mantenimiento</dt><dd>${esH(e.ultimoMtto ? App.fechaCorta(e.ultimoMtto) : 'Nunca')}</dd><dt>Último backup</dt><dd>${esH(e.ultimoBackup ? App.fechaCorta(e.ultimoBackup) : 'Nunca')}</dd>
+        <dt>Última verificación</dt><dd>${esH(e.verificadoEn ? `${App.fechaCorta(e.verificadoEn)}${e.verificadoPor ? ' (' + e.verificadoPor + ')' : ''}` : 'Nunca')}</dd>
+        ${e.fechaCompra ? `<dt>Comprado</dt><dd>${esH(App.fechaCorta(e.fechaCompra))}</dd>` : ''}${e.garantiaHasta ? `<dt>Garantía</dt><dd>hasta ${esH(App.fechaCorta(e.garantiaHasta))} <span class="meta">(${esH(textoGarantia(e))})</span></dd>` : ''}
+        ${e.proveedor ? `<dt>Proveedor</dt><dd>${esH(e.proveedor)}</dd>` : ''}${Number(e.costo) > 0 ? `<dt>Costo</dt><dd>${esH(App.cop(e.costo))}</dd>` : ''}</dl>
+        ${enBaja && b ? `<div class="aviso peligro" role="status"><span><b>De baja desde el ${esH(App.fechaCorta(e.bajaEn))}</b> (${esH(MOTIVO_BAJA[b.motivo] || b.motivo)}): ${esH(b.nota)}. La pidió ${esH(b.por)} y la aprobó ${esH(e.bajaPor || 'la Jefe')}. Ya no se entrega ni se cambia.</span></div>` : ''}
+        ${!enBaja && b ? `<div class="aviso" role="status"><span><b>Baja pedida:</b> ${esH(MOTIVO_BAJA[b.motivo] || b.motivo)}: ${esH(b.nota)}. La pidió ${esH(b.por)} el ${esH(App.fechaCorta(b.en))}. Espera a la Jefe.</span></div>` : ''}
+        ${!enBaja && e.estado === 'asignado' && esEncargado() ? '<p class="meta">Para darlo de baja primero hay que recibirlo (devolución).</p>' : ''}${!enBaja && gd != null && gd >= 0 && gd <= 30 ? `<div>${App.pill('Garantía ' + textoGarantia(e), 's-warn', 'aviso')}</div>` : ''}
         ${e.obs ? `<p class="meta">${esH(e.obs)}</p>` : ''}${bts.length ? `<div class="tarea-pie">${bts.join('')}</div>` : ''}
         ${ts.length ? `<div class="section-label">Agenda (${ts.length})</div><div class="list">${ts.map(tarjetaTarea).join('')}</div>` : ''}
         <div class="section-label">Actas (${hs.length})</div>${hs.length ? `<div class="list">${hs.map(tarjetaActa).join('')}</div>` : '<p class="meta">Sin actas.</p>'}
@@ -602,6 +796,53 @@
     return true;
   }
 
+  /* ---------- escáner de seriales ----------
+     codigos.js (lector con la cámara) se descarga solo cuando se toca «Escanear». Si la cámara no sirve, queda escribir a mano. */
+  const normSerial = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const porSerial = s => equipos().find(e => normSerial(e.serial) === normSerial(s));
+  async function leerSerial(titulo, conocidos) {
+    try { await UI.cargarScript('codigos.js?v=1'); }
+    catch (e) { A().toast('No se pudo abrir el lector de códigos. Revisa la conexión o escribe el serial.'); return null; }
+    return window.Codigos.leer({ titulo, conocidos });
+  }
+  /** Quién tiene el equipo, para decirlo cuando no se puede entregar. */
+  const dondeEsta = e => (e.estado === 'baja' ? 'está de baja' : bajaDe(e) ? 'tiene una baja pedida' : e.estado === 'asignado' ? `lo tiene ${e.asignadoA || 'alguien'}` : e.estado === 'recibido' ? 'está en Recibidos y falta su mantenimiento o backup' : 'no está en bodega');
+  async function escanear(modo) {
+    if (modo === 'entrega' || modo === 'devolucion') return escanearEnActa(modo);
+    const s = await leerSerial('Escanear el serial del equipo', equipos().map(e => e.serial));
+    if (!s) return true;
+    const e = porSerial(s);
+    if (e) { ver(e); return true; }
+    buscar = s; pintar();
+    A().toast(`No hay un equipo con el serial ${s}`);
+    return true;
+  }
+  /** En el acta de entrega marca el equipo escaneado; en la de devolución marca el que llega (y cambia de persona si es de otra). */
+  async function escanearEnActa(modo) {
+    const cajas = () => Array.from($('eqCampos').querySelectorAll('input[data-eq]'));
+    const deSerial = s => cajas().find(c => { const e = eqPorId(c.dataset.eq); return e && normSerial(e.serial) === normSerial(s); });
+    const s = await leerSerial(modo === 'entrega' ? 'Escanear el equipo que se entrega' : 'Escanear el equipo que devuelve', cajas().map(c => (eqPorId(c.dataset.eq) || {}).serial));
+    if (!s || !accion || $('shEq').hidden) return true;
+    const marcar = c => {
+      const e = eqPorId(c.dataset.eq);
+      if (c.checked) { A().toast(`${e.serial} ya está marcado.`); return; }
+      c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true }));
+      try { c.closest('.eq-acta').scrollIntoView({ block: 'center' }); } catch (x) {}
+      A().toast(`Marcado: ${e.serial}`);
+    };
+    let c = deSerial(s);
+    if (c) { marcar(c); return true; }
+    const e = porSerial(s);
+    if (!e) { A().toast(`No hay un equipo con el serial ${s}`); return true; }
+    if (modo === 'entrega') { A().toast(`El ${e.serial} no se puede entregar: ${dondeEsta(e)}.`); return true; }
+    const dueno = e.estado === 'asignado' ? personas().find(p => p.equipos.some(x => x.id === e.id)) : null;
+    const op = dueno && $('ehQuien') ? Array.from($('ehQuien').options).find(o => o.value === dueno.clave) : null;
+    if (!op) { A().toast(`El ${e.serial} no está por devolver: ${e.estado === 'asignado' ? dondeEsta(e) : 'ya está en ' + (e.estado === 'bodega' ? 'bodega' : 'Recibidos')}.`); return true; }
+    $('ehQuien').value = dueno.clave; $('ehQuien').dispatchEvent(new Event('change', { bubbles: true }));
+    c = deSerial(s); if (c) { if (!c.checked) { c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); } A().toast(`Es de ${dueno.nombre}: cambié la lista a su nombre y marqué el ${e.serial}.`); }
+    return true;
+  }
+
   /* ---------- eventos ---------- */
   $('eqSecciones').addEventListener('click', e => {
     const b = e.target.closest('[data-sec]'); if (!b) return;
@@ -619,6 +860,21 @@
       mtto: () => (eq && esEncargado() && pend(eq).mtto ? trabajo(eq, 'mtto') : null), backup: () => (eq && esEncargado() && pend(eq).backup ? trabajo(eq, 'backup') : null),
       abodega: () => (eq && esEncargado() && eq.estado === 'recibido' && !pend(eq).mtto && !pend(eq).backup ? aBodega(eq) : null),
       revisar: () => (h && puedeRevisar(h) ? revisar(h) : null), corregir: () => (h && h.revision === 'problema' && esEncargado() ? corregir(h) : null),
+      escanear: () => escanear(b.dataset.modo || ''),
+      tipoeq: () => { tipoEq = tipoEq === id ? '' : id; pintar(); return true; },
+      verhechas: () => { hechasAbiertas = !hechasAbiertas; pintar(); return true; },
+      quitarfiltro: () => {
+        const m = b.dataset.modo;
+        if (m === 'actas') buscarActa = ''; else if (m === 'personas') buscarPers = ''; else { tipoEq = ''; A().S.filtro.equipos = ''; if (m === 'todo') buscar = ''; }
+        A().pintarTodo(); return true;
+      },
+      pedirbaja: () => (eq && esEncargado() && ['bodega', 'recibido'].includes(eq.estado) && !bajaDe(eq) ? baja(eq) : null),
+      aprobarbaja: () => (eq && esJefe() && bajaDe(eq) && ['bodega', 'recibido'].includes(eq.estado) ? aprobarBaja(eq) : null),
+      noaprobarbaja: () => (eq && esJefe() && bajaDe(eq) && ['bodega', 'recibido'].includes(eq.estado) ? noAprobarBaja(eq) : null),
+      datoscompra: () => (eq && esEncargado() && eq.estado !== 'baja' ? datosCompra(eq) : null),
+      verbaja: () => { bajasAbiertas = !bajasAbiertas; pintar(); return true; },
+      verificar: () => (programa() ? verificar() : null), verescanear: () => (accion && accion.esVerif ? escanearVerif() : null),
+      veragregar: () => { if (!accion || !accion.esVerif) return null; agregarVerif(valor('evSerial')); if ($('evSerial')) { $('evSerial').value = ''; $('evSerial').focus(); } return true; },
       programar: () => (programa() ? programar(eq) : null), hecha: () => (t && t.estado === 'pendiente' && esEncargado() ? hecha(t) : null)
     };
     const fn = mapa[b.dataset.accion]; if (!fn) return;
@@ -629,12 +885,20 @@
   const ponerCC = () => { const cc = $('ehFirmaPCC'); if (cc && $('ehCedula')) cc.textContent = $('ehCedula').value.replace(/\D/g, '') || '—'; };
   $('eqContenido').addEventListener('click', alTocar);
   // Lo escrito se guarda al instante, pero la lista se repinta 300 ms después de la última tecla.
-  const buscarLuego = UI.retardar(() => { const q = $('qEq'), pos = q ? q.selectionStart : 0; pintar(); const n = $('qEq'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} } }, 300);
-  $('eqContenido').addEventListener('input', e => { if (e.target.id === 'qEq') { buscar = e.target.value; buscarLuego(); } });
+  let cajaBuscando = 'qEq';
+  const buscarLuego = UI.retardar(() => { const q = $(cajaBuscando), pos = q ? q.selectionStart : 0; pintar(); const n = $(cajaBuscando); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} } }, 300);
+  $('eqContenido').addEventListener('input', e => {
+    const id = e.target.id;
+    if (id === 'qEq') buscar = e.target.value; else if (id === 'qAc') buscarActa = e.target.value; else if (id === 'qPe') buscarPers = e.target.value; else return;
+    cajaBuscando = id; buscarLuego();
+  });
   $('eqCampos').addEventListener('click', e => { if (e.target.closest('[data-accion]')) alTocar(e); });
+  // En «Verificar equipos», Enter agrega el serial escrito (no guarda la hoja); y cambiar lo que se revisa recalcula «Sin encontrar».
+  $('eqCampos').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'evSerial') { e.preventDefault(); agregarVerif(e.target.value.trim()); e.target.value = ''; } });
   $('eqCampos').addEventListener('input', e => { if (e.target.id === 'ehCedula' && $('ehQuien') === null) ponerCC(); });
   $('eqCampos').addEventListener('change', e => {
     if (e.target.id === 'ehQuien') pintarListaDevolucion();
+    if (e.target.id === 'evAlcance' && verif) { verif.alcance = e.target.value; pintarVerif(); }
     if (e.target.id === 'ehProy') { const p = PROYECTOS.find(x => x[0] === e.target.value); if (p && $('ehCodigo')) $('ehCodigo').value = p[1]; }
     // Al marcar un equipo se abren sus observaciones; si es un portátil, se suma un cargador en «Otros».
     const c = e.target.closest('input[data-eq]');
@@ -660,13 +924,20 @@
       { t: 'Modelo', k: 'modelo', fija: true, max: 60, ancho: 22 },
       { t: 'Estado', k: 'estado', gris: true, ancho: 16 }, { t: 'Asignado a', k: 'asignadoA', gris: true, ancho: 24 }, { t: 'Proyecto', k: 'proyecto', gris: true, ancho: 22 },
       { t: 'Último mantenimiento', k: 'ultimoMtto', tipo: 'fecha' }, { t: 'Último backup', k: 'ultimoBackup', tipo: 'fecha' },
+      { t: 'Fecha de compra', k: 'fechaCompra', tipo: 'fecha' }, { t: 'Garantía hasta', k: 'garantiaHasta', tipo: 'fecha' }, { t: 'Proveedor', k: 'proveedor', max: 60, ancho: 26 }, { t: 'Costo', k: 'costo', tipo: 'dinero', min: 0, max: 1000000000 },
       { t: 'Observaciones', k: 'obs', max: 160, ancho: 40 }],
-    filas: () => equipos().map(e => ({ id: e.id, v: { serial: e.serial, tipo: e.tipo, marca: e.marca, modelo: e.modelo || '', estado: (EST[e.estado] || [e.estado])[0], asignadoA: e.asignadoA || '', proyecto: e.proyecto || '', ultimoMtto: e.ultimoMtto || '', ultimoBackup: e.ultimoBackup || '', obs: e.obs || '' } })),
+    // Los equipos de baja no van en la base de datos: ya no se cambian.
+    filas: () => activos().map(e => ({ id: e.id, v: { serial: e.serial, tipo: e.tipo, marca: e.marca, modelo: e.modelo || '', estado: (EST[e.estado] || [e.estado])[0], asignadoA: e.asignadoA || '', proyecto: e.proyecto || '', ultimoMtto: e.ultimoMtto || '', ultimoBackup: e.ultimoBackup || '',
+      fechaCompra: e.fechaCompra || '', garantiaHasta: e.garantiaHasta || '', proveedor: e.proveedor || '', costo: Number(e.costo) || 0, obs: e.obs || '' } })),
     ejemplo: { serial: 'DEMO-0099', tipo: 'Portátil', marca: 'Lenovo', modelo: 'ThinkPad E14', obs: 'Equipo de ejemplo' },
     ayuda: [['Equipo nuevo', 'Queda en bodega, listo para entregar. Obligatorios: Serial (letras, números y guiones), Tipo y Marca.'],
-      ['Qué se puede cambiar', 'Solo la fecha del último mantenimiento, la del último backup y las observaciones (queda una línea en su historial). El serial, el tipo, la marca y el modelo no cambian en un equipo ya registrado. Entregar o recibir equipos se hace con el acta, en la app.'],
+      ['Qué se puede cambiar', 'Solo la fecha del último mantenimiento, la del último backup, la compra y garantía (fecha de compra, garantía hasta, proveedor y costo) y las observaciones (queda una línea en su historial). El serial, el tipo, la marca y el modelo no cambian en un equipo ya registrado. Entregar o recibir equipos se hace con el acta, en la app.'],
       ['Eliminar', 'Solo la Jefe, y solo un equipo que no esté asignado, sin actas ni tareas pendientes.']],
-    revisar: (x, { nuevo }) => { if (nuevo && !/^[A-Z0-9-]{4,30}$/.test(String(x.v.serial))) x.errores.push('Serial: usa letras, números y guiones (de 4 a 30).'); },
+    revisar: (x, { nuevo }) => {
+      if (nuevo && !/^[A-Z0-9-]{4,30}$/.test(String(x.v.serial))) x.errores.push('Serial: usa letras, números y guiones (de 4 a 30).');
+      if (x.v.fechaCompra && x.v.fechaCompra > hoy()) x.errores.push('Fecha de compra: no puede ser de mañana.');
+      if (x.v.fechaCompra && x.v.garantiaHasta && x.v.garantiaHasta < x.v.fechaCompra) x.errores.push('Garantía hasta: no puede ser antes de la compra.');
+    },
     bloqueaEliminar: id => {
       const e = eqPorId(id);
       if (!e) return 'Ese equipo ya no existe.';
@@ -675,7 +946,7 @@
       if (D().tareasEq.some(t => t.equipoId === id && t.estado === 'pendiente')) return 'Tiene tareas de mantenimiento o backup pendientes.';
       return null;
     },
-    opsAgregar: x => [['set', 'equipos', window.nube.idNuevo('eq'), { serial: x.v.serial, tipo: x.v.tipo, marca: x.v.marca, modelo: x.v.modelo, estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', ultimoMtto: x.v.ultimoMtto, ultimoBackup: x.v.ultimoBackup, obs: x.v.obs,
+    opsAgregar: x => [['set', 'equipos', window.nube.idNuevo('eq'), { serial: x.v.serial, tipo: x.v.tipo, marca: x.v.marca, modelo: x.v.modelo, estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', ultimoMtto: x.v.ultimoMtto, ultimoBackup: x.v.ultimoBackup, fechaCompra: x.v.fechaCompra || '', garantiaHasta: x.v.garantiaHasta || '', proveedor: x.v.proveedor || '', costo: Number(x.v.costo) || 0, obs: x.v.obs,
       pendientes: { mtto: false, backup: false }, historial: [{ fecha: hoy(), tipo: 'registro', persona: persona().nombre, nota: 'Equipo registrado en bodega (desde el Excel)', por: persona().nombre }] }]],
     opsCambiar: x => { const e = eqPorId(x.id); return e ? [['mezclar', 'equipos', e.id, Object.assign({}, x.datos, { historial: conPaso(e, { tipo: 'revision', persona: persona().nombre, nota: 'Datos cambiados desde el Excel' }) })]] : []; },
     opsEliminar: x => [['borrar', 'equipos', x.id]]

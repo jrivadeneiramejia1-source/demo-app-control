@@ -18,8 +18,15 @@ rules_version = '2';
 //   Reuniones: la Jefe confirma lo que entendió el agente y reparte; Compras, Transporte y Bodega informan lo que hay y la Jefe
 //   autoriza la comida y los carros (escoge el conductor);
 //   el Conductor confirma el viaje, Logística alista, el Profesional confirma si va y Administrativo registra el acta.
+//   Equipos: el Encargado pide la baja de un equipo y solo la Jefe la aprueba; Soporte y la Jefe verifican (escanean) los equipos.
 //   Vehículos: el Conductor reporta novedades con foto y registra salidas y llegadas; Transporte y Bodega revisan, asignan y
-//   actualizan documentos.
+//   actualizan documentos. Los tanqueos (combustible, con la foto del recibo) los crea quien tenga nivel en Vehículos (menos «solo ver»)
+//   a su nombre; no se cambian después (solo la Jefe).
+//   Proveedores: los ven Compras, la Coordinadora, Bodega, Financiero, Gerente y la Jefe; los crean y editan Compras, la Jefe y Bodega con el
+//   extra «compra». Solo la Jefe los borra (la app no deja borrar uno que ya tiene compras).
+//   Reservas de carro (viajes que no son reuniones): las pide quien tenga nivel de trabajo en Vehículos (Conductor, Transporte, Bodega y la Jefe)
+//   a su nombre; Transporte, Bodega o la Jefe las aprueban (escogen un carro con los papeles al día y que no esté en el taller, y el conductor)
+//   o las rechazan; nadie aprueba ni rechaza lo suyo. La salida del carro queda ligada a la reserva.
 //   Todos: piden material y piden compras a su nombre, y marcan sus avisos como leídos.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -180,19 +187,45 @@ service cloud.firestore {
     }
     function rutaHoja(h) { return /databases/$(database)/documents/hojas/$(h); }
     function ultimoPaso() { return nuevo().historial[nuevo().historial.size() - 1]; }
+    // Datos de compra y garantía (opcionales): fechas vacías o AAAA-MM-DD, proveedor corto y costo en pesos.
+    function fechaOpc(f) { return f == '' || esFecha(f); }
+    function compraEqOk() {
+      let fc = nuevo().get('fechaCompra', ''); let gh = nuevo().get('garantiaHasta', ''); let pv = nuevo().get('proveedor', ''); let co = nuevo().get('costo', 0);
+      return fc is string && fechaOpc(fc) && gh is string && fechaOpc(gh) && pv is string && pv.size() <= 60 && co is number && co >= 0 && co <= 1000000000;
+    }
+    // La baja de un equipo: motivo, nota y quién la pidió. Solo equipos que están en bodega o en Recibidos (uno asignado se recibe primero).
+    function bajaOk(b) {
+      return b is map && b.keys().hasOnly(['motivo', 'nota', 'por', 'porRol', 'en']) && b.motivo in ['danado', 'robado', 'perdido', 'obsoleto']
+        && b.nota is string && b.nota.size() >= 5 && b.nota.size() <= 200 && b.por is string && b.porRol is string && esFecha(b.en);
+    }
     match /equipos/{id} {
       allow read: if veEquipos();
       allow delete: if esJefe();
-      allow create: if (esJefe() && esPrueba()) || (esEncargadoEq() && id.matches('^eq-[a-z0-9]{4,30}$')
-        && nuevo().estado == 'bodega' && nuevo().serial is string && nuevo().serial.size() <= 30 && nuevo().historial.size() == 1);
-      // El Encargado entrega, recibe, hace mantenimiento y backup (siempre con una línea de historial).
-      // Entregar o recibir (pasar a «asignado» o «recibido») solo junto con el acta en esa misma escritura.
-      allow update: if (esJefe() && esPrueba()) || (esEncargadoEq()
-        && soloCambia(['estado', 'asignadoA', 'asignadoCedula', 'proyecto', 'ultimoMtto', 'ultimoBackup', 'obs', 'pendientes', 'historial'])
-        && nuevo().estado in ['asignado', 'bodega', 'recibido'] && historialEqSigue()
-        && (nuevo().estado == antes().estado || nuevo().estado == 'bodega'
-            || (ultimoPaso().hojaId is string && existsAfter(rutaHoja(ultimoPaso().hojaId))
-                && ultimoPaso().tipo == (nuevo().estado == 'asignado' ? 'entrega' : 'devolucion'))));
+      allow create: if (esPrueba() && esJefe()) || (id.matches('^eq-[a-z0-9]{4,30}$') && nuevo().estado == 'bodega' && nuevo().serial is string && nuevo().serial.size() <= 30
+        && nuevo().historial.size() == 1 && compraEqOk() && esEncargadoEq());
+      // El Encargado entrega, recibe, hace mantenimiento y backup (siempre con una línea de historial) y anota los datos de compra y garantía.
+      // Entregar o recibir (pasar a «asignado» o «recibido») solo junto con el acta en esa misma escritura. Un equipo de baja ya no se mueve.
+      // Primero van las condiciones baratas (qué campos cambian y a qué estado) y al final quién es la persona: así cada rama falla rápido
+      // y el límite de 1000 expresiones de las reglas alcanza hasta para la Jefe (que pasa por varias ramas).
+      allow update: if (esPrueba() && esJefe())
+        || (soloCambia(['estado', 'asignadoA', 'asignadoCedula', 'proyecto', 'ultimoMtto', 'ultimoBackup', 'obs', 'pendientes', 'historial', 'fechaCompra', 'garantiaHasta', 'proveedor', 'costo'])
+            && antes().estado != 'baja' && nuevo().estado in ['asignado', 'bodega', 'recibido'] && esEncargadoEq() && historialEqSigue() && compraEqOk()
+            && (nuevo().estado == antes().estado || nuevo().estado == 'bodega'
+                || (ultimoPaso().hojaId is string && existsAfter(rutaHoja(ultimoPaso().hojaId))
+                    && ultimoPaso().tipo == (nuevo().estado == 'asignado' ? 'entrega' : 'devolucion'))))
+        // Pedir la baja: el Encargado deja la solicitud (con su línea de historial) y el equipo sigue donde está hasta que la Jefe decida.
+        || (soloCambia(['bajaPedida', 'historial']) && antes().estado in ['bodega', 'recibido'] && antes().get('bajaPedida', null) == null && nuevo().bajaPedida != null
+            && bajaOk(nuevo().bajaPedida) && historialEqSigue() && esEncargadoEq())
+        // Solo la Jefe da de baja: aprueba lo pedido (sin cambiarlo) o la hace directa. El equipo pasa a «baja» con la fecha y quién la aprobó.
+        || (soloCambia(['estado', 'bajaPedida', 'bajaPor', 'bajaEn', 'historial']) && nuevo().estado == 'baja' && antes().estado in ['bodega', 'recibido']
+            && bajaOk(nuevo().bajaPedida) && nuevo().bajaPedida == antes().get('bajaPedida', nuevo().bajaPedida) && nuevo().bajaPor is string && esFecha(nuevo().bajaEn)
+            && historialEqSigue() && esJefe())
+        // La Jefe también puede no aprobar lo pedido: la solicitud se quita y el equipo sigue igual.
+        || (soloCambia(['bajaPedida', 'historial']) && nuevo().bajaPedida == null && antes().estado in ['bodega', 'recibido'] && antes().get('bajaPedida', null) != null
+            && historialEqSigue() && esJefe())
+        // Verificar (contar y escanear): Soporte y la Jefe dejan la fecha y quién lo verificó, sin tocar nada más.
+        || (soloCambia(['verificadoEn', 'verificadoPor']) && antes().estado != 'baja' && esFecha(nuevo().verificadoEn) && nuevo().verificadoPor is string
+            && nuevo().verificadoPor.size() <= 80 && (esJefe() || (esDemo() && nivel('equipos') == 'soporte')));
     }
     // Actas (como la hoja de papel): las crea el Encargado con la firma de quien recibe; el id es «ac» + el número,
     // así dos actas no quedan con el mismo número. La devolución se agrega a la misma acta (con su firma).
@@ -235,13 +268,16 @@ service cloud.firestore {
 
     // Vehículos: hoja de vida de cada carro. Transporte y Bodega asignan, actualizan documentos y estado;
     // el Conductor solo cambia estado (salida/llegada), kilometraje (nunca hacia atrás) y conductor, con una línea de historial.
+    // El plan de mantenimiento de un carro (`mttos`) es una lista de hasta 10 tareas: { id, tarea, cadaKm, cadaDias, ultimoKm, ultimaFecha, ultimoCosto }.
+    // Lo cambian Transporte y Bodega (siempre con una línea nueva de historial) y la Jefe; el Conductor no.
+    function mttosOk() { return nuevo().get('mttos', []) is list && nuevo().get('mttos', []).size() <= 10; }
     match /vehiculos/{id} {
       allow read: if veVehiculos();
       allow create, delete: if esJefe();
-      allow update: if esJefe()
-        || (esDemo() && nivel('vehiculos') == 'autoriza' && soloCambia(['conductor', 'soat', 'tecno', 'estado', 'km', 'historial', 'ultimaEntrega'])
+      allow update: if (esJefe() && mttosOk())
+        || (esDemo() && nivel('vehiculos') == 'autoriza' && soloCambia(['conductor', 'soat', 'tecno', 'estado', 'km', 'historial', 'ultimaEntrega', 'mttos'])
             && nuevo().km is number && nuevo().km >= antes().km && nuevo().estado in ['disponible', 'en-uso', 'en-taller']
-            && esFecha(nuevo().soat) && esFecha(nuevo().tecno) && historialSigue())
+            && esFecha(nuevo().soat) && esFecha(nuevo().tecno) && historialSigue() && mttosOk())
         // El Conductor solo pasa el carro de disponible a en uso (o al revés) junto con la salida o llegada que registra en ese mismo momento.
         || (esDemo() && nivel('vehiculos') == 'reporta' && soloCambia(['estado', 'km', 'conductor', 'historial', 'ultimaEntrega'])
             && antes().estado in ['disponible', 'en-uso'] && nuevo().estado in ['disponible', 'en-uso'] && nuevo().estado != antes().estado
@@ -270,10 +306,15 @@ service cloud.firestore {
     }
 
     // Salidas y llegadas de los carros: con las 5 fotos (cada una pequeña) y la revisión. No se cambian después.
+    // Si la salida o la llegada es de una reserva (reservaId), esa reserva tiene que estar aprobada y ser de ese mismo carro.
+    function reservaDeEntregaOk() {
+      let r = nuevo().get('reservaId', '');
+      return r is string && (r == '' || (exists(rutaRes(r)) && get(rutaRes(r)).data.estado == 'aprobada' && get(rutaRes(r)).data.vehiculoId == nuevo().vehiculoId));
+    }
     match /entregas/{id} {
       allow read: if veVehiculos();
       allow create: if (esJefe() && esPrueba()) || (esDemo() && nivel('vehiculos') in ['reporta', 'autoriza', 'jefe']
-        && nuevo().porRol == rol() && nuevo().tipo in ['salida', 'llegada']
+        && nuevo().porRol == rol() && nuevo().tipo in ['salida', 'llegada'] && reservaDeEntregaOk()
         && nuevo().fotos.keys().hasOnly(['frente', 'atras', 'izquierda', 'derecha', 'llantas'])
         && nuevo().fotos.keys().hasAll(['frente', 'atras', 'izquierda', 'derecha', 'llantas'])
         && nuevo().fotos.frente is string && nuevo().fotos.frente.size() < 200000
@@ -282,6 +323,60 @@ service cloud.firestore {
         && nuevo().fotos.derecha is string && nuevo().fotos.derecha.size() < 200000
         && nuevo().fotos.llantas is string && nuevo().fotos.llantas.size() < 200000);
       allow update, delete: if esJefe();
+    }
+
+    // Tanqueos: cada vez que un carro echa combustible, con la foto del recibo (JPEG pequeña). Los crean el Conductor, Transporte, Bodega y
+    // la Jefe a su nombre, para un carro que existe. No se cambian ni se borran después (solo la Jefe). Con ellos se calcula cuántos km
+    // rinde cada carro y cuánto cuesta. La Jefe de prueba los carga y reinicia con los datos de ejemplo.
+    match /tanqueos/{id} {
+      allow read: if veVehiculos();
+      allow create: if (esJefe() && esPrueba()) || (esDemo() && nivel('vehiculos') in ['reporta', 'autoriza', 'jefe']
+        && nuevo().keys().hasOnly(['vehiculoId', 'placa', 'fecha', 'km', 'galones', 'valor', 'lleno', 'foto', 'por', 'porRol'])
+        && nuevo().vehiculoId is string && exists(/databases/$(database)/documents/vehiculos/$(nuevo().vehiculoId))
+        && nuevo().placa is string && nuevo().fecha is string && nuevo().por is string && nuevo().porRol == rol()
+        && nuevo().km is number && nuevo().km >= 0 && nuevo().galones is number && nuevo().galones > 0 && nuevo().galones <= 100
+        && nuevo().valor is number && nuevo().valor > 0 && nuevo().valor <= 5000000 && nuevo().lleno is bool
+        && nuevo().foto is string && nuevo().foto.size() < 400000 && nuevo().foto.matches('^data:image/jpeg;base64,.*'));
+      allow update, delete: if esJefe();
+    }
+
+    // Reservas de carro para un viaje que no es una reunión. Pasos: pedida -> aprobada (con el carro y el conductor) o rechazada; una pedida o aprobada se puede cancelar.
+    //   Las pide quien tenga nivel de trabajo en Vehículos, a su nombre y con su correo (el del token). Las aprueban o rechazan Transporte, Bodega o la Jefe, nunca quien la pidió.
+    //   Al aprobar, el carro tiene que existir, no estar en el taller y tener el SOAT y la técnico-mecánica vigentes ese día. (Que no haya otra reserva ni reunión con ese carro
+    //   el mismo día lo revisa la app: las reglas no pueden contar documentos.) La Jefe de prueba las carga y reinicia con los datos de ejemplo.
+    function pideVeh() { return esDemo() && nivel('vehiculos') in ['reporta', 'autoriza', 'jefe']; }
+    function adminVeh() { return esJefe() || (esDemo() && nivel('vehiculos') == 'autoriza'); }
+    function rutaVeh(v) { return /databases/$(database)/documents/vehiculos/$(v); }
+    function rutaRes(r) { return /databases/$(database)/documents/reservas/$(r); }
+    function carroLibreOk(fecha) {
+      let v = get(rutaVeh(nuevo().vehiculoId)).data;
+      return v.placa == nuevo().placa && v.estado != 'en-taller' && v.soat >= fecha && v.tecno >= fecha;
+    }
+    function apruebaOk() {
+      return nuevo().vehiculoId is string && nuevo().placa is string && exists(rutaVeh(nuevo().vehiculoId)) && carroLibreOk(antes().fecha)
+        && nuevo().conductor is string && nuevo().conductor.size() >= 3 && nuevo().conductor.size() <= 60
+        && nuevo().decidePor is string && esFecha(nuevo().decideEn) && nuevo().decideCorreo == request.auth.token.email;
+    }
+    function rechazaOk() {
+      return nuevo().motivoRechazo is string && nuevo().motivoRechazo.size() >= 3 && nuevo().motivoRechazo.size() <= 140
+        && nuevo().decidePor is string && esFecha(nuevo().decideEn) && nuevo().decideCorreo == request.auth.token.email;
+    }
+    function noEsMia() { return antes().get('pideCorreo', '') != request.auth.token.email; }
+    match /reservas/{id} {
+      allow read: if veVehiculos();
+      allow create: if (esPrueba() && esJefe())
+        || (id.matches('^rs-[a-z0-9]{4,30}$') && nuevo().estado == 'pedida'
+            && nuevo().keys().hasOnly(['fecha', 'hora', 'destino', 'motivo', 'estado', 'por', 'porRol', 'pideCorreo', 'en'])
+            && esFecha(nuevo().fecha) && esFecha(nuevo().en) && nuevo().hora is string && nuevo().hora.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+            && nuevo().destino is string && nuevo().destino.size() >= 3 && nuevo().destino.size() <= 80
+            && nuevo().motivo is string && nuevo().motivo.size() >= 3 && nuevo().motivo.size() <= 140
+            && nuevo().por is string && nuevo().porRol == rol() && nuevo().pideCorreo == request.auth.token.email && pideVeh());
+      allow update: if (esPrueba() && esJefe())
+        || (antes().estado == 'pedida' && nuevo().estado == 'aprobada' && soloCambia(['estado', 'vehiculoId', 'placa', 'conductor', 'decidePor', 'decideCorreo', 'decideEn']) && noEsMia() && apruebaOk() && adminVeh())
+        || (antes().estado == 'pedida' && nuevo().estado == 'rechazada' && soloCambia(['estado', 'motivoRechazo', 'decidePor', 'decideCorreo', 'decideEn']) && noEsMia() && rechazaOk() && adminVeh())
+        || (nuevo().estado == 'cancelada' && antes().estado in ['pedida', 'aprobada'] && soloCambia(['estado', 'canceladaPor', 'canceladaEn']) && nuevo().canceladaPor is string && esFecha(nuevo().canceladaEn)
+            && (adminVeh() || (antes().estado == 'pedida' && !noEsMia() && pideVeh())));
+      allow delete: if esJefe();
     }
 
     // Reuniones: las arma la Jefe con lo que entendió el agente. Administrativo la marca como realizada al registrar el acta.
@@ -374,14 +469,17 @@ service cloud.firestore {
     // Las 3 bodegas de la empresa (deben coincidir con personas.js): todo artículo nace en una de ellas y no cambia de bodega
     // (para moverlo se hace un traslado: sale de una y entra a la otra, cada una con su movimiento).
     function bodegaOk() { return nuevo().get('bodega', '') in ['Riohacha', 'Guamal', 'Bogotá']; }
+    // Código del artículo (opcional, en mayúsculas: 3 a 30 letras o números) y fecha de su último conteo (opcional).
+    function codigoArtOk() { let c = nuevo().get('codigo', ''); return c is string && (c == '' || c.matches('^[A-Z0-9]{3,30}$')); }
+    function conteoArtOk() { let f = nuevo().get('ultimoConteo', ''); return f is string && (f == '' || esFecha(f)); }
     match /articulos/{id} {
       allow read: if veInventario();
       // La cantidad nunca queda negativa (si dos personas sacan al tiempo lo último, la segunda recibe un error).
       allow create: if (esJefe() && esPrueba() && bodegaOk())
-        || (esBodega() && bodegaOk() && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == 0 || movOk(id, 0)));
+        || (esBodega() && bodegaOk() && codigoArtOk() && conteoArtOk() && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == 0 || movOk(id, 0)));
       allow update: if (esJefe() && esPrueba())
-        || (esBodega() && soloCambia(['cantidad', 'ultimoMov', 'nombre', 'categoria', 'unidad', 'minimo', 'maximo', 'ubicacion', 'costo', 'proveedor'])
-            && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == antes().cantidad || movOk(id, antes().cantidad)));
+        || (esBodega() && soloCambia(['cantidad', 'ultimoMov', 'nombre', 'categoria', 'unidad', 'minimo', 'maximo', 'ubicacion', 'costo', 'proveedor', 'codigo', 'ultimoConteo'])
+            && codigoArtOk() && conteoArtOk() && nuevo().cantidad is number && nuevo().cantidad >= 0 && (nuevo().cantidad == antes().cantidad || movOk(id, antes().cantidad)));
       allow delete: if esJefe();
     }
     match /movimientos/{id} {
@@ -398,6 +496,30 @@ service cloud.firestore {
         && nuevo().get('pideUid', request.auth.uid) == request.auth.uid;
       allow update: if (esJefe() && esPrueba())
         || (antes().estado == 'pendiente' && nuevo().estado in ['entregada', 'rechazada'] && soloCambia(['estado', 'entregadaPor', 'fechaEntrega', 'motivo']) && esBodega());
+      allow delete: if esJefe();
+    }
+
+    // Proveedores: nombre, NIT (opcional; la app revisa su dígito de verificación), contacto y una nota. Quién los ve: los que ven compras y bodega.
+    // Los crean y editan Compras, la Jefe y Bodega con el extra «compra» (los mismos que registran compras). Solo la Jefe los borra.
+    function veProveedores() { return esDemo() && nivel('inventario') in ['compra', 'coordina', 'bodega', 'jefe', 'finanzas', 'gerente']; }
+    function rutaProv(p) { return /databases/$(database)/documents/proveedores/$(p); }
+    function txtMax(c, max) { let v = nuevo().get(c, ''); return v is string && v.size() <= max; }
+    function proveedorOk() {
+      let n = nuevo().get('nombre', ''); let nit = nuevo().get('nit', ''); let co = nuevo().get('correo', '');
+      return n is string && n.size() >= 2 && n.size() <= 80
+        && nit is string && (nit == '' || nit.matches('^[0-9]{5,15}-[0-9]$'))
+        && co is string && co.size() <= 80 && (co == '' || co.matches('^[^@ ]+@[^@ ]+[.][^@ ]+$'))
+        && txtMax('contacto', 60) && txtMax('telefono', 25) && txtMax('nota', 200);
+    }
+    // El proveedor que se anota en una compra (opcional) tiene que existir cuando termina el lote (la app lo crea en la misma escritura si era nuevo).
+    function proveedorIdOk() { let p = nuevo().get('proveedorId', ''); return p is string && (p == '' || (p.matches('^pv-[a-z0-9]{4,30}$') && existsAfter(rutaProv(p)))); }
+    match /proveedores/{id} {
+      allow read: if veProveedores();
+      allow create: if (esPrueba() && esJefe())
+        || (id.matches('^pv-[a-z0-9]{4,30}$') && nuevo().keys().hasOnly(['nombre', 'nit', 'contacto', 'telefono', 'correo', 'nota', 'por', 'porRol', 'en'])
+            && nuevo().get('por', 0) is string && nuevo().get('porRol', '') == rol() && esFecha(nuevo().get('en', '')) && proveedorOk() && esCompras());
+      allow update: if (esPrueba() && esJefe())
+        || (soloCambia(['nombre', 'nit', 'contacto', 'telefono', 'correo', 'nota']) && proveedorOk() && esCompras());
       allow delete: if esJefe();
     }
 
@@ -424,7 +546,7 @@ service cloud.firestore {
       // compras hechas sin autorización (nacen sin revisar). La Jefe de prueba crea cualquier compra porque carga y reinicia los datos de ejemplo.
       allow create: if (esJefe() && esPrueba())
         || (nuevo().estado == 'pedido' && nuevo().pideRol == rol() && puedePedir() && pedidoOk())
-        || (nuevo().estado == 'sin-autorizar' && nuevo().revisada == false && esCompras() && pedidoOk())
+        || (nuevo().estado == 'sin-autorizar' && nuevo().revisada == false && proveedorIdOk() && esCompras() && pedidoOk())
         // El Gerente general pide una compra y nace autorizada (nadie autoriza lo suyo ni lo de él).
         || (nuevo().estado == 'autorizado' && nuevo().pideRol == 'gerente' && esGerenteGeneral() && puedePedir() && pedidoOk() && nuevo().autorizaCorreo == request.auth.token.email);
       allow update:
@@ -435,7 +557,7 @@ service cloud.firestore {
         // El Gerente general decide lo que la Coordinadora le pasó por el monto.
         || (antes().estado == 'por-gerente' && nuevo().estado in ['autorizado', 'rechazado'] && decideCampos() && nuevo().get('autorizaJefe', '') == antes().get('autorizaJefe', '') && esGerenteGeneral())
         // Comprar (autorizada -> comprada): Compras, sin tocar lo autorizado.
-        || (antes().estado == 'autorizado' && nuevo().estado == 'comprado' && soloCambia(['estado', 'proveedor', 'valorReal', 'fechaCompra', 'factura', 'historial']) && historialSigue() && esCompras())
+        || (antes().estado == 'autorizado' && nuevo().estado == 'comprado' && soloCambia(['estado', 'proveedor', 'proveedorId', 'valorReal', 'fechaCompra', 'factura', 'historial']) && historialSigue() && proveedorIdOk() && esCompras())
         // Recibir (comprada -> recibida): la bodega.
         || (antes().estado == 'comprado' && nuevo().estado == 'recibido' && soloCambia(['estado', 'entregadoA', 'historial']) && historialSigue() && esBodega())
         // La Coordinadora (o el Gerente general) marca como revisada una compra hecha sin autorización.

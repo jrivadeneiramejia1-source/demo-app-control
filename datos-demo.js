@@ -106,6 +106,27 @@
         ])
     };
 
+    // Ciclo de vida de ejemplo (todo inventado): verificaciones, compras y garantías, una baja pedida (que la Jefe puede aprobar) y un equipo ya dado de baja.
+    const SOPORTE = 'Ángel Ortiz', PROV = ['Tecnoventas Ejemplo S. A. S.', 'Equipos del Caribe Ejemplo'];
+    ['eq-001', 'eq-002', 'eq-003', 'eq-004', 'eq-005', 'eq-006', 'eq-009'].forEach(id => Object.assign(equipos[id], { verificadoEn: dias(-30), verificadoPor: SOPORTE }));
+    Object.assign(equipos['eq-007'], { verificadoEn: dias(-250), verificadoPor: SOPORTE });
+    Object.assign(equipos['eq-001'], { fechaCompra: dias(-700), garantiaHasta: dias(18), proveedor: PROV[0], costo: 3200000 });
+    Object.assign(equipos['eq-002'], { fechaCompra: dias(-900), garantiaHasta: dias(-100), proveedor: PROV[0], costo: 2800000 });
+    Object.assign(equipos['eq-003'], { fechaCompra: dias(-400), garantiaHasta: dias(330), proveedor: PROV[1], costo: 3500000 });
+    Object.assign(equipos['eq-004'], { fechaCompra: dias(-340), garantiaHasta: dias(25), proveedor: PROV[1], costo: 1400000 });
+    Object.assign(equipos['eq-007'], { fechaCompra: dias(-800), garantiaHasta: dias(-60), proveedor: PROV[0], costo: 3200000 });
+    const TXT_BAJA12 = 'La pantalla tiene una raya y el equipo se apaga por el calor; el arreglo sale más caro que uno nuevo.';
+    equipos['eq-012'].bajaPedida = { motivo: 'danado', nota: TXT_BAJA12, por: 'Fabián Barbosa', porRol: 'equipos', en: dias(-1) };
+    equipos['eq-012'].historial.push(H(-1, 'baja-pedida', 'Fabián Barbosa', 'Dañado sin arreglo: ' + TXT_BAJA12));
+    const TXT_BAJA13 = 'Ya no enciende y no hay repuestos para este modelo.';
+    equipos['eq-013'] = Object.assign(equipo('DEMO-0013', 'Portátil', 'Acer', 'Aspire 5', 'baja', '', '', dias(-300), dias(-300), 'Retirado: ya no enciende', [
+      H(-420, 'mantenimiento', 'Fabián Barbosa', 'Mantenimiento preventivo'),
+      H(-300, 'mantenimiento', 'Fabián Barbosa', 'Se cambió el disco y no mejoró'),
+      H(-20, 'baja-pedida', 'Fabián Barbosa', 'Obsoleto: ' + TXT_BAJA13),
+      H(-18, 'baja', 'Carolina Castillo', 'Obsoleto: ' + TXT_BAJA13)
+    ]), { bajaPedida: { motivo: 'obsoleto', nota: TXT_BAJA13, por: 'Fabián Barbosa', porRol: 'equipos', en: dias(-20) }, bajaPor: 'Carolina Castillo', bajaEn: dias(-18),
+      fechaCompra: dias(-1500), garantiaHasta: dias(-1100), proveedor: PROV[0], costo: 2100000 });
+
     // ---------- ACTAS (virtuales, como la hoja «Entrega de equipos y herramientas») ----------
     // Las llena el Encargado con la persona, que firma en la pantalla; la devolución se anota en la misma acta.
     // Le llegan a Soporte para revisarlas. Las firmas son garabatos inventados.
@@ -160,20 +181,40 @@
         { fechaPedido: dias(-9), motivoRechazo: 'Ya hay cámaras en bodega, usa esas primero' }),
       'co-005': compra('Cables HDMI y adaptadores', 5, 'unidades', 'Accesorios', 140000, 'Para el proyector de las reuniones',
         'Andrés Beltrán', 'Mauricio Giraldo', 'comprado',
-        { fechaPedido: dias(-12), proveedor: 'Ferretería El Faro', valorReal: 152000, fechaCompra: dias(-8), articuloId: 'ar-010' }),
+        { fechaPedido: dias(-12), proveedor: 'Ferretería El Faro', proveedorId: 'pv-elfaro', valorReal: 152000, fechaCompra: dias(-8), articuloId: 'ar-010' }),
       'co-006': compra('Memorias USB de 64 GB', 10, 'unidades', 'Cómputo', 320000, 'Para entregar copias a los líderes',
         'Mauricio Giraldo', 'Oscar Muñoz', 'comprado',
-        { fechaPedido: dias(-7), proveedor: 'Papelería Central', valorReal: 305000, fechaCompra: dias(-3) }),
+        { fechaPedido: dias(-7), proveedor: 'Papelería Central', proveedorId: 'pv-papcentral', valorReal: 305000, fechaCompra: dias(-3) }),
       'co-007': compra('Chalecos reflectivos', 12, 'unidades', 'EPP', 420000, 'Para la cuadrilla de campo',
         'Andrés Beltrán', 'Mauricio Giraldo', 'recibido',
-        { fechaPedido: dias(-25), proveedor: 'Ferretería El Faro', valorReal: 438000, fechaCompra: dias(-20), entregadoA: 'Jorge Ibarra', articuloId: 'ar-003' }),
+        { fechaPedido: dias(-25), proveedor: 'Ferretería El Faro', proveedorId: 'pv-elfaro', valorReal: 438000, fechaCompra: dias(-20), entregadoA: 'Jorge Ibarra', articuloId: 'ar-003' }),
       'co-008': compra('Garrafones de agua', 6, 'unidades', 'Refrigerios', 90000, 'Para la reunión de la semana pasada',
         'Un compañero (sin identificar)', '', 'sin-autorizar',
-        { fechaPedido: dias(-5), proveedor: 'Distribuidora Agua Clara', valorReal: 96000, fechaCompra: dias(-5) }),
+        { fechaPedido: dias(-5), proveedor: 'Distribuidora Agua Clara', proveedorId: 'pv-aguaclara', valorReal: 96000, fechaCompra: dias(-5) }),
       // Vale más de 5 millones: la Coordinadora ya la autorizó y falta el Gerente general.
       'co-009': compra('Portátiles para el equipo de campo', 2, 'unidades', 'Cómputo', 6800000, 'Para los dos proyectos nuevos',
-        'Ángel Ortiz', '', 'por-gerente', { fechaPedido: dias(-2), autorizaJefe: 'Mauricio Giraldo' })
+        'Ángel Ortiz', '', 'por-gerente', { fechaPedido: dias(-2), autorizaJefe: 'Mauricio Giraldo' }),
+      // Compras de hace uno o varios meses (ya recibidas), para que cada proveedor tenga historial y se vea si los precios suben.
+      'co-010': compra('Chalecos reflectivos', 12, 'unidades', 'EPP', 380000, 'Para la cuadrilla de campo',
+        'Andrés Beltrán', 'Mauricio Giraldo', 'recibido', { fechaPedido: dias(-75), proveedor: 'Ferretería El Faro', proveedorId: 'pv-elfaro', valorReal: 396000, fechaCompra: dias(-70), entregadoA: 'Camilo Suárez' }),
+      'co-011': compra('Cables HDMI y adaptadores', 5, 'unidades', 'Accesorios', 120000, 'Para el proyector de las reuniones',
+        'Andrés Beltrán', 'Mauricio Giraldo', 'recibido', { fechaPedido: dias(-104), proveedor: 'Ferretería El Faro', proveedorId: 'pv-elfaro', valorReal: 130000, fechaCompra: dias(-100), entregadoA: 'Andrés Beltrán' }),
+      'co-012': compra('Resmas de papel carta', 8, 'resmas', 'Papelería', 210000, 'Para imprimir listas de asistencia',
+        'Andrés Beltrán', 'Mauricio Giraldo', 'recibido', { fechaPedido: dias(-48), proveedor: 'Papelería Central', proveedorId: 'pv-papcentral', valorReal: 216000, fechaCompra: dias(-45), entregadoA: 'Paola Ríos' }),
+      'co-013': compra('Mouse inalámbrico', 6, 'unidades', 'Accesorios', 170000, 'Para los portátiles de campo',
+        'Carolina Castillo', 'Oscar Muñoz', 'recibido', { fechaPedido: dias(-84), proveedor: 'Tecnoventas Ejemplo S. A. S.', proveedorId: 'pv-tecnoventas', valorReal: 177000, fechaCompra: dias(-80), entregadoA: 'Jorge Ibarra' }),
+      'co-014': compra('Teclados USB', 5, 'unidades', 'Accesorios', 210000, 'Para reponer los que se dañaron',
+        'Ángel Ortiz', 'Mauricio Giraldo', 'recibido', { fechaPedido: dias(-44), proveedor: 'Equipos del Caribe Ejemplo', proveedorId: 'pv-eqcaribe', valorReal: 225000, fechaCompra: dias(-40), entregadoA: 'Ángel Ortiz' })
     };
+    // ---------- PROVEEDORES (todo inventado: NIT con su dígito de verificación bien calculado, teléfonos y correos de ejemplo) ----------
+    const proveedores = {
+      'pv-elfaro': { nombre: 'Ferretería El Faro', nit: '900000001-2', contacto: 'Marta Ejemplo', telefono: '300 000 0001', correo: 'ventas@elfaro.example.com', nota: 'Entrega en 2 días. Fía a 30 días.' },
+      'pv-papcentral': { nombre: 'Papelería Central', nit: '900000003-7', contacto: 'Luis Ejemplo', telefono: '300 000 0003', correo: 'pedidos@papeleriacentral.example.com', nota: 'Descuento si se compran más de 5 resmas.' },
+      'pv-aguaclara': { nombre: 'Distribuidora Agua Clara', nit: '', contacto: 'Rosa Ejemplo', telefono: '300 000 0005', correo: '', nota: 'Reparte los martes y los viernes. Todavía sin NIT anotado.' },
+      'pv-tecnoventas': { nombre: 'Tecnoventas Ejemplo S. A. S.', nit: '901234567-7', contacto: 'Carlos Ejemplo', telefono: '300 000 0007', correo: 'comercial@tecnoventas.example.com', nota: 'Da garantía de un año en los equipos.' },
+      'pv-eqcaribe': { nombre: 'Equipos del Caribe Ejemplo', nit: '900000009-0', contacto: '', telefono: '300 000 0009', correo: '', nota: '' }
+    };
+    Object.values(proveedores).forEach(v => Object.assign(v, { por: 'Fredy Torres', porRol: 'compras', en: dias(-110) }));
     // Historial de cada compra (cómo va), armado según su estado. Las horas son de oficina y nunca quedan en el futuro.
     const desfase = f => Math.round((new Date(f + 'T12:00:00') - new Date(dias(0) + 'T12:00:00')) / 86400000);
     Object.values(compras).forEach(c => {
@@ -214,12 +255,23 @@
       'ar-018': articulo('Linterna recargable', 'Herramientas', 'unidades', 5, 2, 8, 'Estante E1', 38000, 'Ferretería El Faro', 'Bogotá')
     };
 
+    // Códigos de ejemplo (inventados; algunos artículos no tienen, porque es opcional) y fecha del último conteo (días atrás).
+    // Con eso la tarjeta «Te toca contar hoy» muestra algunos artículos al día y otros que ya les toca.
+    const CODIGOS = { 'ar-001': 'BOT040', 'ar-002': 'BOT042', 'ar-003': 'CHA001', 'ar-004': 'GUA001', 'ar-005': 'CAS001', 'ar-006': 'TAP001', 'ar-007': 'EXT005', 'ar-008': 'MUL006', 'ar-009': 'CIN001',
+      'ar-010': 'HDM002', 'ar-011': 'MOU001', 'ar-012': 'TON001', 'ar-013': '7700000000013' };
+    Object.entries(CODIGOS).forEach(([id, c]) => { articulos[id].codigo = c; });
+    const CONTEOS = { 'ar-001': -45, 'ar-002': -200, 'ar-003': -100, 'ar-004': -20, 'ar-005': -3, 'ar-006': -30, 'ar-007': -30, 'ar-008': -30, 'ar-009': -30, 'ar-010': -190, 'ar-011': -30,
+      'ar-013': -10, 'ar-014': -60, 'ar-015': -30, 'ar-016': -30, 'ar-017': -30, 'ar-018': -30 };
+    Object.entries(CONTEOS).forEach(([id, n]) => { articulos[id].ultimoConteo = dias(n); });
+
     // ---------- MOVIMIENTOS DE BODEGA ----------
     // El saldo de cada movimiento es la cantidad del artículo justo después de registrarlo.
     function mov(articuloId, tipo, motivo, cantidad, saldo, persona, proyecto, fecha, nota, extra) {
       return Object.assign({
         articuloId, articulo: articulos[articuloId].nombre, tipo, motivo, cantidad, saldo, persona, proyecto,
-        por: 'Andrés Beltrán', porRol: 'asistente', fecha, nota, compraId: '', solicitudId: ''
+        por: 'Andrés Beltrán', porRol: 'asistente', fecha, nota, compraId: '', solicitudId: '',
+        // Kárdex con plata: cada unidad al costo del artículo (la demo no tiene historia de precios).
+        costoUnit: articulos[articuloId].costo, valor: Math.abs(cantidad) * articulos[articuloId].costo, valorSaldo: saldo * articulos[articuloId].costo
       }, extra);
     }
     const movimientos = {
@@ -262,15 +314,36 @@
 
     // ---------- VEHÍCULOS ----------
     // Cada carro tiene su hoja de vida aquí; las novedades y las entregas (salida y llegada) van aparte, con sus fotos.
+    // Plan de mantenimiento de ejemplo: { id, tarea, cadaKm, cadaDias, ultimoKm, ultimaFecha (días atrás), ultimoCosto }.
+    // «hechos» guarda cada vez que se hizo con su costo (así se suma lo gastado en un periodo).
+    const mtto = (id, tarea, cadaKm, cadaDias, ultimoKm, haceDias, ultimoCosto) => ({ id, tarea, cadaKm, cadaDias, ultimoKm, ultimaFecha: dias(haceDias), ultimoCosto,
+      hechos: ultimoCosto ? [{ fecha: dias(haceDias), km: ultimoKm, costo: ultimoCosto }] : [] });
     const vehiculos = {
       've-abc123': { placa: 'ABC 123', marca: 'Toyota', modelo: 'Hilux', anio: 2022, color: 'Blanco', conductor: 'Oscar Farfán', km: 45210,
-        soat: dias(12), tecno: dias(200), estado: 'en-uso', historial: [{ fecha: iso(-1, 6, 40), texto: 'Salió con Oscar Farfán (45.180 km)', por: 'Oscar Farfán' }] },
+        soat: dias(12), tecno: dias(200), estado: 'en-uso', historial: [{ fecha: iso(-1, 6, 40), texto: 'Salió con Oscar Farfán (45.180 km)', por: 'Oscar Farfán' }],
+        mttos: [mtto('mt-aceite', 'Cambio de aceite', 5000, 180, 40300, -70, 190000), mtto('mt-alin', 'Alineación y balanceo', 10000, 365, 38000, -200, 120000)] },
       've-def456': { placa: 'DEF 456', marca: 'Chevrolet', modelo: 'D-Max', anio: 2021, color: 'Gris', conductor: '', km: 62800,
-        soat: dias(150), tecno: dias(-5), estado: 'disponible', historial: [] },
+        soat: dias(150), tecno: dias(-5), estado: 'disponible', historial: [],
+        mttos: [mtto('mt-aceite', 'Cambio de aceite', 5000, 180, 57500, -150, 185000)] },
       've-ghi789': { placa: 'GHI 789', marca: 'Mitsubishi', modelo: 'L200', anio: 2020, color: 'Rojo', conductor: '', km: 88450,
-        soat: dias(90), tecno: dias(120), estado: 'en-taller', historial: [{ fecha: iso(-8, 9, 0), texto: 'Entró al taller por mantenimiento', por: 'Wilson Muñoz' }] },
+        soat: dias(90), tecno: dias(120), estado: 'en-taller', historial: [{ fecha: iso(-8, 9, 0), texto: 'Entró al taller por mantenimiento', por: 'Wilson Muñoz' }],
+        mttos: [mtto('mt-pastillas', 'Pastillas de freno', 30000, 540, 70000, -8, 260000)] },
       've-jkl012': { placa: 'JKL 012', marca: 'Toyota', modelo: 'Fortuner', anio: 2023, color: 'Plata', conductor: '', km: 21340,
-        soat: dias(240), tecno: dias(300), estado: 'disponible', historial: [] }
+        soat: dias(240), tecno: dias(300), estado: 'disponible', historial: [],
+        mttos: [mtto('mt-revision', 'Revisión de los 10.000 km', 10000, 180, 15000, -20, 150000)] }
+    };
+    // ---------- RESERVAS DE CARRO (viajes que no son reuniones; todo inventado) ----------
+    // Una por aprobar (la pidió el Conductor), una aprobada para hoy (el Conductor la ve en «Lo que me toca» y registra la salida) y una rechazada.
+    const correoDe = (rol, nombre) => { const p = window.DEMO.PERSONAS.find(x => x.rol === rol && x.nombre === nombre); return p ? p.correo : ''; };
+    const reservas = {
+      'rs-001': { fecha: dias(1), hora: '07:30', destino: 'Maicao: llevar los contratos firmados', motivo: 'Hay que entregarlos antes del mediodía', estado: 'pedida',
+        por: 'Oscar Farfán', porRol: 'conductor', pideCorreo: correoDe('conductor', 'Oscar Farfán'), en: dias(0) },
+      'rs-002': { fecha: dias(0), hora: '14:00', destino: 'Riohacha: recoger material en el proveedor', motivo: 'Recoger los chalecos y los cables que ya se pagaron', estado: 'aprobada',
+        por: 'Andrés Beltrán', porRol: 'asistente', pideCorreo: correoDe('asistente', 'Andrés Beltrán'), en: dias(-1),
+        vehiculoId: 've-jkl012', placa: 'JKL 012', conductor: 'Oscar Farfán', decidePor: 'Wilson Muñoz', decideCorreo: correoDe('carros', 'Wilson Muñoz'), decideEn: dias(-1) },
+      'rs-003': { fecha: dias(3), hora: '09:00', destino: 'Uribia: visita al proveedor del agua', motivo: 'Conocer el lugar de donde reparten', estado: 'rechazada',
+        por: 'Oscar Farfán', porRol: 'conductor', pideCorreo: correoDe('conductor', 'Oscar Farfán'), en: dias(-2),
+        motivoRechazo: 'Ese día no hay carro libre con los papeles al día', decidePor: 'Andrés Beltrán', decideCorreo: correoDe('asistente', 'Andrés Beltrán'), decideEn: dias(-1) }
     };
     // Foto de ejemplo (pequeña e inventada) para las novedades y entregas de muestra.
     const FOTO = 'data:image/jpeg;base64,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';
@@ -292,6 +365,18 @@
       'en-003': { vehiculoId: 've-abc123', placa: 'ABC 123', tipo: 'salida', fecha: iso(-1, 6, 40), km: 45180, combustible: 'lleno', conductor: 'Oscar Farfán', con: 'Wilson Muñoz',
         fotos: fotos5, revision: revisionOk, observaciones: '', por: 'Oscar Farfán', porRol: 'conductor', reunionId: '' }
     };
+
+    // Tanqueos de ejemplo (valores inventados): [días atrás, hora, km, galones, tanque lleno]. El valor sale del precio del galón de cada carro.
+    // El ABC 123 trae un último tanqueo con consumo raro (rindió mucho menos que lo normal) para ver el aviso.
+    const tanqueos = {};
+    const tanqueosDe = (veh, placa, precio, lista) => lista.forEach(([haceDias, hora, km, galones, lleno], i) => {
+      tanqueos['ta-' + veh.slice(3, 6) + '-' + (i + 1)] = { vehiculoId: veh, placa, fecha: iso(-haceDias, hora, 10), km, galones, valor: Math.round(galones * (precio + (i % 3) * 150) / 100) * 100, lleno: lleno !== false,
+        foto: FOTO, por: i % 4 === 3 ? 'Wilson Muñoz' : 'Oscar Farfán', porRol: i % 4 === 3 ? 'carros' : 'conductor' };
+    });
+    tanqueosDe('ve-abc123', 'ABC 123', 12900, [[52, 17, 43380, 18.0], [38, 16, 43900, 17.6], [24, 17, 44420, 17.4], [11, 17, 44930, 17.9], [1, 6, 45170, 15.0]]);
+    tanqueosDe('ve-def456', 'DEF 456', 12950, [[48, 16, 61650, 20.5], [33, 17, 62100, 16.8], [26, 15, 62250, 8.0, false], [19, 17, 62430, 4.4], [4, 6, 62690, 9.8]]);
+    tanqueosDe('ve-ghi789', 'GHI 789', 12900, [[40, 16, 87300, 21.2], [24, 17, 87800, 18.0], [9, 16, 88190, 14.2]]);
+    tanqueosDe('ve-jkl012', 'JKL 012', 15500, [[44, 15, 20300, 22.5], [29, 16, 20720, 17.4], [15, 17, 21100, 15.5], [3, 16, 21340, 10.0]]);
 
     // ---------- REUNIONES ----------
     // La reunión guarda lo general; lo que le toca a cada rol va aparte en «necesidades» (una por tarea),
@@ -384,8 +469,8 @@
       'av-006': aviso('asistente', 'Pedidos de material por entregar', 'Tienes 3 pedidos de material por entregar.', iso(-1, 17, 10), 'inventario')
     };
 
-    return { equipos, hojas, tareasEq, compras, vehiculos, novedades, entregas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
+    return { equipos, hojas, tareasEq, compras, proveedores, vehiculos, novedades, entregas, tanqueos, reservas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 11, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 18, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

@@ -15,7 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], reuniones: [], necesidades: [], avisos: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [], ajustesApp: [], invitaciones: [] },
+    datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], tanqueos: [], reservas: [], proveedores: [], reuniones: [], necesidades: [], avisos: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [], ajustesApp: [], invitaciones: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     suscritas: new Set(),  // colecciones a las que esta persona se suscribió (las demás no las puede leer y nunca «cargan»)
     oyentes: [],
@@ -227,8 +227,8 @@
     // Cada persona se suscribe solo a lo de los módulos que puede ver (las reglas de Firebase hacen lo mismo).
     const ve = m => permiso(m) !== 'no';
     const cols = ['avisos', 'ajustesApp']
-      .concat(ve('equipos') ? ['equipos', 'hojas', 'tareasEq'] : [], ve('inventario') ? ['compras', 'articulos', 'solicitudes'].concat(permiso('inventario') === 'pide' ? [] : ['movimientos']) : [],
-        ve('vehiculos') ? ['vehiculos', 'novedades', 'entregas'] : [], ve('reuniones') ? ['reuniones', 'necesidades'] : [], panel);
+      .concat(ve('equipos') ? ['equipos', 'hojas', 'tareasEq'] : [], ve('inventario') ? ['compras', 'articulos', 'solicitudes'].concat(permiso('inventario') === 'pide' ? [] : ['movimientos'], ['compra', 'coordina', 'bodega', 'jefe', 'finanzas', 'gerente'].includes(permiso('inventario')) ? ['proveedores'] : []) : [],
+        ve('vehiculos') ? ['vehiculos', 'novedades', 'entregas', 'tanqueos', 'reservas'] : [], ve('reuniones') ? ['reuniones', 'necesidades'] : [], panel);
     // Una cuenta real que solo pide material solo puede leer SUS pedidos y compras (las reglas lo exigen): se piden filtrados.
     const soloLoMio = p.real && permiso('inventario') === 'pide';
     const donde = col => (soloLoMio && ['compras', 'solicitudes'].includes(col) ? ['pideUid', nube.uid()] : null);
@@ -383,7 +383,7 @@
 
   /** Tablero con filtro: al tocar una cifra filtra la lista; tocarla otra vez quita el filtro. */
   // Colecciones de las que sale cada tablero: mientras no lleguen, se muestran cuadritos fantasma y no un «0» falso.
-  const COLS_MOD = { equipos: ['equipos', 'hojas', 'tareasEq'], inventario: ['articulos', 'compras', 'solicitudes'], vehiculos: ['vehiculos', 'novedades', 'entregas'], reuniones: ['reuniones', 'necesidades'] };
+  const COLS_MOD = { equipos: ['equipos', 'hojas', 'tareasEq'], inventario: ['articulos', 'compras', 'solicitudes'], vehiculos: ['vehiculos', 'novedades', 'entregas', 'tanqueos', 'reservas'], reuniones: ['reuniones', 'necesidades'] };
   function tablero(mod, cifras) {
     const el = $('sum' + mod[0].toUpperCase() + mod.slice(1));
     el.className = 'summary' + (cifras.length === 2 || cifras.length === 4 ? ' dos' : '');
@@ -486,7 +486,23 @@
 
   /* ---------- hojas y confirmación ---------- */
   function abrirHoja(id) { $(id).hidden = false; }
-  function cerrarHoja(id) { const el = $(id); if (el && !el.hidden) el.hidden = true; }
+  function cerrarHoja(id) { delete vigiladas[id]; const el = $(id); if (el && !el.hidden) el.hidden = true; }
+  /* Hojas con formulario: si hay algo escrito, o una foto o firma sin guardar, antes de cerrarlas por Cancelar, Escape o tocar fuera se pregunta.
+     Guardar cierra sin preguntar (los módulos llaman a cerrarHoja). */
+  const vigiladas = {};
+  /** `raiz()` da el formulario; `extra()` (opcional) da un texto con lo que no es campo (fotos, firmas). */
+  function vigilar(id, raiz, extra) {
+    const foto = () => UI.foto(raiz()) + '|' + (extra ? extra() : '');
+    const v = { base: null, hay: () => v.base !== null && foto() !== v.base };
+    vigiladas[id] = v;
+    setTimeout(() => { if (vigiladas[id] === v) v.base = foto(); }, 0);   // después de que el módulo termine de llenar la hoja
+  }
+  function pedirCerrar(bd) {
+    const v = vigiladas[bd.id]; let hay = false;
+    try { hay = !!(v && v.hay()); } catch (e) {}
+    if (!hay) { delete vigiladas[bd.id]; bd.hidden = true; return; }
+    confirmar('¿Salir sin guardar?', 'Lo que escribiste se pierde.', 'Salir sin guardar').then(ok => { if (ok) { delete vigiladas[bd.id]; bd.hidden = true; } });
+  }
   function confirmar(titulo, texto, boton) {
     return new Promise(res => {
       $('cfT').textContent = titulo; $('cfTxt').textContent = texto; $('cfSi').textContent = boton;
@@ -498,7 +514,7 @@
   }
   function cerrarArriba() {
     const top = UI.arriba(); if (!top) return;
-    if (top._cancelar) top._cancelar(); else top.hidden = true;
+    if (top._cancelar) top._cancelar(); else pedirCerrar(top);
   }
 
   /* ---------- eventos ---------- */
@@ -575,9 +591,9 @@
     });
     document.addEventListener('click', e => {
       const p = e.target.closest('[data-pagada]'); if (p) { abrirPagada(p.dataset.pagada); return; }
-      if (e.target.closest('[data-cerrar]')) { const bd = e.target.closest('.backdrop'); if (bd) bd.hidden = true; return; }
+      if (e.target.closest('[data-cerrar]')) { const bd = e.target.closest('.backdrop'); if (bd) pedirCerrar(bd); return; }
       // Tocar el fondo oscuro cierra la hoja (salvo la confirmación, que se responde con un botón).
-      if (e.target.classList && e.target.classList.contains('backdrop') && !e.target.classList.contains('confirm')) e.target.hidden = true;
+      if (e.target.classList && e.target.classList.contains('backdrop') && !e.target.classList.contains('confirm')) pedirCerrar(e.target);
     });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarArriba(); });
     $('btnReintentar').onclick = () => location.reload();
@@ -591,7 +607,7 @@
   /* ---------- ayudas para inventario.js ---------- */
   window.App = Object.freeze({
     S, $, esH, pill, cop, hace, fechaCorta, hoyISO, toast, permiso, tieneExtra, tablero, cargando, iniciales, montoGerente,
-    abrirHoja, cerrarHoja, confirmar, pintarTodo, diasHasta
+    abrirHoja, cerrarHoja, vigilar, confirmar, pintarTodo, diasHasta
   });
 
   /* ---------- arranque ---------- */

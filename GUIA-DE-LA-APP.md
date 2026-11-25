@@ -64,7 +64,8 @@ Además hay una pestaña **Inicio** con un resumen de lo que le toca a cada pers
 | **Correo confirmado** | Cuando una persona crea su cuenta con clave, le llega un correo con un enlace. Hasta que lo toca, no ve nada. Con Google no hace falta (Google ya lo confirmó). |
 | **Pausar** | La Jefe le quita el acceso a una persona sin borrarla. Se puede devolver. |
 | **Campana** | El icono arriba donde llegan los avisos de lo que te toca. |
-| **Kárdex** | El historial de entradas y salidas de **un** artículo, con lo que quedó después de cada una. |
+| **Kárdex** | El historial de entradas y salidas de **un** artículo, con lo que quedó después de cada una y **cuánto valía** cada movimiento. |
+| **Costo promedio** | Lo que vale cada unidad de un artículo, sacado del promedio de lo que había y de lo que entra en cada compra (ver «Kárdex con plata» en el capítulo 8). |
 | **Acta** | La hoja firmada que dice qué equipos se entregaron a una persona (en Equipos), o el registro de lo que pasó en una reunión (en Reuniones). |
 
 ---
@@ -324,6 +325,9 @@ Un resumen de lo que le toca a la persona en cada módulo que puede ver: número
 - **Avisos al teléfono (opcional y gratis):** con «Activar avisos», el teléfono recibe una notificación. En iPhone primero hay que instalar la app (Compartir > Agregar a inicio).
 - Cada persona recibe **solo los avisos de su rol**.
 
+### 7.6 «¿Salir sin guardar?»
+En Equipos, Vehículos e Inventario, si escribiste algo (o tomaste una foto o dibujaste una firma) y tocas **Cancelar**, la tecla Escape o fuera de la hoja, la app pregunta «¿Salir sin guardar?». **Cancelar** (te quedas y no pierdes nada) o **Salir sin guardar** (Leave without saving: se pierde lo escrito). Al guardar no pregunta, y en las hojas donde solo se mira (hoja de vida, detalle) tampoco.
+
 ---
 
 ## 8. Inventario a fondo (compras, bodega, pedidos)
@@ -332,11 +336,12 @@ Un resumen de lo que le toca a la persona en cada módulo que puede ver: número
 
 | Nivel | Quién lo tiene por defecto | Secciones que ve |
 |---|---|---|
-| **Jefe** | La Jefe | Panorama, Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras, Conteo, Resumen |
-| **Bodega** | Bodega (Andrés Beltrán) | Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras, Conteo, Resumen |
-| **Compra** | Compras | Qué hay que hacer, Existencias, Compras, Pedidos de material, Movimientos, Resumen |
-| **Gerente** | Los Gerentes | Resumen, Compras, Existencias, Pedidos de material |
-| **Finanzas** | Financieros (3 personas) | Existencias, Movimientos, Pedidos, Compras, Resumen |
+| **Jefe** | La Jefe | Panorama, Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras, Proveedores, Conteo, Resumen |
+| **Bodega** | Bodega (Andrés Beltrán) | Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras, Proveedores (solo ver, salvo con el extra «compra»), Conteo, Resumen |
+| **Compra** | Compras | Qué hay que hacer, Existencias, Compras, Proveedores, Pedidos de material, Movimientos, Resumen |
+| **Coordina** | Coordinadora de compras (Mauricio Giraldo) | Qué hay que hacer, Compras, Proveedores (solo ver), Existencias, Pedidos de material, Movimientos, Resumen |
+| **Gerente** | Los Gerentes | Resumen, Compras, Proveedores (solo ver), Existencias, Pedidos de material |
+| **Finanzas** | Financieros (3 personas) | Existencias, Movimientos, Pedidos, Compras, Proveedores (solo ver), Resumen |
 | **Ver** | Consulta | Existencias, Movimientos, Pedidos, Compras, Resumen (solo mirar) |
 | **Pide** | Casi todos los demás | **Lo mío**, Existencias, Pedidos de material, Compras (y solo ve **lo suyo**) |
 
@@ -386,6 +391,12 @@ Quien decide deja su **correo** en la compra (para que nadie se haga pasar por o
 
 **Cada paso queda en el historial de la compra**, y el historial **solo crece**: no se puede borrar ni cambiar lo que ya está.
 
+**El cuadro «Autorizado · Pagado · Recibido».** En **Ver detalle** de una compra ya pagada o recibida, cada artículo trae lo que se autorizó, lo que se pagó y lo que llegó, lado a lado. Lo que se pagó **más del 10 %** de lo autorizado, o lo que **llegó menos**, sale en rojo con un ícono de aviso (por ejemplo «+25 %» o «faltan 2»), y la fila de abajo suma el total. El pago se anota por toda la compra; en las de varios artículos, la app lo reparte entre ellos según lo que valía cada uno al pedirlo. Lo recibido sale de los movimientos de bodega, así que quien no ve movimientos ve «—».
+
+**Orden de compra para el proveedor.** En **Ver detalle** de una compra **autorizada o ya comprada** hay un botón **«Orden de compra (imprimir o PDF)»**. Arma un papel con el logo, el número **OC-** (el código corto de la compra, por ejemplo OC-006), la fecha, el proveedor, para qué es, cada artículo con su cantidad y valor, el total, quién pidió y quién autorizó, y la nota «Documento de prueba». En el computador se imprime; en el celular, la opción **«Guardar como PDF»** (Save as PDF) lo deja listo para mandarlo por WhatsApp o correo. No lleva número seguido (OC-0001, OC-0002…): eso necesitaría un cambio en las reglas de Firebase, como las actas de Equipos.
+
+**Pedir compra de todo lo bajo.** En **Qué hay que hacer**, cuando hay **dos o más** artículos agotados o bajos del mínimo sin compra en curso, sale el botón **«Pedir compra de todo lo bajo (N)»**: abre **una sola compra** con esos artículos ya puestos (el agotado primero, con la cantidad que falta para llegar al máximo y su valor). Una compra lleva hasta 5 artículos: si hay más, van los 5 más urgentes y después se hace otra con el resto. Se revisa y se envía como cualquier compra.
+
 ### 8.3 Pedidos de material (cosas de la bodega)
 1. Cualquiera con nivel de pedir: botón **«Pedir material»**: escoge el artículo, cantidad, para qué y proyecto.
 2. **Bodega** ve el pedido en «Qué hay que hacer» o «Pedidos de material».
@@ -394,14 +405,38 @@ Quien decide deja su **correo** en la compra (para que nadie se haga pasar por o
 5. Si el artículo no alcanza, la app propone **pedir una compra**.
 
 ### 8.4 La bodega (Existencias y Movimientos)
-- **Existencias:** cada artículo con su cantidad, mínimo, máximo, ubicación y estado (**Bien · Bajo del mínimo · Agotado**).
+- **Existencias:** cada artículo con su cantidad, mínimo, máximo, ubicación y estado (**Bien · Bajo del mínimo · Agotado**). Arriba de la lista está **«Escanear código»** y, en pantallas anchas, el botón **Tarjetas · Tabla** (ver más abajo).
+- **Código del artículo (opcional).** Al **agregar o editar** un artículo se puede escribir su **código de barras o el que cada quien use**: **de 3 a 30 letras o números, sin espacios ni guiones** (la app lo pasa a mayúsculas). El campo trae un botón para **escanearlo con la cámara**. En una bodega no puede haber dos artículos con el mismo código (la app dice cuál lo tiene). Con el código, el artículo sale en el buscador y en **«Escanear código»**: abre su hoja; si el mismo código está en dos bodegas, deja las dos en el buscador para escoger. Al trasladar un artículo a una bodega donde no existía, el código viaja con él si allá nadie lo usa. **El código todavía no va en el Excel de base de datos** (la columna «ID» del Excel es otra cosa: es el número interno del artículo y no se cambia).
+- **Tabla de existencias (solo en pantalla de 900 px o más).** El botón **Tarjetas · Tabla** cambia cómo se ven los artículos; la elección **se recuerda en ese navegador**. La tabla ensancha la ventana de Inventario y tiene: código, artículo, categoría, bodega, ubicación, cuánto hay, mínimo, máximo, **valor en bodega** (hay × precio), **ABC** y estado. **Cada encabezado ordena** (tocar otra vez lo invierte; la flecha dice cómo está). El **encabezado queda fijo** al bajar y el **pie suma el valor** de lo que se ve. Sirven el buscador, los botones de bodega y las cifras de arriba. En pantallas angostas (teléfono) siempre salen tarjetas. Quien solo pide material no ve la columna ABC.
+- **Clase ABC.** Dice qué artículos mueven más plata. Se calcula con **lo que salió de la bodega en los últimos 90 días** (entregas y daños; los traslados no cuentan), **valorizado** (cantidad × costo). **A** = los que suman el **80 %** de ese valor, **B** = el **15 %** siguiente y **C** = el resto (también lo que no salió nada). Si no hay ninguna salida en 90 días, no hay clase. Se ve en la tabla, en la hoja del artículo y en «Te toca contar hoy».
 - **Movimientos:** cada entrada, salida y ajuste (del más nuevo al más viejo). Quien solo pide **no los ve**.
 - **Quién mueve la bodega:** Bodega y la Jefe.
 - Bodega puede: registrar **entradas** (devolución) y **salidas** (entrega, daño o pérdida), **crear y editar artículos** y hacer el **conteo**. Cada movimiento queda con su motivo: *Cantidad inicial, Compra recibida, Entrega, Devolución, Ajuste por conteo* o *Daño o pérdida*.
-- **Conteo físico:** se cuenta en los estantes, se escribe lo que hay de verdad y, si hay diferencias, se escribe el motivo. La app ajusta.
+- **Conteo físico** (en tres pasos, siempre de **una bodega**):
+  1. Se escoge la **bodega** (Riohacha, Guamal o Bogotá) y, si se quiere, una **categoría**. Ahí mismo dice cuándo fue el último ajuste por conteo de cada bodega.
+  2. Se cuenta. **La app no dice cuánto cree que hay** (así nadie copia el número): cada artículo trae su estante para encontrarlo, y se deja en blanco lo que no se contó. **Lo que se escribe se guarda en el teléfono**: si se cierra a medias, al volver dice «Tienes un conteo sin terminar de Guamal» y se sigue donde se iba (o se empieza de cero).
+  3. **Revisar:** recién ahora aparece, por cada artículo, lo contado, lo que decía la app y la diferencia (las que no cuadran van primero y en rojo). Si hay diferencias se escribe el **motivo** y se guarda; la app ajusta y deja un movimiento por cada una. Si mientras se revisaba alguien movió la cantidad de un artículo, la app avisa y muestra la revisión otra vez sin guardar.
+  - Un conteo que cuadra del todo no deja ajustes, así que no aparece en «último ajuste por conteo». Pero **cada artículo contado, cuadre o no, queda con la fecha de hoy como su «último conteo»** (se ve en su hoja).
+- **«Te toca contar hoy»** (tarjeta arriba en Conteo, para Bodega y la Jefe). Es el conteo por clases: lo de **clase A se cuenta cada 30 días, lo B cada 90 y lo C cada 180**. La tarjeta lista, de a **10**, lo que ya toca (lo que **nunca se contó** o pasó su plazo; primero la clase A y, dentro de cada clase, lo más viejo), con su estante y cuándo se contó por última vez. Trae un botón por bodega, **«Contar en Riohacha (5)»**, que abre el conteo con **solo esos artículos**. Lo escrito se suma al borrador de la bodega sin borrar lo que ya había de otros artículos. Los datos viejos, sin fecha de conteo, usan la fecha de su último ajuste por conteo.
 - **Kárdex:** el historial de **un** artículo con lo que quedó después de cada movimiento (y su Excel).
+- **Kárdex con plata (costo promedio ponderado):** cada movimiento guarda a cuánto entró o salió cada unidad (**costo unitario**), cuánto vale el movimiento (**valor**) y cuánto vale lo que quedó (**valor que quedó**). El Excel del kárdex trae esas tres columnas y el título dice cuánto vale hoy lo que hay.
+  - Cuando se **recibe una compra**, cada unidad entra a lo que se pagó por ella (total pagado ÷ cantidad comprada; en las compras de varios artículos, lo pagado se reparte según lo que valía cada línea al pedirla) y el **costo del artículo se recalcula con el promedio** de lo que había y lo que entra. Ejemplo: había 10 a $1.000 y llegan 5 a $1.300 → el costo pasa a **$1.100** (hay 15, valen $16.500). Si después salen 3, el movimiento vale **$3.300** y lo que queda (12) vale **$13.200**.
+  - Las **salidas, las entregas, los daños, los conteos y los traslados** usan el costo promedio de ese momento. Un traslado lleva el mismo costo a la otra bodega (si allá ya había, se promedia).
+  - «Salió de bodega este mes» en el Resumen suma lo que valía cada salida **cuando salió** (no al precio de hoy).
+  - Los movimientos de **antes** de este cambio no traen valores: el kárdex dice «sin dato» en vez de inventarlos.
+  - El «Precio aprox.» del artículo es este mismo costo promedio; si alguien lo cambia a mano (o por Excel), el nuevo valor manda desde ese momento.
 - **Regla de oro:** **cada cambio de cantidad deja su movimiento en la misma escritura**. No se puede cambiar el stock sin dejar rastro. La cantidad **nunca queda negativa**.
 - Si un artículo se **daña o se pierde**, se avisa a la Jefe.
+
+### 8.4.1 Proveedores
+La parte **Proveedores** es la lista de a quién se le compra. Cada tarjeta dice el nombre, el **NIT** (si lo tiene), cuántas compras se le han hecho, cuánto se le ha pagado **este año** y la última compra. Arriba está el buscador (nombre, NIT o contacto); salen primero los que más se compraron este año.
+- **Ficha:** al tocar un proveedor se ve su contacto, sus compras hechas y **«Último precio por artículo»**: lo que se pagó la última vez por cada cosa, comparado con la compra anterior (*Subió 11 %*, *Bajó 5 %* o *Una sola compra*). En una compra con varios artículos lo pagado se reparte según lo que valía cada uno al pedirlo, igual que en el cuadro de la compra.
+- **Quién ve:** Compras, la Coordinadora, Bodega, Financiero, Gerente y la Jefe. Quien no tiene Inventario con esos niveles (por ejemplo, quien solo pide material) no ve esta parte.
+- **Quién agrega y cambia:** quien hace las compras (Compras, la Jefe y Bodega con el extra «compra»). Con **Agregar proveedor** basta el nombre; lo demás (NIT, contacto, teléfono, correo, nota) es opcional.
+- **NIT:** se escribe con su dígito, sin puntos y con un guion: `900000001-2`. La app calcula el dígito de verificación (el de la DIAN) y, si no cuadra, dice cuál debería ser. No acepta dos proveedores con el mismo NIT ni con el mismo nombre (da igual una mayúscula o una tilde).
+- **Al registrar una compra** («Registrar compra» o «Registrar compra hecha sin autorización») el campo **Proveedor** es una lista con los que ya hay: se escoge uno o se escribe uno nuevo, y el nuevo **se agrega solo** a Proveedores (sin NIT; se completa después en su ficha). La compra guarda a qué proveedor pertenece; las compras de antes, que solo traían el nombre, se reconocen por el nombre.
+- **Borrar:** solo la Jefe, y solo un proveedor que **no tiene compras** (así no se pierde de dónde salió lo que se compró). Si se equivocaron en un nombre, se edita.
+- El Excel del Resumen trae una hoja **Proveedores** (NIT, contacto, compras hechas, pagado este año y última compra).
 
 ### 8.5 El Panorama (solo la Jefe)
 Lo urgente en un solo lugar: artículos agotados, compras que esperan a la Jefe y al Gerente, compras hechas sin autorización, compras pagadas con más de lo autorizado, pedidos de material que llevan más de 2 días esperando, artículos bajos del mínimo, compras por comprar y por recibir. Más gráficos: gastado este mes, por persona que pidió, por categoría, por proyecto.
@@ -412,6 +447,7 @@ Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin au
 ### 8.7 Lo que nadie puede hacer en Inventario
 - Borrar compras ni movimientos (son el rastro de lo gastado).
 - Editar una compra ya autorizada.
+- Borrar un proveedor que ya tiene compras (solo la Jefe borra uno sin compras).
 - Autorizar lo suyo.
 - Ver lo de otros, si solo tiene nivel «Pide».
 
@@ -421,26 +457,35 @@ Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin au
 
 **Para qué sirve:** llevar el control de computadores y otros equipos (portátiles, monitores, GPS, cámaras, celulares, etc.): dónde está cada uno, quién lo tiene, cuándo tuvo mantenimiento y backup, y las **actas firmadas** de cada entrega.
 
-**Estados de un equipo:** **En bodega · Asignado · En Recibidos** (devuelto, pendiente de mantenimiento).
+**Estados de un equipo:** **En bodega · Asignado · En Recibidos** (devuelto, pendiente de mantenimiento) y **De baja** (retirado para siempre: sale de las cifras y de la lista, y su hoja de vida queda en la sección **«De baja»**).
 
 ### 9.1 Quién hace qué
 
 | Rol / nivel | Qué hace en Equipos |
 |---|---|
-| **Encargado de equipos** (Fabián Barbosa) | **Entrega** equipos con un acta firmada, **recibe** devoluciones, hace **mantenimiento y backup**, **registra equipos nuevos** y corrige actas con problema. |
-| **Soporte** (Ángel Ortiz) | **Recibe y revisa** lo que registra el Encargado, programa tareas en la **Agenda** (mantenimiento, backup, revisión). Con el permiso extra «actas» **revisa las actas** (nunca las suyas). |
-| **Jefe** | Todo. Revisa actas y programa tareas. |
+| **Encargado de equipos** (Fabián Barbosa) | **Entrega** equipos con un acta firmada, **recibe** devoluciones, hace **mantenimiento y backup**, **registra equipos nuevos**, anota su **compra y garantía**, **pide la baja** de un equipo y corrige actas con problema. |
+| **Soporte** (Ángel Ortiz) | **Recibe y revisa** lo que registra el Encargado, programa tareas en la **Agenda** (mantenimiento, backup, revisión) y **verifica equipos** con el escáner. Con el permiso extra «actas» **revisa las actas** (nunca las suyas). |
+| **Jefe** | Todo. Revisa actas, programa tareas, verifica equipos y **aprueba las bajas** (o las da directas). |
 | **Gerente** | Solo ver: Resumen, Equipos, Actas, Personas. |
 | **Quien tenga «Solo ver»** | Mira, no cambia nada. |
 | **Los demás** | No ven Equipos (a menos que la Jefe se lo dé). |
 
 ### 9.2 Las pestañas de Equipos
 - **Lo que me toca:** tareas pendientes de la persona.
-- **Equipos:** la lista de equipos con su estado.
-- **Actas:** las actas de entrega con su revisión.
-- **Agenda:** mantenimientos y backups programados.
-- **Personas:** quién tiene qué equipo.
-- **Resumen:** solo la Jefe (y el Gerente en su versión).
+- **Equipos:** la lista de equipos con su estado. Arriba del listado hay **botones por tipo** (Portátil, Monitor, GPS…) con cuántos hay de cada uno; se pueden sumar al filtro de las cifras de arriba (por ejemplo «En bodega · Portátil»). La línea **«Filtro: …»** dice qué filtro está puesto y tiene su botón **Quitar**. Si no hay resultados, sale **«Quitar filtro»**.
+- **Actas:** las actas de entrega con su revisión, con **buscador** (persona, serial o número de acta).
+- **Agenda:** mantenimientos y backups programados, en grupos: **Atrasadas** (en rojo, solo si hay), **Esta semana** (hasta el domingo) y **Después**. Las ya hechas están plegadas en **«Ver hechas»**.
+- **Personas:** quién tiene qué equipo, con **buscador** (nombre, cédula o serial).
+- **Resumen:** solo la Jefe (y el Gerente en su versión). Además de las cifras trae **«Sin verificar hace más de 6 meses»** y **«Garantías que vencen en 30 días»**.
+
+### 9.2.1 Baja, verificación y garantía de cada equipo
+- **Baja (dar de baja un equipo).** Los motivos son **dañado sin arreglo, robado, perdido u obsoleto**, y siempre lleva una **nota** (qué pasó, al menos unas palabras).
+  - El **Encargado la pide** (botón **«Pedir la baja»** en la hoja de vida de un equipo que está en bodega o en Recibidos). El equipo **sigue donde está** y ya no se ofrece para entregar. A la Jefe le llega un aviso y le sale **«Bajas por aprobar»** en «Lo que me toca».
+  - **Solo la Jefe la aprueba** («Aprobar la baja») o **no la aprueba** («No aprobar», diciendo por qué; la solicitud se quita y el equipo sigue igual). La Jefe también puede darla **directa** («Dar de baja»). Soporte y los demás no pueden darla de baja (lo impiden las reglas de Firebase).
+  - **Un equipo asignado no se da de baja:** primero se recibe (devolución).
+  - Ya de baja, el equipo **sale de las cifras**, ya no se entrega ni se cambia, y las tareas pendientes de la Agenda se cierran. Su hoja de vida (con motivo, nota, quién la pidió y quién la aprobó) queda en **«De baja (N)»** al final de la lista de Equipos («Ver los de baja»). **No hay botón para reactivar** un equipo dado de baja: la baja es definitiva (si fue un error, se corrige a mano en la consola de Firebase).
+- **Verificar equipos** (Soporte y la Jefe). Botón **«Verificar equipos»** en «Lo que me toca» y en Equipos. Se escoge qué se va a revisar (**los de bodega y Recibidos**, **los asignados** o **todos**) y se **escanean uno tras otro** hasta cerrar la cámara (o se escribe el serial y se toca Enter). La pantalla dice en vivo **«Verificados 18 · Sin encontrar 2»**, con la lista de los que faltan. **«Guardar la verificación»** deja en cada equipo escaneado la **fecha de hoy y quién lo verificó** (no agrega líneas al historial). Los de baja no se verifican. Se guardan hasta 400 de una vez.
+- **Compra y garantía** (opcional). Botón **«Compra y garantía»** en la hoja de vida (Encargado y Jefe), al **registrar un equipo nuevo** y en la **base de datos en Excel**: fecha de compra, garantía hasta, proveedor y costo. La garantía no puede terminar antes de la compra. Cuando una garantía vence en 30 días o menos, sale una etiqueta en la tarjeta del equipo y en el Resumen.
 
 ### 9.3 El acta virtual
 1. El Encargado toca **«Entregar»** y escoge a quién y qué equipos.
@@ -451,6 +496,9 @@ Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin au
 6. Si hay un problema, el Encargado **corrige** y vuelve a revisión.
 7. Al devolver, se agrega la **devolución con su firma** a la **misma acta**.
 8. **Las actas no se borran** (solo la Jefe).
+
+### 9.3.1 Escanear el serial con la cámara
+El **Encargado de equipos** puede tocar el botón de **códigos de barras** que está junto al buscador de Equipos: la cámara lee el código o QR del serial y abre la hoja de vida de ese equipo (si no existe, lo dice y deja el serial escrito en el buscador). También hay **«Escanear un equipo»** en la **Entrega** (marca el equipo y abre sus observaciones; si lo tiene otra persona, dice quién) y en la **Devolución** (marca el equipo que llega; si es de otra persona, cambia la lista a su nombre). La primera vez el navegador pide permiso para la cámara. Si no sirve, queda **Tomar foto** o **Escribir a mano**. Funciona sin internet.
 
 ---
 
@@ -464,21 +512,52 @@ Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin au
 
 | Rol / nivel | Qué hace en Vehículos |
 |---|---|
-| **Conductor** (Oscar Farfán) — nivel «Reporta» | **Reporta novedades** (siempre con foto), **registra la salida y la llegada** del carro (con 5 fotos, kilometraje y combustible). Confirma **su** viaje. |
-| **Transporte** (Wilson Muñoz) y **Bodega** (Andrés Beltrán) — nivel «Autoriza» | **Revisan las novedades** (le ponen costo y nota), actualizan los documentos, asignan conductor y ven **Resumen y Reportes**. |
+| **Conductor** (Oscar Farfán) — nivel «Reporta» | **Reporta novedades** (siempre con foto), **registra la salida y la llegada** del carro (con 5 fotos, kilometraje y combustible), **pide un carro** para un viaje y ve los viajes que le aprobaron. Confirma **su** viaje. |
+| **Transporte** (Wilson Muñoz) y **Bodega** (Andrés Beltrán) — nivel «Autoriza» | **Revisan las novedades** (le ponen costo y nota), actualizan los documentos, asignan conductor, llevan el **plan de mantenimiento** de cada carro, **aprueban o rechazan los pedidos de carro** y ven **Resumen y Reportes**. También pueden pedir un carro (lo decide otra persona). |
 | **Jefe** | Todo. |
-| **Gerente** | Solo ver: Resumen, Reportes, Carros, Novedades. |
+| **Gerente** | Solo ver: Resumen, Reportes, Carros, Novedades, Tanqueos. |
 | **Consulta** y quien tenga «Solo ver» | Solo mirar. |
 
 ### 10.2 Las pestañas de Vehículos
-- **Lo que me toca**, **Carros**, **Novedades**.
-- **Resumen** y **Reportes** (solo Transporte, Bodega, Jefe y, en su versión, el Gerente).
+- **Lo que me toca**, **Carros**, **Novedades**, **Tanqueos**. En «Lo que me toca» de Transporte, Bodega y la Jefe sale **«Mantenimientos por hacer»**, y todos los que reportan tienen el botón **«Registrar tanqueo»**.
+- En **Carros** hay un **buscador** (placa, marca, modelo o conductor) y botones **Todos · Disponible · En uso · En taller · Documentos**, cada uno con cuántos hay. Se suman al buscador y a las cifras de arriba (tocar «En uso» arriba o en los botones es lo mismo). Si no hay resultados, sale **«Quitar filtro»**.
+- **Tanqueos** lista los últimos 40 (el más nuevo primero), cada uno con la foto del recibo, y avisa cuántos tienen consumo raro.
+- **Resumen** y **Reportes** (solo Transporte, Bodega, Jefe y, en su versión, el Gerente). El Resumen trae el **costo total de los carros este mes** y **el de cada carro**; Reportes lo trae por periodo (este mes, 3 meses o todo).
+
+### 10.2.1 Pedir un carro (viajes que no son reuniones)
+Para un viaje que no es una reunión (por ejemplo, llevar documentos a Maicao o recoger material) se **pide un carro** desde **«Lo que me toca»** con el botón **«Pedir un carro»**. Lo pueden pedir quienes tienen **nivel de trabajo en Vehículos**: el Conductor, Transporte, Bodega y la Jefe. Quien solo ve (Gerente, Consulta) o no tiene Vehículos no lo pide; si hace falta, la Jefe le sube el nivel.
+1. **Se pide:** el día (desde hoy hasta 90 días), la hora, a dónde va y para qué. Al elegir el día la hoja dice **cuántos carros hay libres ese día**. Les llega el aviso a la Jefe, Transporte y Bodega.
+2. **Se aprueba:** en **«Carros por aprobar»** (Transporte, Bodega y la Jefe) se toca **«Aprobar y escoger carro»** y se escoge el **carro** y el **conductor**. Solo salen los carros **libres ese día**: que no estén en el taller, con el **SOAT y la técnico-mecánica al día ese día**, y sin otra reserva ni **reunión** (los carros que la Jefe autorizó para una reunión ese día no salen, y al revés: un carro reservado no sale para una reunión). O se **rechaza** diciendo por qué.
+3. **Nadie decide lo suyo:** quien pidió un carro no lo aprueba ni lo rechaza (lo hace otra persona); su pedido sale en **«Mis pedidos de carro»**, donde puede **cancelarlo** mientras espera respuesta.
+4. **El conductor** ve el viaje en **«Mis viajes con carro reservado»** (en «Lo que me toca»). El día del viaje aparece **«Registrar salida»** (si el carro está disponible) y, al salir, **«Registrar llegada»**. La **salida y la llegada quedan ligadas a la reserva**; al llegar, la reserva sale de la lista.
+5. **Cancelar:** quien pidió cancela su pedido mientras no lo han respondido; Transporte, Bodega y la Jefe cancelan también una **reserva aprobada** (el carro queda libre otra vez) mientras el carro no haya salido. Se avisa al conductor.
+- **Lo que revisan las reglas de Firebase:** que quien pide tenga nivel de trabajo, que el pedido nazca «pedido» a su nombre y con su correo, que nadie decida lo suyo y que el carro exista, no esté en el taller y tenga los papeles vigentes ese día. Que **no haya dos reservas o reuniones con el mismo carro el mismo día** lo revisa la app (las reglas no pueden contar documentos): si dos personas aprueban al mismo tiempo, podrían chocar; la segunda verá el cambio al abrir de nuevo.
+- Lo reservado se cuenta por **día completo** (la hora es para avisar al conductor): igual que en las reuniones, un carro reservado un día no sale para otra cosa ese día.
+- El Excel de Vehículos no trae todavía una hoja de reservas.
 
 ### 10.3 Reglas que se cumplen
 - **Novedad:** siempre con **foto**. Tipos: llanta, choque, rayón, mantenimiento, otro. El conductor **no puede poner costo**; lo pone quien la revisa.
 - **Salida y llegada:** 5 fotos (frente, atrás, izquierda, derecha, llantas). El **kilometraje nunca baja** (y no puede subir más de 3.000 km de una vez).
+- **Revisión antes de salir (preoperacional).** Son **15 puntos** y cada uno se marca **«Bien» o «Mal»** (empiezan sin marcar, para que nadie pase de largo): **lo más importante** (frenos, llantas, luces, dirección) y **lo demás** (nivel de aceite, nivel de agua, líquido de frenos, cinturones, pito, espejos, limpiabrisas, extintor vigente, botiquín, kit de carretera, llanta de repuesto). Sin marcar todos no se puede registrar la salida.
+  - Si **algo de lo más importante está «Mal»**, sale el aviso **«Este carro no debe salir»** y el botón pasa a **«Reportar y no salir»**: se cuenta qué falla, se toma **una foto** del problema y queda una **novedad** sin revisar; se avisa a la Jefe, Transporte, Bodega y Gerente. El carro **no sale** (no hacen falta el kilometraje ni las 5 fotos).
+  - Si es algo de **lo demás** (por ejemplo, el pito), la salida se puede registrar, pero hay que **contarlo en observaciones** y se avisa a la Jefe y al Gerente.
+  - **En la llegada** la misma lista es **opcional**: se marca solo lo que se note.
+  - La hoja de vida y el Excel de «Salidas y llegadas» dicen cómo salió y cómo llegó cada carro por grupo («Críticos: bien», «Otros: 2 mal (pito, botiquín)»). Las salidas viejas, que solo traían 4 casillas, se siguen leyendo.
+  - La lista es la del plan: **no hay un formato oficial único** (el PESV de la Resolución 40595 de 2022 deja que cada empresa arme el suyo, y los extintores, botiquines, kit de carretera y llanta de repuesto salen del Código de Tránsito, sin confirmar con el texto de la ley). Si Transporte entrega su formato, se cambia la lista en `vehiculos.js` (`REV_CRITICOS` y `REV_OTROS`).
 - Un carro **solo sale** si no está en el taller y tiene el **SOAT y la técnico-mecánica al día**.
 - **Avisos de documentos:** cuando un documento está por vencer o vencido, avisan la Jefe, Transporte y Bodega.
+- **Plan de mantenimiento de cada carro** (en su hoja de vida). Cada carro puede tener hasta **10 tareas** (cambio de aceite, alineación, pastillas de freno…). Cada tarea se pone **cada cuántos km, cada cuántos días, o las dos** (lo que llegue primero), con cuándo se hizo por última vez.
+  - Cada tarea está **«Al día»**, **«Pronto»** (faltan 500 km o menos, o 15 días o menos) o **«Toca ya»** (ya se pasó el km o la fecha). Ejemplo: aceite cada 5.000 km, el último a los 40.000 km y el carro va en 44.700 → faltan 300 km: **Pronto**.
+  - **Quién lo maneja:** Transporte, Bodega y la Jefe agregan tareas, las marcan **«Hecho»** y las quitan. El Conductor y quien solo consulta lo **ven**, pero no lo cambian (las reglas de Firebase también lo impiden).
+  - **«Hecho»** pide el **kilometraje** (si es mayor que el del carro, el carro sube a ese kilometraje), la **fecha** (no puede ser de mañana), el **costo** y una nota; la tarea queda al día y el **historial** del carro guarda la línea («Mantenimiento hecho: Cambio de aceite (62.900 km, …, costó $ 210.000)»).
+  - Lo que está por tocar o ya tocó aparece en **«Mantenimientos por hacer»** (los que ya tocan, primero), en la tarjeta del carro en **Carros** y en la cifra de arriba, que ahora se llama **«Documentos y mantenimientos»** (suma los documentos por vencer o vencidos y los mantenimientos por hacer). El botón **«Documentos y mantenimientos»** de Carros filtra los carros con algo de eso.
+  - El Inicio sigue contando solo documentos (SOAT y técnico-mecánica).
+- **Tanqueos y costo por carro.** Cada vez que un carro echa combustible se registra un **tanqueo** (botón «Registrar tanqueo» en «Lo que me toca», en Tanqueos y en la hoja de vida): **carro, kilometraje, galones** (con decimales, por ejemplo 12,5), **lo que se pagó** en pesos, si **llenó el tanque** y la **foto del recibo** (obligatoria, JPEG pequeña). Lo registran el Conductor, Transporte, Bodega y la Jefe, siempre a su nombre; **no se editan ni se borran después** (solo la Jefe puede corregir). El Gerente y quien solo consulta lo ven.
+  - **Revisiones del formulario:** el kilometraje no puede ser menor que el del último tanqueo de ese carro ni pasarse 3.000 km del que tiene el carro; el precio por galón que sale de dividir lo pagado entre los galones tiene que estar entre $ 5.000 y $ 40.000 (para atrapar un cero de más o de menos).
+  - **Cuánto rinde:** se calcula **de un tanque lleno al siguiente**: los km recorridos entre los galones echados desde el primero. Si en medio hubo un tanqueo que no llenó el tanque, sus galones se suman al siguiente lleno. Por eso importa dejar la marca «Llené el tanque» bien puesta. Sale «Rindió 26,4 km por galón · el combustible costó $ 495 por km» en cada tanqueo que cierra un tramo, y el promedio en la hoja de vida del carro.
+  - **Consumo raro:** si un tramo rinde **más de 25 % menos** que el promedio de los tramos anteriores del mismo carro (hacen falta al menos 2 tramos anteriores), el tanqueo sale marcado y la app avisa a **Transporte, Bodega y la Jefe**. No prueba que haya robo: puede ser una ruta de subida, carga o un error al anotar el kilometraje; sirve para preguntar.
+  - **Costo total de un carro** = novedades revisadas con costo + mantenimientos «Hecho» con costo + combustible. Cada «Hecho» del plan guarda su costo (hasta 12 por tarea) para poder sumar cualquier periodo; los planes hechos antes de esta versión solo tienen el último.
+  - El tanqueo **no sube el kilometraje del carro**: eso lo hacen las salidas y llegadas.
 - Las salidas y llegadas **no se cambian después**.
 - Si un carro de una reunión ya salió, hay que registrar su llegada antes de reasignarlo.
 
@@ -585,10 +664,10 @@ Piden **material** de la bodega y **compras** a su nombre, ven **sus** pedidos y
 | Dónde | Qué baja | Quién lo ve |
 |---|---|---|
 | **Personas y permisos > Descargar plantilla** | La plantilla de personas | Solo la Jefe |
-| **Inventario > Resumen** | Existencias, Movimientos, Compras, Pedidos de material | Quien ve el Resumen |
+| **Inventario > Resumen** | Existencias, Movimientos, Compras, Proveedores (solo para quien ve esa parte), Pedidos de material | Quien ve el Resumen |
 | **Inventario > un artículo > Kárdex** | El historial de ese artículo | Quien ve los movimientos |
-| **Vehículos > Reportes** | Carros, Salidas y llegadas, Novedades, Por conductor | Transporte, Bodega, Jefe, Gerente |
-| **Equipos** (botón abajo) | Equipos y Actas de entrega (sin cédulas ni firmas) | Quien ve Equipos |
+| **Vehículos > Reportes** | Carros (con costo de mantenimientos, combustible, total y km por galón), Salidas y llegadas, Novedades, Tanqueos, Por conductor | Transporte, Bodega, Jefe, Gerente |
+| **Equipos** (botón abajo) | Equipos (con verificación, compra, garantía y motivo de baja) y Actas de entrega (sin cédulas ni firmas) | Quien ve Equipos |
 | **Reuniones** (botón abajo) | Reuniones y Tareas | Quien ve Reuniones |
 
 ### 13.2 Cómo salen (formato)
