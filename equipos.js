@@ -199,7 +199,7 @@
   function htmlEquipos(f) {
     const App = A(), q = buscar.trim().toLowerCase();
     const vis = equipos().filter(e => (!['asignado', 'bodega', 'recibido'].includes(f) || e.estado === f) && (!q || [e.serial, e.asignadoA, e.marca, e.modelo, e.tipo, e.proyecto].join(' ').toLowerCase().includes(q)));
-    let h = `<input class="search" id="qEq" type="search" placeholder="Buscar serial, persona o modelo" autocomplete="off" aria-label="Buscar equipo" value="${esH(buscar)}">`;
+    let h = `<div class="con-scan"><input class="search" id="qEq" type="search" placeholder="Buscar serial, persona o modelo" autocomplete="off" aria-label="Buscar equipo" value="${esH(buscar)}"><button type="button" class="btn-scan" data-accion="escanear" data-id="" aria-label="Escanear el serial con la cámara" title="Escanear el serial"><span data-ico="codigo"></span></button></div>`;
     h += window.ExcelBD.html(cfgEquipos());
     h += `<div class="count" aria-live="polite">${vis.length} de ${D().equipos.length} equipos</div>`;
     if (!vis.length) return h + UI.vacio('equipos', 'No hay equipos con ese filtro', '');
@@ -357,7 +357,7 @@
         `<div class="fields cols">${campoTxt('ehFecha', 'Fecha', hoy(), '', 10, 'date')}${campoTxt('ehCedula', 'Cédula', '', 'Solo números', 12, 'text')}</div>` +
         campoTxt('ehPersona', 'Nombre', '', 'Nombre completo de quien recibe', 80, 'text', 'ehNombres') +
         `<div class="fields cols">${campoSel('ehProy', 'Proyecto', PROYECTOS.map(p => [p[0], p[0]]), PROYECTOS[0][0])}${campoTxt('ehCodigo', 'Código del proyecto', PROYECTOS[0][1], '', 20)}</div>` +
-        `<div class="field"><span class="lbl">Equipos (serial, cantidad y observaciones)</span>${libres.length ? libres.map(e => filaEq(e, e.id === preId)).join('') : '<p class="meta">No hay equipos en bodega para entregar.</p>'}</div>` +
+        `<div class="field"><span class="lbl">Equipos (serial, cantidad y observaciones)</span>${libres.length ? boton('escanear', 'Escanear un equipo', 'codigo', '', 'small', ' data-modo="entrega"') + libres.map(e => filaEq(e, e.id === preId)).join('') : '<p class="meta">No hay equipos en bodega para entregar.</p>'}</div>` +
         `<div class="field"><span class="lbl">Otros (cantidad)</span><div class="otros">${OTROS.map(filaOtro).join('')}${filaOtroLibre(0)}${filaOtroLibre(1)}</div></div>` +
         campoFirma('ehFirmaP', 'Firma de quien recibe', '—'),
       primario: 'Guardar el acta', icono: 'entrega', listo: 'Listo: acta guardada. Soporte ya la tiene para revisarla.', base: fotoBase(libres), numerada: true,
@@ -387,7 +387,7 @@
     const elegido = conEquipos.find(p => p.clave === clave) || conEquipos[0];
     abrir({ titulo: 'Devolución de equipos', sub: 'Se anota en la misma acta de la entrega, con la fecha de devolución y la firma. Lo que llega queda en Recibidos.',
       campos: campoSel('ehQuien', 'Quién devuelve', conEquipos.map(p => [p.clave, `${p.nombre}${p.cedula ? ' · C.C. ' + p.cedula : ''}`]), elegido.clave) +
-        campoTxt('ehFecha', 'Fecha de devolución', hoy(), '', 10, 'date') + '<div class="field" id="ehLista"></div>' +
+        campoTxt('ehFecha', 'Fecha de devolución', hoy(), '', 10, 'date') + `<div class="acc-rap">${boton('escanear', 'Escanear un equipo', 'codigo', '', 'small', ' data-modo="devolucion"')}</div><div class="field" id="ehLista"></div>` +
         campoFirma('ehFirmaP', 'Firma de quien devuelve', elegido.cedula || '—'),
       primario: 'Guardar la devolución', icono: 'devolucion', listo: 'Listo: devolución anotada en el acta. Los equipos quedaron en Recibidos.',
       base: fotoBase(D().equipos.filter(e => e.estado === 'asignado')),
@@ -603,6 +603,53 @@
     return true;
   }
 
+  /* ---------- escáner de seriales ----------
+     codigos.js (lector con la cámara) se descarga solo cuando se toca «Escanear». Si la cámara no sirve, queda escribir a mano. */
+  const normSerial = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const porSerial = s => equipos().find(e => normSerial(e.serial) === normSerial(s));
+  async function leerSerial(titulo, conocidos) {
+    try { await UI.cargarScript('codigos.js?v=1'); }
+    catch (e) { A().toast('No se pudo abrir el lector de códigos. Revisa la conexión o escribe el serial.'); return null; }
+    return window.Codigos.leer({ titulo, conocidos });
+  }
+  /** Quién tiene el equipo, para decirlo cuando no se puede entregar. */
+  const dondeEsta = e => (e.estado === 'asignado' ? `lo tiene ${e.asignadoA || 'alguien'}` : e.estado === 'recibido' ? 'está en Recibidos y falta su mantenimiento o backup' : 'no está en bodega');
+  async function escanear(modo) {
+    if (modo === 'entrega' || modo === 'devolucion') return escanearEnActa(modo);
+    const s = await leerSerial('Escanear el serial del equipo', equipos().map(e => e.serial));
+    if (!s) return true;
+    const e = porSerial(s);
+    if (e) { ver(e); return true; }
+    buscar = s; pintar();
+    A().toast(`No hay un equipo con el serial ${s}`);
+    return true;
+  }
+  /** En el acta de entrega marca el equipo escaneado; en la de devolución marca el que llega (y cambia de persona si es de otra). */
+  async function escanearEnActa(modo) {
+    const cajas = () => Array.from($('eqCampos').querySelectorAll('input[data-eq]'));
+    const deSerial = s => cajas().find(c => { const e = eqPorId(c.dataset.eq); return e && normSerial(e.serial) === normSerial(s); });
+    const s = await leerSerial(modo === 'entrega' ? 'Escanear el equipo que se entrega' : 'Escanear el equipo que devuelve', cajas().map(c => (eqPorId(c.dataset.eq) || {}).serial));
+    if (!s || !accion || $('shEq').hidden) return true;
+    const marcar = c => {
+      const e = eqPorId(c.dataset.eq);
+      if (c.checked) { A().toast(`${e.serial} ya está marcado.`); return; }
+      c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true }));
+      try { c.closest('.eq-acta').scrollIntoView({ block: 'center' }); } catch (x) {}
+      A().toast(`Marcado: ${e.serial}`);
+    };
+    let c = deSerial(s);
+    if (c) { marcar(c); return true; }
+    const e = porSerial(s);
+    if (!e) { A().toast(`No hay un equipo con el serial ${s}`); return true; }
+    if (modo === 'entrega') { A().toast(`El ${e.serial} no se puede entregar: ${dondeEsta(e)}.`); return true; }
+    const dueno = e.estado === 'asignado' ? personas().find(p => p.equipos.some(x => x.id === e.id)) : null;
+    const op = dueno && $('ehQuien') ? Array.from($('ehQuien').options).find(o => o.value === dueno.clave) : null;
+    if (!op) { A().toast(`El ${e.serial} no está por devolver: ${e.estado === 'asignado' ? dondeEsta(e) : 'ya está en ' + (e.estado === 'bodega' ? 'bodega' : 'Recibidos')}.`); return true; }
+    $('ehQuien').value = dueno.clave; $('ehQuien').dispatchEvent(new Event('change', { bubbles: true }));
+    c = deSerial(s); if (c) { if (!c.checked) { c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); } A().toast(`Es de ${dueno.nombre}: cambié la lista a su nombre y marqué el ${e.serial}.`); }
+    return true;
+  }
+
   /* ---------- eventos ---------- */
   $('eqSecciones').addEventListener('click', e => {
     const b = e.target.closest('[data-sec]'); if (!b) return;
@@ -620,6 +667,7 @@
       mtto: () => (eq && esEncargado() && pend(eq).mtto ? trabajo(eq, 'mtto') : null), backup: () => (eq && esEncargado() && pend(eq).backup ? trabajo(eq, 'backup') : null),
       abodega: () => (eq && esEncargado() && eq.estado === 'recibido' && !pend(eq).mtto && !pend(eq).backup ? aBodega(eq) : null),
       revisar: () => (h && puedeRevisar(h) ? revisar(h) : null), corregir: () => (h && h.revision === 'problema' && esEncargado() ? corregir(h) : null),
+      escanear: () => escanear(b.dataset.modo || ''),
       programar: () => (programa() ? programar(eq) : null), hecha: () => (t && t.estado === 'pendiente' && esEncargado() ? hecha(t) : null)
     };
     const fn = mapa[b.dataset.accion]; if (!fn) return;

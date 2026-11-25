@@ -455,6 +455,9 @@ Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin au
 7. Al devolver, se agrega la **devolución con su firma** a la **misma acta**.
 8. **Las actas no se borran** (solo la Jefe).
 
+### 9.3.1 Escanear el serial con la cámara
+El **Encargado de equipos** puede tocar el botón de **códigos de barras** que está junto al buscador de Equipos: la cámara lee el código o QR del serial y abre la hoja de vida de ese equipo (si no existe, lo dice y deja el serial escrito en el buscador). También hay **«Escanear un equipo»** en la **Entrega** (marca el equipo y abre sus observaciones; si lo tiene otra persona, dice quién) y en la **Devolución** (marca el equipo que llega; si es de otra persona, cambia la lista a su nombre). La primera vez el navegador pide permiso para la cámara. Si no sirve, queda **Tomar foto** o **Escribir a mano**. Funciona sin internet.
+
 ---
 
 ## 10. Vehículos

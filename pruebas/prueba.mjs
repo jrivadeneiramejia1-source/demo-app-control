@@ -700,6 +700,38 @@ try {
   await guardarEq();
   await t.page.click('#eqContenido [data-accion="abodega"][data-id="eq-010"]'); await abiertaEq();
   log('con mantenimiento y backup listos, el DEMO-0010 pasa a bodega', await guardarEq() && await hasta(t.page, () => { const e = JSON.parse(localStorage.getItem('__fb_datos')).equipos['eq-010']; return e.estado === 'bodega' && e.asignadoA === '' && e.ultimoBackup && e.ultimoMtto; }));
+  // Escáner de seriales: codigos.js se baja al usarlo. La cámara no se prueba aquí: después del primer intento real se reemplaza el lector por uno falso.
+  log('codigos.js no se descarga al abrir la app, solo al tocar Escanear', await t.page.evaluate(() => !window.Codigos && !document.querySelector('script[src^="codigos.js"]')));
+  await t.page.click('#eqSecciones [data-sec="equipos"]'); await t.page.waitForSelector('#qEq');
+  await t.page.screenshot({ path: path.join(CAPTURAS, '14-equipos-escanear.png') });
+  await t.page.click('#eqContenido [data-accion="escanear"]');
+  log('al tocar Escanear junto al buscador se baja codigos.js y se abre el lector', await hasta(t.page, () => !!window.Codigos && !!document.querySelector('.cod')));
+  await t.page.click('.cod [data-a="cancelar"]');
+  log('Cancelar en el lector no cambia nada', await hasta(t.page, () => !document.querySelector('.cod') && document.getElementById('shEq').hidden && document.getElementById('qEq').value === ''));
+  log('el lector de códigos se prepara con los archivos de lib/codigos, sin pedir nada a internet', await t.page.evaluate(async () => { try { await window.Codigos.cargar(); const r = performance.getEntriesByType('resource').map(x => x.name); return r.some(n => /lib\/codigos\/zxing_reader\.wasm/.test(n)) && !r.some(n => /jsdelivr/.test(n)); } catch (e) { return String(e); } }));
+  const fingir = serial => t.page.evaluate(s => { window.Codigos.leer = async () => s; }, serial);
+  const tocarEscaneo = sel => t.page.click(sel + ' [data-accion="escanear"]');
+  await fingir('demo-0003'); await tocarEscaneo('#eqContenido');
+  log('un serial que existe (aunque venga en minúscula) abre la hoja de vida de ese equipo', await hasta(t.page, () => !document.getElementById('shEq').hidden && /DEMO-0003/.test(document.getElementById('eqT').textContent)));
+  await t.page.click('#eqCerrar'); await hasta(t.page, () => document.getElementById('shEq').hidden);
+  await fingir('XYZ-999'); await tocarEscaneo('#eqContenido');
+  log('un serial que no existe lo dice y lo deja escrito en el buscador', await hasta(t.page, () => /No hay un equipo con el serial XYZ-999/.test(document.getElementById('toast').textContent) && document.getElementById('qEq').value === 'XYZ-999' && /0 de \d+ equipos/.test(document.getElementById('eqContenido').textContent)));
+  await t.page.fill('#qEq', '');
+  await t.page.click('#btnEntregar'); await abiertaEq(); await esp(100);
+  await fingir('demo-0007'); await tocarEscaneo('#eqCampos');
+  log('en la entrega, escanear un equipo de bodega lo marca y abre sus observaciones', await hasta(t.page, () => document.getElementById('ehEq_eq-007').checked && !document.querySelector('[data-fila="eq-007"] .eq-acta-det').hidden && /Marcado: DEMO-0007/.test(document.getElementById('toast').textContent)));
+  await esp(300); await t.page.screenshot({ path: path.join(CAPTURAS, '14b-entrega-escanear.png') });
+  await fingir('DEMO-0001'); await tocarEscaneo('#eqCampos');
+  log('en la entrega, escanear un equipo que ya tiene alguien dice quién lo tiene y no lo marca', await hasta(t.page, () => /DEMO-0001 no se puede entregar: lo tiene Jorge Ibarra/.test(document.getElementById('toast').textContent)) && !(await t.page.$('#ehEq_eq-001')));
+  await fingir('NOEXISTE1'); await tocarEscaneo('#eqCampos');
+  log('en la entrega, un serial que no existe solo avisa', await hasta(t.page, () => /No hay un equipo con el serial NOEXISTE1/.test(document.getElementById('toast').textContent)));
+  await t.page.click('#eqCerrar'); await t.page.click('#cfSi'); await hasta(t.page, () => document.getElementById('shEq').hidden);
+  await t.page.click('#btnDevolver'); await abiertaEq(); await esp(100);
+  await t.page.selectOption('#ehQuien', '1020304050');
+  await fingir('DEMO-0004'); await tocarEscaneo('#eqCampos');
+  log('en la devolución, escanear el equipo de otra persona cambia la lista a su nombre y lo marca', await hasta(t.page, () => document.getElementById('ehQuien').value !== '1020304050' && /Liliana Torres/.test(document.getElementById('ehQuien').selectedOptions[0].textContent) && !!document.getElementById('ehEqD_eq-004') && document.getElementById('ehEqD_eq-004').checked && /Es de Liliana Torres/.test(document.getElementById('toast').textContent)));
+  await t.page.click('#eqCerrar'); await t.page.click('#cfSi'); await hasta(t.page, () => document.getElementById('shEq').hidden);
+  await t.page.click('#eqSecciones [data-sec="hacer"]');
   // «¿Salir sin guardar?» en la hoja de actas
   const salirPreguntaEq = () => hasta(t.page, () => !document.getElementById('shConfirmar').hidden && /Salir sin guardar/.test(document.getElementById('cfSi').textContent));
   await t.page.click('#btnEntregar'); await abiertaEq(); await esp(100);
