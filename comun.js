@@ -230,9 +230,14 @@
     /** Estado vacío con icono, título y texto (el texto puede traer <b> ya escapado). */
     vacio: (icono, titulo, textoHtml, clase) => `<div class="empty-state ${clase || ''}"><span class="vacio-ico">${ico(icono)}</span><span class="vacio-t">${esH(titulo)}</span>${textoHtml ? `<p>${textoHtml}</p>` : ''}</div>`,
     /** Tarjetas fantasma con la forma de la lista mientras carga la base de datos. */
-    esqueleto: (n, conIcono) => `<p class="sr" role="status">Cargando la base de datos…</p>` + Array.from({ length: n || 3 }, (_, i) => `<div class="card esq" aria-hidden="true">
+    esqueleto: (n, conIcono, forma) => `<p class="sr" role="status">Cargando la base de datos…</p>` + (forma === 'fila'
+      // «fila»: renglones delgados (movimientos, kárdex, existencias). Por defecto: tarjetas con ícono.
+      ? `<div class="list">${Array.from({ length: n || 3 }, (_, i) => `<div class="card esq esq-fila" aria-hidden="true"><i style="width:${40 + (i * 19) % 30}%"></i><i style="width:${14 + (i * 7) % 12}%"></i></div>`).join('')}</div>`
+      : Array.from({ length: n || 3 }, (_, i) => `<div class="card esq" aria-hidden="true">
         <div class="esq-cab">${conIcono === false ? '' : '<b></b>'}<span><i style="width:${46 + (i * 17) % 30}%"></i><i style="width:${62 + (i * 11) % 25}%"></i></span></div>
-        <i style="width:${34 + (i * 23) % 40}%"></i></div>`).join(''),
+        <i style="width:${34 + (i * 23) % 40}%"></i></div>`).join('')),
+    /** Cuadritos fantasma del tablero de cifras mientras cargan los datos (así no se ve un «0» falso). */
+    esqueletoCifras: n => Array.from({ length: n || 3 }, () => `<div class="sum esq esq-cifra" aria-hidden="true"><b></b><i></i><i></i></div>`).join(''),
     /** Huella de lo escrito en un formulario, para saber si hay cambios sin guardar. */
     foto: raiz => raiz ? JSON.stringify([...raiz.querySelectorAll('input, select, textarea, [aria-pressed]')].map(x =>
       x.matches('[aria-pressed]') && !x.matches('input, select, textarea') ? x.getAttribute('aria-pressed') : x.type === 'checkbox' ? x.checked : x.value)) : ''

@@ -366,6 +366,10 @@ body.con-hoja .toast { bottom: auto; top: calc(14px + env(safe-area-inset-top, 0
 .esq .esq-cab { display: flex; gap: 12px; align-items: center; }
 .esq .esq-cab b { width: 42px; height: 42px; border-radius: 12px; background: var(--surface-2); flex: none; }
 .esq .esq-cab span { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.esq-fila { display: flex; flex-direction: column; gap: 10px; }
+.esq-cifra { display: flex; flex-direction: column; align-items: center; gap: 8px; min-height: 84px; justify-content: center; }
+.esq-cifra b { width: 28px; height: 28px; border-radius: 9px; background: var(--surface-2); }
+.esq-cifra i:first-of-type { width: 34%; height: 18px; } .esq-cifra i:last-of-type { width: 64%; }
 .esq i, .esq b { background-image: linear-gradient(90deg, transparent 0, color-mix(in srgb, var(--surface) 70%, transparent) 50%, transparent 100%); background-size: 200% 100%; background-repeat: no-repeat; animation: brillo 1.3s linear infinite; }
 
 @keyframes aparecer { from { background-color: transparent; } }

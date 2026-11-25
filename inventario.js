@@ -168,7 +168,7 @@
     q.hidden = !['existencias', 'movimientos', 'compras'].includes(seccion);
     q.placeholder = seccion === 'movimientos' ? 'Buscar artículo, persona o proyecto' : seccion === 'compras' ? 'Buscar compra, proveedor o persona' : 'Buscar artículo, categoría o ubicación';
     const c = $('invContenido');
-    if (['articulos', 'compras', 'solicitudes', 'movimientos'].some(App.cargando)) { c.innerHTML = UI.esqueleto(3); return; }
+    if (['articulos', 'compras', 'solicitudes', 'movimientos'].some(App.cargando)) { c.innerHTML = UI.esqueleto(seccion === 'movimientos' ? 5 : 3, true, seccion === 'movimientos' ? 'fila' : undefined); return; }
     const html = { panorama: htmlPanorama, hacer: perm() === 'pide' ? htmlMios : () => htmlTareas(f), existencias: () => htmlExistencias(f), movimientos: htmlMovimientos, solicitudes: htmlSolicitudes, compras: htmlCompras, conteo: htmlConteo, resumen: htmlResumen }[seccion];
     c.innerHTML = html();
     window.llenarIconos(c);
