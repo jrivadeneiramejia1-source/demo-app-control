@@ -270,6 +270,7 @@
     $('eqCerrar').textContent = o.primario ? 'Cancelar' : 'Cerrar';
     $('eqErr').hidden = true;
     A().abrirHoja('shEq');
+    A().vigilar('shEq', () => $('eqForm'), () => Object.keys(pads).filter(id => $(id) && $('eqCampos').contains($(id))).map(id => pads[id].puntos).join());
     const sh = $('shEq').querySelector('.sheet'); if (sh) sh.scrollTop = 0;
   }
   function aviso(para, titulo, txt, soloActas) {

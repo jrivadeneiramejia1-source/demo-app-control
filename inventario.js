@@ -513,6 +513,7 @@
     $('acCerrar').textContent = o.primario ? 'Cancelar' : 'Cerrar';
     $('acErr').hidden = true;
     A().abrirHoja('shAccion');
+    A().vigilar('shAccion', () => $('acForm'), () => JSON.stringify([cotizaciones.length, extrasN, fotoFactura.length]));
     const sh = $('shAccion').querySelector('.sheet'); if (sh) sh.scrollTop = 0;
   }
   const valor = id => ($(id) ? $(id).value.trim() : '');

@@ -117,6 +117,7 @@ Firebase revisa los permisos extra en las reglas, no solo la pantalla.
 - **Carga bajo demanda**: `gente.js` (panel de la Jefe) se descarga al abrirlo (`UI.cargarScript`). Equipos, Inventario, Vehículos y Reuniones siguen cargando al inicio porque Inicio usa sus resúmenes.
 - **Repintado**: los datos que llegan en ráfaga repintan una sola vez cada 50 ms (`pintarLuego` en `app.js`); si solo llegaron avisos se repinta la campana y no el módulo; `UI.poner` no rehace una lista si su HTML no cambió.
 - **Listas largas** (`UI.pagina`): Kárdex y Movimientos de 50 en 50, historial de un equipo de 30 en 30, con botón «Ver más».
+- **Cambios sin guardar**: en las hojas de Equipos, Vehículos e Inventario, si hay algo escrito (o una foto o una firma) y se toca Cancelar, Escape o fuera de la hoja, la app pregunta «¿Salir sin guardar?» (`App.vigilar` en `app.js`). Al guardar no pregunta, y las hojas de solo ver tampoco. Reuniones no pregunta todavía.
 
 ## Datos en Firestore
 Colecciones nuevas: `invitaciones` (una por correo, en minúscula: nombre, rol, niveles y permisos extra; la crea la Jefe y se gasta al entrar la persona) y `ajustesApp` (`compras` = `{ montoGerente }`, lo cambia solo el Gerente con cuenta propia; `seguridad` = `{ personasPrueba }`, lo cambia solo la Jefe con cuenta propia). En `usuarios`, además del rol, cada perfil puede llevar `permisos` (nivel por módulo que le puso la Jefe). En `compras` y `solicitudes` las cuentas propias dejan su `pideUid`.

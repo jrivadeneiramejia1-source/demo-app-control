@@ -307,6 +307,7 @@
     $('veCerrar').textContent = o.primario ? 'Cancelar' : 'Cerrar';
     $('veErr').hidden = true;
     A().abrirHoja('shVeh');
+    A().vigilar('shVeh', () => $('veForm'), () => JSON.stringify([fotoNov.length, Object.entries(fotos).map(([k, f]) => [k, f.length])]));
     const sh = $('shVeh').querySelector('.sheet'); if (sh) sh.scrollTop = 0;
   }
   function aviso(para, titulo, txt) {

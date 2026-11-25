@@ -324,6 +324,9 @@ Un resumen de lo que le toca a la persona en cada módulo que puede ver: número
 - **Avisos al teléfono (opcional y gratis):** con «Activar avisos», el teléfono recibe una notificación. En iPhone primero hay que instalar la app (Compartir > Agregar a inicio).
 - Cada persona recibe **solo los avisos de su rol**.
 
+### 7.6 «¿Salir sin guardar?»
+En Equipos, Vehículos e Inventario, si escribiste algo (o tomaste una foto o dibujaste una firma) y tocas **Cancelar**, la tecla Escape o fuera de la hoja, la app pregunta «¿Salir sin guardar?». **Cancelar** (te quedas y no pierdes nada) o **Salir sin guardar** (Leave without saving: se pierde lo escrito). Al guardar no pregunta, y en las hojas donde solo se mira (hoja de vida, detalle) tampoco.
+
 ---
 
 ## 8. Inventario a fondo (compras, bodega, pedidos)
