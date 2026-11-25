@@ -127,9 +127,8 @@
     $('eqBotones').hidden = !esEncargado();
     $('btnNuevoEq').hidden = !esEncargado();
     const c = $('eqContenido');
-    if (['equipos', 'hojas', 'tareasEq'].some(App.cargando)) { c.innerHTML = UI.esqueleto(3); return; }
-    c.innerHTML = ({ hacer: htmlHacer, equipos: () => htmlEquipos(f), actas: () => htmlActas(f), agenda: htmlAgenda, personas: htmlPersonas, resumen: htmlResumen })[seccion]();
-    window.llenarIconos(c);
+    if (['equipos', 'hojas', 'tareasEq'].some(App.cargando)) { UI.poner(c, UI.esqueleto(3)); return; }
+    if (UI.poner(c, ({ hacer: htmlHacer, equipos: () => htmlEquipos(f), actas: () => htmlActas(f), agenda: htmlAgenda, personas: htmlPersonas, resumen: htmlResumen })[seccion]())) window.llenarIconos(c);
   }
   const boton = (acc, txt, icono, id, clase, extra) => `<button class="btn ${clase || 'small'}" type="button" data-accion="${acc}" data-id="${esH(id)}"${extra || ''}>${icono ? `<span data-ico="${icono}"></span>` : ''}${esH(txt)}</button>`;
   const firma = s => (typeof s === 'string' && /^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(s) ? s : '');

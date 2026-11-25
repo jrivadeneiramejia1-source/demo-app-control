@@ -242,7 +242,7 @@
         if (S.erroresLectura) delete S.erroresLectura[col];
         if (col === 'buzon') S.errBuzon = '';
         if (col !== 'avisos' || !$('avisoError').hidden) error(errorVisible());
-        pintarTodo();
+        pintarLuego(col);
       }, e => {
         S.llegaron.add(col);   // así la pantalla deja de mostrar «cargando» y dice qué pasó
         // La bandeja dice su error dentro de Correos (por ejemplo, si todavía no se pegaron las reglas nuevas).
@@ -443,6 +443,19 @@
     Object.entries(b).forEach(([k, v]) => UI.insignia(document.querySelector(`[data-badge="${k}"]`), puedeVer(k) ? v : 0));
   }
 
+  /** Los datos llegan en ráfaga (una colección tras otra): se repinta una sola vez por cada 50 ms.
+      Si lo único que llegó fueron avisos, solo se repinta la campana y no el módulo abierto. */
+  let colsNuevas = null, repinto = 0;
+  function pintarLuego(col) {
+    if (!colsNuevas) colsNuevas = new Set();
+    colsNuevas.add(col);
+    if (repinto) return;
+    repinto = setTimeout(() => {
+      const cols = colsNuevas; colsNuevas = null; repinto = 0;
+      if (!S.persona) return;
+      if ([...cols].every(c => c === 'avisos')) { pintarInsignias(); pintarAvisos(); } else pintarTodo();
+    }, 50);
+  }
   function pintarTodo() {
     if (!S.persona) return;
     pintarInsignias();

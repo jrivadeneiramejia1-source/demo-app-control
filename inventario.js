@@ -168,10 +168,9 @@
     q.hidden = !['existencias', 'movimientos', 'compras'].includes(seccion);
     q.placeholder = seccion === 'movimientos' ? 'Buscar artículo, persona o proyecto' : seccion === 'compras' ? 'Buscar compra, proveedor o persona' : 'Buscar artículo, categoría o ubicación';
     const c = $('invContenido');
-    if (['articulos', 'compras', 'solicitudes', 'movimientos'].some(App.cargando)) { c.innerHTML = UI.esqueleto(seccion === 'movimientos' ? 5 : 3, true, seccion === 'movimientos' ? 'fila' : undefined); return; }
+    if (['articulos', 'compras', 'solicitudes', 'movimientos'].some(App.cargando)) { UI.poner(c, UI.esqueleto(seccion === 'movimientos' ? 5 : 3, true, seccion === 'movimientos' ? 'fila' : undefined)); return; }
     const html = { panorama: htmlPanorama, hacer: perm() === 'pide' ? htmlMios : () => htmlTareas(f), existencias: () => htmlExistencias(f), movimientos: htmlMovimientos, solicitudes: htmlSolicitudes, compras: htmlCompras, conteo: htmlConteo, resumen: htmlResumen }[seccion];
-    c.innerHTML = html();
-    window.llenarIconos(c);
+    if (UI.poner(c, html())) window.llenarIconos(c);
   }
 
   const subChips = (clave, ops) => `<div class="chips sub" role="group" aria-label="Filtrar">${ops.map(([k, n, cuenta]) => `<button type="button" class="chip" data-sub="${clave}" data-val="${k}" aria-pressed="${sub[clave] === k}">${esH(n)}${cuenta != null ? ` <span class="n">${cuenta}</span>` : ''}</button>`).join('')}</div>`;

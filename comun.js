@@ -236,6 +236,9 @@
       : Array.from({ length: n || 3 }, (_, i) => `<div class="card esq" aria-hidden="true">
         <div class="esq-cab">${conIcono === false ? '' : '<b></b>'}<span><i style="width:${46 + (i * 17) % 30}%"></i><i style="width:${62 + (i * 11) % 25}%"></i></span></div>
         <i style="width:${34 + (i * 23) % 40}%"></i></div>`).join('')),
+    /** Pone el HTML en un elemento solo si cambió desde la última vez (así no se rehace la pantalla, ni se pierde el desplazamiento, por un dato que llegó igual).
+        Devuelve true si lo cambió. */
+    poner: (el, html) => { if (el._html === html && el.firstChild) return false; el.innerHTML = html; el._html = html; return true; },
     /** Carga un script propio la primera vez que hace falta (una sola vez, aunque se pida varias). Devuelve una promesa. */
     cargarScript: (() => { const hechos = {}; return src => hechos[src] || (hechos[src] = new Promise((ok, mal) => {
       const s = document.createElement('script'); s.src = src; s.onload = ok;

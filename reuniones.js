@@ -118,9 +118,8 @@
     ]);
     $('reuSecciones').innerHTML = secciones().map(([k, t]) => `<button type="button" class="chip" data-sec="${k}" aria-pressed="${seccion === k}">${esH(t)}${k === 'hacer' && n.mias ? ` <span class="n">${n.mias}</span>` : ''}</button>`).join('');
     const c = $('reuContenido');
-    if (['reuniones', 'necesidades'].some(App.cargando)) { c.innerHTML = UI.esqueleto(3); return; }
-    c.innerHTML = ({ hacer: () => htmlTareas(f), correos: htmlCorreos, proximas: () => htmlLista(true), pasadas: () => htmlLista(false), resumen: htmlResumen })[seccion]();
-    window.llenarIconos(c);
+    if (['reuniones', 'necesidades'].some(App.cargando)) { UI.poner(c, UI.esqueleto(3)); return; }
+    if (UI.poner(c, ({ hacer: () => htmlTareas(f), correos: htmlCorreos, proximas: () => htmlLista(true), pasadas: () => htmlLista(false), resumen: htmlResumen })[seccion]())) window.llenarIconos(c);
   }
   const boton = (acc, txt, icono, id, clase) => `<button class="btn ${clase || 'small'}" type="button" data-accion="${acc}" data-id="${esH(id)}">${icono ? `<span data-ico="${icono}"></span>` : ''}${esH(txt)}</button>`;
   const cuando = r => { const d = Math.round((new Date(r.fecha + 'T12:00:00') - new Date(hoy() + 'T12:00:00')) / 86400000); return d === 0 ? 'hoy' : d === 1 ? 'mañana' : d === -1 ? 'ayer' : d > 0 ? `en ${d} días` : `hace ${-d} días`; };
