@@ -90,6 +90,24 @@
     if (esJefe()) s.push(['resumen', 'Resumen']);
     return s;
   }
+  /** Excel de Equipos: la lista de equipos y las actas de entrega (sin cédulas ni firmas: esos datos se quedan en la app). */
+  async function descargarExcel(b) {
+    b.disabled = true;
+    try {
+      const gen = `Generado el ${A().hoyISO()}.`, f = window.Inventario.fechaLocal, E = window.Excel;
+      const equipos = D().equipos.slice().sort((x, y) => String(x.serial).localeCompare(String(y.serial))).map(e => ({ Serial: e.serial, Tipo: e.tipo, Marca: e.marca, Modelo: e.modelo, Estado: (EST[e.estado] || [e.estado])[0],
+        'Asignado a': e.asignadoA || '', Proyecto: e.proyecto || '', 'Último mantenimiento': e.ultimoMtto || '', 'Último backup': e.ultimoBackup || '', Observaciones: e.obs || '' }));
+      const actas = D().hojas.slice().sort((x, y) => Number(y.numero) - Number(x.numero)).map(h => ({ 'Acta N.°': Number(h.numero) || 0, Fecha: f(h.en, false) || h.fecha || '', 'Recibió': h.persona, Proyecto: h.proyecto || '',
+        'Equipos entregados': lista(h.equipos).map(x => `${x.serial} (${x.tipo})`).join(', '), 'Otros elementos': lista(h.otros).map(x => `${x.nombre} x${x.cantidad}`).join(', '), 'Devoluciones': lista(h.devoluciones).length,
+        'Revisión': ({ pendiente: 'Por revisar', ok: 'Bien', problema: 'Con problema' })[h.revision] || h.revision, 'Nota de la revisión': h.notaRevision || '', Entregó: h.encargado || h.por || '' }));
+      await E.descargar({ archivo: `Equipos ${A().hoyISO()}`, hojas: [
+        E.deObjetos('Equipos', 'Equipos', `Cada equipo con su estado, a quién está asignado y su último mantenimiento y backup. ${gen}`, equipos),
+        E.deObjetos('Actas de entrega', 'Actas de entrega', `Cada acta con lo que se entregó y cómo salió la revisión. No trae cédulas ni firmas. ${gen}`, actas)] });
+      A().toast('Listo: Excel descargado');
+    } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
+    finally { b.disabled = false; }
+  }
+  $('btnExcelEq').addEventListener('click', e => descargarExcel(e.currentTarget));
   function pintar() {
     const App = A(), S = App.S;
     if (!S.persona) return;

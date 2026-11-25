@@ -76,6 +76,21 @@ try {
 
   console.log('2. Entrada y datos de prueba (Jefe)');
   const t = await telefono();
+  /** Abre un Excel ya descargado y dice cómo quedó: hojas, título, títulos en negrilla con fondo y bordes, primera fila fija, listas y filas. */
+  const excelInfo = ruta => t.page.evaluate(async b64 => {
+    const E = await window.Excel.cargar(), wb = new E.Workbook();
+    await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer);
+    const hojas = wb.worksheets.map(ws => {
+      const a1 = ws.getCell(1, 1), enc = ws.getRow(4), c1 = enc.getCell(1), d1 = ws.getCell(5, 1);
+      const titulos = []; enc.eachCell(c => titulos.push(String(c.value)));
+      const filas = []; for (let i = 5; i <= ws.rowCount; i++) { const f = ws.getRow(i), v = []; for (let j = 1; j <= titulos.length; j++) v.push(f.getCell(j).value == null ? '' : String(f.getCell(j).value)); filas.push(v); }
+      return { nombre: ws.name, oculta: ws.state !== 'visible', titulo: String(a1.value), tituloNegrilla: !!(a1.font && a1.font.bold), tituloTam: a1.font && a1.font.size, fuente: a1.font && a1.font.name,
+        titulos, encNegrilla: !!(c1.font && c1.font.bold), encFondo: !!(c1.fill && c1.fill.fgColor && c1.fill.fgColor.argb), encBorde: !!(c1.border && c1.border.top && c1.border.top.style), datoBorde: !!(d1.border && d1.border.left && d1.border.left.style),
+        congelada: ws.views && ws.views[0] && ws.views[0].ySplit, filtro: !!ws.autoFilter, lista: ws.getCell(5 + 0, 3).dataValidation ? ws.getCell(5, 3).dataValidation.type : '', filas };
+    });
+    return hojas;
+  }, fs.readFileSync(ruta).toString('base64'));
+  const bienFormado = h => h.tituloNegrilla && h.tituloTam >= 14 && h.fuente === 'Arial' && h.encNegrilla && h.encFondo && h.encBorde && h.congelada === 4 && h.filtro;
   await t.page.goto(URL);
   log('muestra las 46 personas del organigrama agrupadas en 6 unidades, con un buscador y el aviso de qué es real y qué inventado', await hasta(t.page, () => document.querySelectorAll('#entradaLista .persona-card').length === 46 && document.querySelectorAll('#entradaLista details.grupo-personas').length === 6 && !!document.querySelector('#entradaLista .filtro-personas') && /nombres y cargos son los del organigrama/.test(document.getElementById('notaDemo').textContent) && !!document.querySelector('img.logo-empresa')));
   await t.page.screenshot({ path: path.join(CAPTURAS, '01b-entrada-organigrama.png'), fullPage: true });
@@ -142,7 +157,8 @@ try {
   }
   log('la Jefe puede descargar el Excel del resumen', !!(await t.page.$('#invContenido [data-accion="excel"]')));
   const [descarga] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#invContenido [data-accion="excel"]')]);
-  log('el Excel se descarga con 4 hojas', !!descarga && /Inventario demo .*\.xlsx$/.test(descarga.suggestedFilename()), descarga ? descarga.suggestedFilename() : 'sin descarga');
+  if (descarga) { const ruta = path.join(CAPTURAS, 'excel-inventario.xlsx'); await descarga.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del inventario trae título, columnas en negrilla con cuadros y la primera fila fija (4 hojas)', hs.length === 4 && hs.every(bienFormado) && hs.every(h => h.filas.length >= 1), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); log('los valores de plata salen en pesos y no como texto', await t.page.evaluate(async b64 => { const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer); const ws = wb.getWorksheet('Existencias'); let ok = false; ws.getRow(4).eachCell((c, j) => { if (/Precio/.test(String(c.value))) { const x = ws.getRow(5).getCell(j); ok = typeof x.value === 'number' && /\$/.test(x.numFmt || ''); } }); return ok; }, fs.readFileSync(ruta).toString('base64'))); }
+  log('el Excel se descarga con 4 hojas', !!descarga && /^Inventario .*\.xlsx$/.test(descarga.suggestedFilename()), descarga ? descarga.suggestedFilename() : 'sin descarga');
   await t.page.click('#invSecciones [data-sec="compras"]');
   await t.page.click('#invContenido .chip[data-val="todas"]');
   await t.page.click('#invContenido [data-accion="vercompra"][data-id="co-007"]');
@@ -227,7 +243,19 @@ try {
   log('Reportes del Gerente: por carro (4), por conductor y salidas con km recorridos', await hasta(t.page, () => { const x = document.getElementById('vehContenido').textContent; return document.querySelectorAll('#vehContenido .card[data-accion="ver"]').length === 4 && /Por conductor/.test(x) && /Oscar Farfán/.test(x) && /Salidas y llegadas \(2\)/.test(x) && /100 km en/.test(x) && /todavía no llega/.test(x); }), await texto(t.page, '#vehContenido'));
   await t.page.screenshot({ path: path.join(CAPTURAS, '06b-reportes-gerente.png'), fullPage: true });
   const [excelVeh] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#vehContenido [data-accion="excelveh"]')]);
-  log('el Gerente descarga el Excel de vehículos', !!excelVeh && /^Vehiculos demo .*\.xlsx$/.test(excelVeh.suggestedFilename()), excelVeh ? excelVeh.suggestedFilename() : 'sin descarga');
+  if (excelVeh) { const ruta = path.join(CAPTURAS, 'excel-vehiculos.xlsx'); await excelVeh.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel de vehículos tiene el mismo formato (título, negrillas, cuadros)', hs.length === 4 && hs.every(bienFormado), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); }
+  log('el Gerente descarga el Excel de vehículos', !!excelVeh && /^Vehiculos .*\.xlsx$/.test(excelVeh.suggestedFilename()), excelVeh ? excelVeh.suggestedFilename() : 'sin descarga');
+  await t.page.click('.tab[data-vista="equipos"]'); await esp(300);
+  const [excelEq] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#btnExcelEq')]);
+  if (excelEq) { const ruta = path.join(CAPTURAS, 'excel-equipos.xlsx'); await excelEq.saveAs(ruta); const hs = await excelInfo(ruta);
+    log('el Excel de Equipos trae equipos y actas con el mismo formato, y sin cédulas ni firmas', /^Equipos .*\.xlsx$/.test(excelEq.suggestedFilename()) && hs.length === 2 && hs.every(bienFormado) && hs[0].filas.length >= 5 && !JSON.stringify(hs).match(/\b\d{7,10}\b|data:image/), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h), h.filas.length]))); }
+  else log('el Excel de Equipos se descarga', false);
+  await t.page.click('.tab[data-vista="reuniones"]'); await esp(300);
+  const [excelReu] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#btnExcelReu')]);
+  if (excelReu) { const ruta = path.join(CAPTURAS, 'excel-reuniones.xlsx'); await excelReu.saveAs(ruta); const hs = await excelInfo(ruta);
+    log('el Excel de Reuniones trae reuniones y tareas con el mismo formato', /^Reuniones .*\.xlsx$/.test(excelReu.suggestedFilename()) && hs.length === 2 && hs.every(bienFormado) && hs[0].filas.length >= 4 && hs[1].filas.length >= 10, JSON.stringify(hs.map(h => [h.nombre, bienFormado(h), h.filas.length]))); }
+  else log('el Excel de Reuniones se descarga', false);
+  await t.page.click('.tab[data-vista="vehiculos"]'); await esp(200);
   await t.page.click('#vehSecciones [data-sec="novedades"]');
   log('el Gerente ve las novedades con su foto pero no puede revisarlas ni reportar', await hasta(t.page, () => document.querySelectorAll('#vehContenido .nov-foto').length === 3 && !document.querySelector('#vehContenido [data-accion="revisar"], #vehContenido [data-accion="novedad"]')));
   await t.page.click('.tab[data-vista="inventario"]');
@@ -425,6 +453,7 @@ try {
   await t.page.click('#acCampos [data-accion="kardex"]');
   log('el kárdex lista cada movimiento con lo que quedó, incluida la entrada de 8', await hasta(t.page, () => /Kárdex: Cinta aislante/.test(document.getElementById('acT').textContent) && /Compra recibida/.test(document.getElementById('acCampos').textContent) && document.querySelectorAll('#acCampos .lineas-tabla tbody tr').length >= 1 && /\+8/.test(document.getElementById('acCampos').textContent)));
   const [descK] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#acCampos [data-accion="excelkardex"]')]);
+  if (descK) { const ruta = path.join(CAPTURAS, 'excel-kardex.xlsx'); await descK.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del kárdex tiene formato y su título dice el artículo', hs.length === 1 && bienFormado(hs[0]) && /Cinta aislante/.test(hs[0].titulo), JSON.stringify(hs.map(h => [h.nombre, h.titulo]))); }
   log('descarga el Excel de ese artículo', !!descK && /^Kardex Cinta aislante .*\.xlsx$/.test(descK.suggestedFilename()), descK && descK.suggestedFilename());
   await t.page.keyboard.press('Escape');
   await t.page.locator('#invContenido [data-accion="verart"][data-id="ar-004"]').click();
@@ -671,9 +700,17 @@ try {
   log('el panel trae el Excel, las personas, los códigos y la seguridad', await t.page.evaluate(() => { const x = document.getElementById('genteCuerpo').textContent; return /Descargar plantilla/.test(x) && /Subir Excel/.test(x) && /Personas registradas/.test(x) && /Códigos por rol/.test(x) && /Personas de prueba: encendidas/.test(x); }));
 
   // --- Excel: plantilla y subida con filas buenas y malas ---
+  let plantillaBajada = '';
   const [descPlantilla] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#genteCuerpo [data-g="plantilla"]')]);
   log('descPlantilla la plantilla de Excel con personas inventadas', !!descPlantilla && descPlantilla.suggestedFilename() === 'Plantilla personas.xlsx', descPlantilla && descPlantilla.suggestedFilename());
-  if (descPlantilla) { const ruta = path.join(CAPTURAS, 'plantilla-descPlantillada.xlsx'); await descPlantilla.saveAs(ruta); const l = await xlsxLeer(ruta); log('la plantilla trae 3 ejemplos con el correo example.com y una hoja de ayuda', l.filas.length === 3 && l.filas.every(x => /@example\.com$/.test(x.Correo)) && l.hojas.includes('Ayuda')); }
+  if (descPlantilla) {
+    const ruta = path.join(CAPTURAS, 'plantilla-descPlantillada.xlsx'); await descPlantilla.saveAs(ruta); const hs = await excelInfo(ruta), p = hs.find(h => h.nombre === 'Personas');
+    log('la plantilla trae las hojas Personas, Ayuda, Roles y una de listas oculta', ['Personas', 'Ayuda', 'Roles', 'Listas'].every(n => hs.some(h => h.nombre === n)) && hs.find(h => h.nombre === 'Listas').oculta && !p.oculta, JSON.stringify(hs.map(h => h.nombre)));
+    log('la hoja Personas tiene título en negrilla, columnas en negrilla con color y cuadros, y la primera fila fija', !!p && bienFormado(p) && p.titulo === 'Plantilla de personas' && p.titulos.join() === 'Nombre,Correo,Rol,Equipos,Inventario,Vehículos,Reuniones,Permisos extra,Estado', JSON.stringify(p && p.titulos));
+    log('trae a la Jefe que ya está (Ya registrada) y 2 filas de ejemplo, y debajo filas vacías con cuadros', !!p && p.filas.some(f => /jefa\.real@ejemplo\.test/.test(f[1]) && f[8] === 'Ya registrada') && p.filas.filter(f => /^Ejemplo/.test(f[8])).length === 2 && p.filas.filter(f => f.every(x => x === '')).length >= 10);
+    log('Rol, Equipos, Inventario, Vehículos, Reuniones y Permisos extra tienen lista desplegable', await t.page.evaluate(async b64 => { const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer); const ws = wb.getWorksheet('Personas'), fila = ws.rowCount; return [3, 4, 5, 6, 7, 8].every(c => { const v = ws.getCell(fila, c).dataValidation; return v && v.type === 'list'; }) && !ws.getCell(fila, 1).dataValidation; }, fs.readFileSync(ruta).toString('base64')));
+    plantillaBajada = ruta;
+  }
   const rutaXlsx = path.join(CAPTURAS, 'personas-de-prueba.xlsx');
   await xlsxCrear([
     { Nombre: ' Gina   Gerente ', 'Correo electrónico': 'GINA.Gerente@ejemplo.test', Cargo: 'Profesional' },
@@ -766,6 +803,22 @@ try {
   await t.page.screenshot({ path: path.join(CAPTURAS, '07b-permisos-por-persona.png'), fullPage: true });
   await t.page.click(`#genteCuerpo [data-g="pausar"][data-id="${uidMario}"]`); await t.page.click('#cfSi');
   log('la Jefe pausa el acceso de Mario', await hasta(t.page, i => JSON.parse(localStorage.getItem('__fb_datos')).usuarios[i].activo === false, uidMario));
+  // --- La misma plantilla, con una persona nueva agregada, se vuelve a subir: solo se guarda lo nuevo ---
+  const rutaIda = path.join(CAPTURAS, 'plantilla-con-nueva.xlsx');
+  fs.writeFileSync(rutaIda, Buffer.from(await t.page.evaluate(async b64 => {
+    const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer);
+    const ws = wb.getWorksheet('Personas'); let fila = 5; while (ws.getCell(fila, 1).value) fila++;
+    [['Nueva Persona Plantilla', 'nueva.plantilla@ejemplo.test', 'Logística', '', '', '', '', '', ''], ['Fila Con Error', 'sin-arroba', 'Presidente', '', '', '', '', '', '']].forEach((v, k) => v.forEach((x, c) => { ws.getCell(fila + k, c + 1).value = x; }));
+    const buf = await wb.xlsx.writeBuffer(); let s = ''; new Uint8Array(buf).forEach(c => { s += String.fromCharCode(c); }); return btoa(s);
+  }, fs.readFileSync(plantillaBajada).toString('base64')), 'base64'));
+  await t.page.setInputFiles('#genteArchivo', rutaIda);
+  log('al subir la plantilla con una persona nueva: 1 lista, 1 con problema, y lo que ya estaba y los ejemplos se omiten', await hasta(t.page, () => { const x = document.getElementById('genteCuerpo').textContent; return /1 lista para guardar/.test(x) && /1 con problema/.test(x) && /ya estaba(n)? en la app \(no se tocan\)/.test(x) && /2 filas de ejemplo \(se ignoran\)/.test(x); }), await texto(t.page, '#genteCuerpo'));
+  log('las filas ya registradas no salen como error ni como lista nueva', await t.page.evaluate(() => !/Esa persona ya tiene cuenta/.test(document.getElementById('genteCuerpo').textContent) && !/Jefa Real/.test(document.querySelector('#genteCuerpo .persona-reg.pausada, #genteCuerpo .persona-reg') ? [...document.querySelectorAll('#genteCuerpo .persona-reg')].filter(c => /Fila \d+/.test(c.textContent)).map(c => c.textContent).join(' ') : '')));
+  await t.page.click('#genteCuerpo [data-g="guardarinv"]');
+  log('«Guardar» deja solo la invitación nueva', await hasta(t.page, () => { const i = JSON.parse(localStorage.getItem('__fb_datos')).invitaciones || {}; return !!i['nueva.plantilla@ejemplo.test'] && i['nueva.plantilla@ejemplo.test'].rol === 'logistica' && !i['jefa.real@ejemplo.test'] && !i['persona.uno@example.com']; }));
+  await t.page.setInputFiles('#genteArchivo', rutaIda);
+  log('si sube la misma plantilla otra vez, la invitación que ya estaba tampoco se repite', await hasta(t.page, () => /0 listas para guardar/.test(document.getElementById('genteCuerpo').textContent) && /ya estaba(n)? en la app/.test(document.getElementById('genteCuerpo').textContent)));
+  await t.page.click('#genteCuerpo [data-g="descartar"]');
   await t.page.evaluate(() => { document.getElementById('genteCodigos').open = true; });
   await t.page.click('#genteCuerpo [data-g="crear"][data-rol="logistica"]');
   const codLog = await (async () => (await hasta(t.page, () => !!document.querySelector('#genteCuerpo [data-g="copiar"][data-id^="LOG-"]'))) ? t.page.evaluate(() => document.querySelector('#genteCuerpo [data-g="copiar"][data-id^="LOG-"]').dataset.id) : '')();

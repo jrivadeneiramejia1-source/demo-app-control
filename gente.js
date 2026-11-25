@@ -46,7 +46,7 @@
   };
   const EXTRA_ALIAS = { compra: 'compra', compras: 'compra', actas: 'actas', encargada: 'encargada', 'encargada de reuniones': 'encargada' };
   const COLUMNA = { nombre: 'nombre', nombres: 'nombre', 'nombre completo': 'nombre', correo: 'correo', email: 'correo', 'e-mail': 'correo', 'correo electronico': 'correo', rol: 'rol', cargo: 'rol',
-    equipos: 'equipos', inventario: 'inventario', vehiculos: 'vehiculos', reuniones: 'reuniones', extras: 'extras', 'permisos extra': 'extras', 'permiso extra': 'extras' };
+    equipos: 'equipos', inventario: 'inventario', vehiculos: 'vehiculos', reuniones: 'reuniones', extras: 'extras', 'permisos extra': 'extras', 'permiso extra': 'extras', estado: 'estado' };
   const rolDeTexto = t => {
     const n = norm(t).replace(/\./g, ' ').replace(/\s+/g, ' ').trim(); if (!n) return null;
     if (ROL_ALIAS[n]) return ROL_ALIAS[n];
@@ -67,12 +67,16 @@
       const nombre = String(f.nombre == null ? '' : f.nombre).replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
       const correo = String(f.correo == null ? '' : f.correo).replace(/\s+/g, '').toLowerCase();
       const rol = rolDeTexto(f.rol);
+      const fila = crudo.__fila || i + 2;
+      // Lo que ya está en la app (o es de ejemplo) no se vuelve a guardar: así se puede subir la misma plantilla con las personas nuevas agregadas.
+      const marca = norm(f.estado);
+      if (marca.startsWith('ejemplo')) return { fila, nombre, correo, rol, permisos: {}, extras: [], errores, avisos, omitida: 'ejemplo' };
+      if (correo && registrados.has(correo)) { vistos.add(correo); return { fila, nombre, correo, rol, permisos: {}, extras: [], errores, avisos, omitida: 'registrada' }; }
       if (nombre.length < 3) errores.push('Falta el nombre (mínimo 3 letras).');
       else if (/^[=+\-@]/.test(nombre)) errores.push('El nombre no puede empezar con = + - ni @.');
       if (!/^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/.test(correo) || correo.length > 80) errores.push('El correo no está bien escrito.');
       else if (D.porCorreo(correo)) errores.push('Ese correo es de una persona de prueba.');
       else if (vistos.has(correo)) errores.push('El correo está repetido en el Excel.');
-      else if (registrados.has(correo)) errores.push('Esa persona ya tiene cuenta. Cámbiale el rol o los permisos en la lista de abajo.');
       if (correo) vistos.add(correo);
       if (!rol) errores.push(`No entendí el rol «${String(f.rol == null ? '' : f.rol).slice(0, 30)}». Usa uno de la hoja Ayuda.`);
       const permisos = {};
@@ -91,8 +95,13 @@
         else if (rol && !e.roles.includes(rol)) errores.push(`El permiso extra «${e.txt}» no sirve para ese rol.`);
         else if (!extras.includes(id)) extras.push(id);
       });
-      if (!errores.length && invitados.has(correo)) avisos.push('Ya tenía invitación: se reemplaza.');
-      return { fila: i + 2, nombre, correo, rol, permisos, extras, errores, avisos };
+      if (!errores.length && invitados.has(correo)) {
+        const ya = S.datos.invitaciones.find(x => String(x.id).toLowerCase() === correo), mismo = ya && ya.nombre === nombre && ya.rol === rol
+          && JSON.stringify(Object.entries(ya.permisos || {}).sort()) === JSON.stringify(Object.entries(permisos).sort()) && JSON.stringify((ya.extras || []).slice().sort()) === JSON.stringify(extras.slice().sort());
+        if (mismo) return { fila, nombre, correo, rol, permisos, extras, errores, avisos, omitida: 'invitada' };
+        avisos.push('Ya tenía invitación: se reemplaza con lo nuevo.');
+      }
+      return { fila, nombre, correo, rol, permisos, extras, errores, avisos, omitida: '' };
     });
   }
 
@@ -104,29 +113,65 @@
     const X = await xlsx();
     const libro = X.read(await archivo.arrayBuffer(), { type: 'array' });
     const hoja = libro.Sheets[libro.SheetNames[0]];
-    const filas = X.utils.sheet_to_json(hoja, { defval: '', raw: false });
-    if (!filas.length) throw new Error('No encontré filas. Revisa que la primera hoja tenga los títulos y las personas.');
+    // Los títulos pueden estar en la fila 1 (archivo simple) o más abajo (la plantilla trae un título y una explicación arriba).
+    const matriz = X.utils.sheet_to_json(hoja, { header: 1, defval: '', raw: false, blankrows: true });
+    const esTitulos = fila => fila.filter(c => COLUMNA[norm(c)]).length >= 2 && fila.some(c => COLUMNA[norm(c)] === 'correo');
+    const h = matriz.slice(0, 20).findIndex(esTitulos);
+    if (h < 0) throw new Error('No encontré los títulos (Nombre, Correo y Rol). Usa la plantilla que baja el botón «Descargar plantilla».');
+    const titulos = matriz[h].map(c => String(c));
+    const filas = [];
+    matriz.slice(h + 1).forEach((fila, k) => {
+      if (!fila.some(c => String(c == null ? '' : c).trim() !== '')) return;   // fila vacía: se salta
+      const o = { __fila: h + k + 2 };
+      titulos.forEach((tt, j) => { if (tt.trim() !== '') o[tt] = fila[j] == null ? '' : fila[j]; });
+      filas.push(o);
+    });
+    if (!filas.length) throw new Error('No encontré filas con personas. Escribe las personas debajo de los títulos.');
     if (filas.length > MAX_FILAS) throw new Error(`El Excel tiene ${filas.length} filas y el máximo es ${MAX_FILAS}. Súbelo en partes.`);
     return entender(filas);
   }
-  /** Plantilla con personas inventadas y una hoja de ayuda con los roles y niveles que sirven. */
+  // Texto de cada nivel como lo entiende el lector del Excel (y como sale en las listas desplegables).
+  const NIVEL_TXT = { no: 'Sin acceso', ver: 'Solo ver', encargado: 'Encargado', soporte: 'Soporte', pide: 'Pide material', finanzas: 'Finanzas', compra: 'Hace las compras', bodega: 'Encargada de bodega', reporta: 'Reporta', autoriza: 'Autoriza' };
+  const MODULOS = [['equipos', 'Equipos'], ['inventario', 'Inventario'], ['vehiculos', 'Vehículos'], ['reuniones', 'Reuniones']];
+  const nivelTxt = (p, m) => { const v = (p || {})[m]; return v ? (NIVEL_TXT[v] || '') : ''; };
+  const extrasTxt = (rol, lista) => window.DEMO.extrasDe(rol, lista).join(', ');
+  /** Plantilla con formato: título, columnas en negrilla, lo que ya está en la app, dos ejemplos y filas vacías con listas desplegables.
+      La misma plantilla se puede volver a subir: lo que ya está y los ejemplos se ignoran, solo se guarda lo nuevo. */
   async function descargarPlantilla(b) {
     b.disabled = true;
     try {
-      const X = await xlsx(), D = window.DEMO, libro = X.utils.book_new();
-      const ejemplo = [
-        { Nombre: 'Persona Ejemplo Uno', Correo: 'persona.uno@example.com', Rol: 'Bodega', Equipos: 'Solo ver', Inventario: '', Vehículos: '', Reuniones: '', Extras: '' },
-        { Nombre: 'Persona Ejemplo Dos', Correo: 'persona.dos@example.com', Rol: 'Compras', Equipos: '', Inventario: '', Vehículos: 'Sin acceso', Reuniones: '', Extras: '' },
-        { Nombre: 'Persona Ejemplo Tres', Correo: 'persona.tres@example.com', Rol: 'Conductor', Equipos: '', Inventario: 'Solo ver', Vehículos: '', Reuniones: '', Extras: '' }
-      ];
-      X.utils.book_append_sheet(libro, X.utils.json_to_sheet(ejemplo), 'Personas');
-      const ayuda = [['Cómo llenarlo'], ['Una fila por persona. Borra las filas de ejemplo y escribe las reales. Nombre, Correo y Rol son obligatorios.'],
-        ['Los niveles (Equipos, Inventario, Vehículos, Reuniones) se dejan vacíos si la persona hace lo que dice su rol.'], [''], ['Roles que sirven']]
-        .concat(D.ROLES.filter(r => !esDireccion(r.rol)).map(r => [`${r.rolTxt} (${r.cargo})`])).concat([[''], ['Niveles que sirven']])
-        .concat(['Sin acceso'].map(x => [`Todos los módulos: ${x}`])).concat(Object.entries(D.NIVELES).map(([m, l]) => [`${m}: ${l.map(x => x[1].split(':')[0]).join(', ')}`]))
-        .concat([[''], ['Permisos extra (columna Extras, separados por coma)']]).concat(D.EXTRAS.map(e => [`${e.id}: ${e.txt} (solo para ${e.roles.join(', ')})`]));
-      X.utils.book_append_sheet(libro, X.utils.aoa_to_sheet(ayuda), 'Ayuda');
-      X.writeFile(libro, 'Plantilla personas.xlsx');
+      const D = window.DEMO, S = A().S, roles = D.ROLES.filter(r => !esDireccion(r.rol));
+      const rolTxt = rol => { const r = D.rolDe(rol); return r ? r.rolTxt : rol; };
+      const porNombre = (x, y) => String(x.nombre).localeCompare(String(y.nombre));
+      const filas = [];
+      S.datos.usuarios.slice().sort(porNombre).forEach(u => filas.push({ estilo: 'gris', celdas: [u.nombre, u.correo, rolTxt(u.rol),
+        nivelTxt(u.permisos, 'equipos'), nivelTxt(u.permisos, 'inventario'), nivelTxt(u.permisos, 'vehiculos'), nivelTxt(u.permisos, 'reuniones'), extrasTxt(u.rol, u.extras), u.activo === true ? 'Ya registrada' : 'Ya registrada (pausada)'] }));
+      S.datos.invitaciones.slice().sort(porNombre).forEach(i => filas.push({ estilo: 'gris', celdas: [i.nombre, i.id, rolTxt(i.rol),
+        nivelTxt(i.permisos, 'equipos'), nivelTxt(i.permisos, 'inventario'), nivelTxt(i.permisos, 'vehiculos'), nivelTxt(i.permisos, 'reuniones'), extrasTxt(i.rol, i.extras), 'Invitada'] }));
+      filas.push({ estilo: 'ejemplo', celdas: ['Persona Ejemplo Uno', 'persona.uno@example.com', 'Bodega', 'Solo ver', '', '', '', '', 'Ejemplo (se ignora)'] });
+      filas.push({ estilo: 'ejemplo', celdas: ['Persona Ejemplo Dos', 'persona.dos@example.com', 'Compras', '', '', 'Sin acceso', '', '', 'Ejemplo (se ignora)'] });
+      const nivelesDe = m => ['Sin acceso'].concat(D.NIVELES[m].map(x => NIVEL_TXT[x[0]]).filter(Boolean));
+      // Hoja oculta con las opciones de los menús desplegables (sus datos empiezan en la fila 5: título, explicación, respiro y títulos).
+      const cols = [roles.map(r => r.rolTxt)].concat(MODULOS.map(([m]) => nivelesDe(m)), [D.EXTRAS.map(e => e.id)]);
+      const listas = { nombre: 'Listas', titulo: 'Listas de opciones (no tocar)', subtitulo: 'Estas opciones alimentan los menús desplegables de la hoja Personas.', oculta: true,
+        columnas: [{ t: 'Rol', ancho: 24 }].concat(MODULOS.map(([, n]) => ({ t: n, ancho: 24 })), [{ t: 'Permisos extra', ancho: 24 }]), filas: [] };
+      for (let k = 0; k < Math.max(...cols.map(c => c.length)); k++) listas.filas.push(cols.map(c => c[k] || ''));
+      const rango = (col, n) => ({ hoja: 'Listas', rango: `$${col}$5:$${col}$${4 + Math.max(1, n)}` });
+      const personas = { nombre: 'Personas', titulo: 'Plantilla de personas', vacias: 12,
+        subtitulo: 'Una fila por persona. Las filas en gris ya están en la app: déjalas como están. Agrega las personas nuevas en las filas de abajo (Nombre, Correo y Rol son obligatorios; el resto se deja vacío si la persona hace lo que dice su rol) y sube este mismo archivo. Las filas amarillas son de ejemplo y se ignoran. Gerentes y Jefes no van aquí: se crean desde la consola de Firebase.',
+        columnas: [{ t: 'Nombre', ancho: 30 }, { t: 'Correo', ancho: 36 }, { t: 'Rol', ancho: 22, lista: rango('A', roles.length) }, { t: 'Equipos', ancho: 20, lista: rango('B', cols[1].length) },
+          { t: 'Inventario', ancho: 22, lista: rango('C', cols[2].length) }, { t: 'Vehículos', ancho: 20, lista: rango('D', cols[3].length) }, { t: 'Reuniones', ancho: 20, lista: rango('E', cols[4].length) },
+          { t: 'Permisos extra', ancho: 22, lista: rango('F', cols[5].length) }, { t: 'Estado', ancho: 24 }],
+        filas };
+      const ayuda = { nombre: 'Ayuda', titulo: 'Cómo llenar la plantilla', subtitulo: 'Roles, niveles y permisos extra que sirven. Si dejas un nivel vacío, la persona hace lo que dice su rol.',
+        columnas: [{ t: 'Qué', ancho: 28 }, { t: 'Opciones o explicación', ancho: 90 }],
+        filas: [['Rol', roles.map(r => r.rolTxt).join(', ')], ['Equipos', nivelesDe('equipos').join(', ')], ['Inventario', nivelesDe('inventario').join(', ')], ['Vehículos', nivelesDe('vehiculos').join(', ')],
+          ['Reuniones', nivelesDe('reuniones').join(', ')], ['Permisos extra', D.EXTRAS.map(e => `${e.id}: ${e.txt} (solo para ${e.roles.join(', ')})`).join(' · ')],
+          ['Estado', 'Lo llena la app (Ya registrada, Invitada, Ejemplo). En las filas nuevas déjalo vacío.'], ['Correo', 'El mismo con el que la persona va a entrar (con Google o con su clave).'],
+          ['Cargos del organigrama', 'En la columna Rol también puedes escribir el cargo (por ejemplo «Contador» o «Recepcionista»): la app lo traduce al rol.']] };
+      const hojaRoles = { nombre: 'Roles', titulo: 'Roles de la app', subtitulo: 'Para qué sirve cada uno.', columnas: [{ t: 'Rol', ancho: 24 }, { t: 'Quién es', ancho: 44 }, { t: 'Inventario', ancho: 40 }],
+        filas: roles.map(r => [r.rolTxt, r.cargo, D.PERMISO_TXT[r.permisos.inventario] || '']) };
+      await window.Excel.descargar({ archivo: 'Plantilla personas', hojas: [personas, ayuda, hojaRoles, listas] });
     } catch (e) { A().toast('No se pudo preparar la plantilla. Revisa la conexión y vuelve a intentar.'); }
     finally { b.disabled = false; }
   }
@@ -142,8 +187,10 @@
     return partes.length ? partes.join(' · ') : `Como ${r ? r.rolTxt : rol}`;
   };
   function htmlPrevia() {
-    const f = previa, buenas = f.filter(x => !x.errores.length), A_ = A(), D = window.DEMO;
-    let h = `<div class="card"><b>Esto entendí del Excel (${f.length} ${f.length === 1 ? 'fila' : 'filas'})</b><span class="meta">${buenas.length} lista${buenas.length === 1 ? '' : 's'} para guardar${f.length - buenas.length ? ` · ${f.length - buenas.length} con problema (no se guardan)` : ''}. Revisa y toca «Guardar».</span></div>`;
+    const todas = previa, f = todas.filter(x => !x.omitida), buenas = f.filter(x => !x.errores.length), A_ = A(), D = window.DEMO;
+    const ya = todas.filter(x => x.omitida === 'registrada' || x.omitida === 'invitada').length, ejemplo = todas.filter(x => x.omitida === 'ejemplo').length;
+    const omit = [ya ? `${ya} ya ${ya === 1 ? 'estaba' : 'estaban'} en la app (no se tocan)` : '', ejemplo ? `${ejemplo} ${ejemplo === 1 ? 'fila de ejemplo' : 'filas de ejemplo'} (se ignoran)` : ''].filter(Boolean).join(' · ');
+    let h = `<div class="card"><b>Esto entendí del Excel (${todas.length} ${todas.length === 1 ? 'fila' : 'filas'})</b><span class="meta">${buenas.length} lista${buenas.length === 1 ? '' : 's'} para guardar${f.length - buenas.length ? ` · ${f.length - buenas.length} con problema (no se guardan)` : ''}${omit ? ' · ' + omit : ''}. Revisa y toca «Guardar».</span></div>`;
     h += `<div class="list">${f.map(x => `<div class="card persona-reg${x.errores.length ? ' pausada' : ''}">
       <span class="card-head"><span class="card-title">${esH(x.nombre || '(sin nombre)')}</span>${A_.pill(x.errores.length ? 'Con problema' : 'Lista', x.errores.length ? 's-peligro' : 's-disco', x.errores.length ? 'aviso' : 'check')}</span>
       <span class="meta">Fila ${x.fila} · ${esH(x.correo || 'sin correo')} · ${esH(x.rol ? D.rolDe(x.rol).rolTxt : 'sin rol')}</span>
@@ -267,7 +314,7 @@
     if (g === 'plantilla') return descargarPlantilla(b);
     if (g === 'descartar') { previa = null; return pintar(); }
     if (g === 'guardarinv') {
-      const buenas = (previa || []).filter(x => !x.errores.length); if (!buenas.length) return;
+      const buenas = (previa || []).filter(x => !x.errores.length && !x.omitida); if (!buenas.length) return;
       return hacer(async () => { await window.nube.invitar(buenas.map(x => ({ nombre: x.nombre, correo: x.correo, rol: x.rol, permisos: x.permisos, extras: x.extras })), yo().nombre); previa = null; },
         `Listo: ${buenas.length} ${buenas.length === 1 ? 'invitación guardada' : 'invitaciones guardadas'}. Cada persona entra con su correo.`);
     }
