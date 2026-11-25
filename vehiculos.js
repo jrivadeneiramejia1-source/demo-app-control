@@ -8,6 +8,9 @@
    Tanqueos con la foto del recibo: de un tanque lleno al siguiente se saca cuántos km rinde el carro y cuánto cuesta el combustible por km;
    si un tanqueo rinde más de 25 % menos que lo normal del carro, se avisa a Transporte, Bodega y la Jefe. El costo total de cada carro suma
    novedades, mantenimientos del plan y combustible.
+   Pedir un carro (viajes que no son reuniones): quien tiene nivel de trabajo en Vehículos pide fecha, hora, destino y motivo; Transporte, Bodega o la Jefe
+   (nunca quien lo pidió) lo aprueban escogiendo un carro libre ese día (libresPara, que también mira las reuniones) y el conductor, o lo rechazan.
+   El conductor ve su viaje en «Lo que me toca» y la salida queda ligada a la reserva.
    La Jefe puede todo; el Gerente ve el resumen y la hoja de vida sin botones. */
 (function () {
   'use strict';
@@ -27,6 +30,8 @@
   const num = v => Number(v) || 0;
   const km = v => `${num(v).toLocaleString('es-CO')} km`;
   const ACTIVA = ['programada', 'reprogramada'];
+  const RES_EST = { pedida: ['Por aprobar', 's-org', 'org'], aprobada: ['Aprobada', 's-listo', 'listo'], rechazada: ['Rechazada', 's-peligro', 'peligro'], cancelada: ['Cancelada', 'none', 'pend'] };
+  const RES_MAX_DIAS = 90;
   const EST = { disponible: ['Disponible', 's-disco', 'disco'], 'en-uso': ['En uso', 's-listo', 'listo'], 'en-taller': ['En taller', 's-org', 'org'] };
   const TIPO_NOV = { llanta: 'Llanta', choque: 'Choque', rayon: 'Rayón', mantenimiento: 'Mantenimiento', otro: 'Otro' };
   const COMBUSTIBLE = [['vacio', 'Vacío'], ['1/4', '1/4'], ['1/2', '1/2'], ['3/4', '3/4'], ['lleno', 'Lleno']];
@@ -134,6 +139,26 @@
   const salioEn = n => D().entregas.some(e => e.reunionId === n.reunionId && e.vehiculoId === n.vehiculoId && e.tipo === 'salida');
   // Los viajes le llegan al rol Conductor (en la demo hay un solo conductor con cuenta).
   const misViajes = () => viajes();
+  /* ---------- reservas de carro (viajes que no son reuniones) ---------- */
+  const reservas = () => D().reservas || [];
+  const resPorId = id => reservas().find(r => r.id === id) || null;
+  const miCorreo = () => (window.nube && window.nube.correo ? window.nube.correo() : '');
+  // «Mía»: la que pedí yo (por mi correo; las de datos viejos, por mi nombre).
+  const esMiaRes = r => (r.pideCorreo ? r.pideCorreo === miCorreo() : r.por === persona().nombre);
+  const salioRes = r => D().entregas.some(e => e.reservaId === r.id && e.tipo === 'salida');
+  const llegoRes = r => D().entregas.some(e => e.reservaId === r.id && e.tipo === 'llegada');
+  const porFecha = (a, b) => String(a.fecha + a.hora).localeCompare(String(b.fecha + b.hora));
+  /** Pedidos que esperan respuesta de Transporte, Bodega o la Jefe (los de fechas que ya pasaron y los propios no cuentan: nadie decide lo suyo). */
+  const porAprobar = () => reservas().filter(r => r.estado === 'pedida' && r.fecha >= A().hoyISO() && !esMiaRes(r)).sort(porFecha);
+  /** Reservas aprobadas que todavía no terminan (sin llegada): todas para Transporte, Bodega y la Jefe; para el Conductor, las suyas. */
+  const verReservada = r => esAdmin() || (esConductor() && r.conductor === persona().nombre);
+  const reservadas = () => reservas().filter(r => r.estado === 'aprobada' && !llegoRes(r) && verReservada(r)).sort(porFecha);
+  /** Mis pedidos: los que esperan respuesta, los que rechazaron hace poco y las aprobadas que no veo en «reservados» (las pidió uno y las maneja otro). */
+  function misPedidos() {
+    const corte = masDias(A().hoyISO(), -7);
+    return reservas().filter(esMiaRes).filter(r => r.estado === 'pedida' || (r.estado === 'rechazada' && String(r.decideEn) >= corte) || (r.estado === 'aprobada' && !llegoRes(r) && !verReservada(r))).sort(porFecha);
+  }
+  const cancelable = r => !salioRes(r) && ((esAdmin() && ['pedida', 'aprobada'].includes(r.estado)) || (r.estado === 'pedida' && esMiaRes(r) && puedeReportar()));
   function resumen() {
     const vs = D().vehiculos;
     return {
@@ -142,13 +167,15 @@
       novedades: sinRevisar().length,
       docs: vs.reduce((n, v) => n + docsMal(v).length, 0),
       mttos: mttosPend().length,
-      mias: esAdmin() ? sinRevisar().length + vs.filter(v => docsMal(v).length).length + mttosPend().length : esConductor() ? misViajes().length : 0
+      mias: esAdmin() ? sinRevisar().length + vs.filter(v => docsMal(v).length).length + mttosPend().length + porAprobar().length : esConductor() ? misViajes().length + reservadas().length : 0
     };
   }
-  /** Carros que se pueden asignar a una reunión en esa fecha (no en taller, papeles al día ese día, sin otro viaje ese día). */
-  function libresPara(fecha, reunionId) {
+  /** Carros que se pueden asignar a una reunión o a una reserva en esa fecha (no en taller, papeles al día ese día, sin otro viaje ese día). */
+  function libresPara(fecha, reunionId, reservaId) {
     const ocupados = new Set(D().necesidades.filter(n => n.tipo === 'carros' && n.estado === 'autorizado' && n.reunionId !== reunionId && n.fechaReunion === fecha)
       .flatMap(n => (Array.isArray(n.vehiculos) ? n.vehiculos : []).map(x => x && x.vehiculoId)));
+    // Un carro con una reserva aprobada ese día tampoco está libre (menos para la misma reserva, que lo cambia).
+    reservas().filter(r => r.estado === 'aprobada' && r.fecha === fecha && r.id !== reservaId).forEach(r => ocupados.add(r.vehiculoId));
     return D().vehiculos.filter(v => v.estado !== 'en-taller' && !ocupados.has(v.id) && String(v.soat) >= fecha && String(v.tecno) >= fecha)
       .sort((a, b) => String(a.placa).localeCompare(String(b.placa)));
   }
@@ -197,7 +224,7 @@
     ]);
     $('vehSecciones').innerHTML = secciones().map(([k, t]) => `<button type="button" class="chip" data-sec="${k}" aria-pressed="${seccion === k}">${esH(t)}${k === 'hacer' && n.mias ? ` <span class="n">${n.mias}</span>` : ''}</button>`).join('');
     const c = $('vehContenido');
-    if (['vehiculos', 'novedades', 'entregas', 'tanqueos'].some(App.cargando)) { UI.poner(c, UI.esqueleto(3)); return; }
+    if (['vehiculos', 'novedades', 'entregas', 'tanqueos', 'reservas'].some(App.cargando)) { UI.poner(c, UI.esqueleto(3)); return; }
     if (UI.poner(c, ({ hacer: htmlHacer, carros: () => htmlCarros(f), novedades: () => htmlNovedades(f), tanqueos: htmlTanqueos, resumen: htmlResumen, reportes: htmlReportes })[seccion]())) window.llenarIconos(c);
     avisarVencimientos();
   }
@@ -208,7 +235,21 @@
   /* --- Lo que me toca --- */
   function htmlHacer() {
     let h = '';
-    if (puedeReportar()) h += `<div class="barra-botones">${boton('novedad', 'Reportar una novedad', 'aviso', '', 'primary')}${boton('tanqueo', 'Registrar tanqueo', 'pagada', '', 'small')}</div>`;
+    if (puedeReportar()) h += `<div class="barra-botones">${boton('novedad', 'Reportar una novedad', 'aviso', '', 'primary')}${boton('pedircarro', 'Pedir un carro', 'carro', '', 'small')}${boton('tanqueo', 'Registrar tanqueo', 'pagada', '', 'small')}</div>`;
+    if (esAdmin()) {
+      const pa = porAprobar();
+      h += `<div class="section-label">Carros por aprobar (${pa.length})</div>`;
+      h += pa.length ? `<div class="list">${pa.map(r => tarjetaReserva(r, 'decidir')).join('')}</div>` : '<p class="meta">No hay pedidos de carro por aprobar.</p>';
+    }
+    if (esAdmin() || esConductor()) {
+      const rs = reservadas();
+      h += `<div class="section-label">${esConductor() ? 'Mis viajes con carro reservado' : 'Carros reservados'} (${rs.length})</div>`;
+      h += rs.length ? `<div class="list">${rs.map(r => tarjetaReserva(r, 'reservada')).join('')}</div>` : `<p class="meta">${esConductor() ? 'Cuando te aprueben un carro para un viaje, aparece aquí para registrar la salida y la llegada.' : 'No hay carros reservados.'}</p>`;
+    }
+    if (puedeReportar()) {
+      const mp = misPedidos();
+      if (mp.length) h += `<div class="section-label">Mis pedidos de carro (${mp.length})</div><div class="list">${mp.map(r => tarjetaReserva(r, 'mia')).join('')}</div>`;
+    }
     if (esConductor() || esJefe()) {
       const vs = esJefe() ? viajes() : misViajes();
       h += `<div class="section-label">Viajes de reuniones (${vs.length})</div>`;
@@ -239,6 +280,29 @@
       <span class="meta">${esH(cada)}. Último: ${esH(km(m.ultimoKm))}${m.ultimaFecha ? ' · ' + esH(A().fechaCorta(m.ultimaFecha)) : ''}${num(m.ultimoCosto) ? ' · costó ' + esH(A().cop(m.ultimoCosto)) : ''}</span></div>
       <span class="docs">${A().pill(e.est === 'vencido' ? `Toca ya: ${e.texto}` : e.est === 'pronto' ? `Pronto: ${e.texto}` : `Al día: ${e.texto}`, e.est === 'vencido' ? 's-peligro' : e.est === 'pronto' ? 's-org' : 's-disco', e.est === 'ok' ? 'check' : 'mantenimiento')}</span>
       ${esAdmin() ? `<div class="tarea-pie">${boton('mttohecho', 'Hecho', 'check', v.id, e.est === 'ok' ? 'small' : 'primary small', ` data-mtto="${esH(m.id)}"`)}${conPlaca ? boton('ver', 'Hoja de vida', '', v.id, 'ghost small') : boton('mttoquitar', 'Quitar del plan', '', v.id, 'ghost small', ` data-mtto="${esH(m.id)}"`)}</div>` : ''}</div>`;
+  }
+  /** Un pedido de carro. modo: «decidir» (Transporte, Bodega o la Jefe aprueban o rechazan), «reservada» (con la salida y la llegada) o «mia» (lo que yo pedí). */
+  function tarjetaReserva(r, modo) {
+    const App = A(), e = RES_EST[r.estado] || ['Sin estado', 'none', 'pend'], v = r.vehiculoId ? vehPorId(r.vehiculoId) : null, hoy = App.hoyISO();
+    const salio = salioRes(r), pasoDia = r.fecha < hoy && !salio && ['pedida', 'aprobada'].includes(r.estado);
+    const bts = [];
+    if (modo === 'decidir') bts.push(boton('aprobares', 'Aprobar y escoger carro', 'check', r.id, 'primary small'), boton('rechazares', 'Rechazar', '', r.id, 'ghost small'));
+    if (modo === 'reservada' && v) {
+      const puede = esAdmin() || (esConductor() && r.conductor === persona().nombre);
+      if (salio) { if (puede && v.estado === 'en-uso') bts.push(boton('llegada', 'Registrar llegada', 'llave', v.id, 'primary small', ` data-reserva="${esH(r.id)}"`)); }
+      else if (r.fecha <= hoy) bts.push(puede && v.estado === 'disponible' ? boton('salida', 'Registrar salida', 'llave', v.id, 'primary small', ` data-reserva="${esH(r.id)}"`) : App.pill(v.estado === 'en-uso' ? 'El carro está en uso: espera la llegada' : v.estado === 'en-taller' ? 'El carro está en taller' : 'Aún no puedes sacarlo', 's-org', 'aviso'));
+    }
+    if (cancelable(r) && (modo === 'reservada' || modo === 'mia')) bts.push(boton('cancelares', modo === 'mia' ? 'Cancelar el pedido' : 'Cancelar la reserva', 'x', r.id, 'ghost small'));
+    const libres = modo === 'decidir' ? libresPara(r.fecha, '', r.id).length : null;
+    return `<div class="card tarea st-${pasoDia ? 'peligro' : e[2]}" data-reserva-card="${esH(r.id)}">
+      <div class="tarea-t"><b>${r.estado === 'aprobada' ? `<span class="placa">${esH(r.placa)}</span> → ` : ''}${esH(r.destino)}</b>
+        <span class="meta">${esH(App.fechaCorta(r.fecha))}, ${esH(r.hora)} · pidió ${esH(r.por)}${esMiaRes(r) && modo !== 'mia' ? ' (tú)' : ''}</span>
+        <span class="meta">${esH(r.motivo)}</span>
+        ${r.estado === 'aprobada' ? `<span class="meta">Conductor: ${esH(r.conductor)} · aprobó ${esH(r.decidePor)}${salio ? ' · ya salió: falta la llegada' : ''}</span>` : ''}
+        ${r.estado === 'rechazada' ? `<span class="meta">Rechazó ${esH(r.decidePor)}: ${esH(r.motivoRechazo)}</span>` : ''}</div>
+      <span class="docs">${App.pill(e[0], e[1])}${pasoDia ? App.pill('Ya pasó el día', 's-peligro', 'aviso') : ''}${libres != null ? App.pill(libres ? `Carros libres ese día: ${libres}` : 'No hay carros libres ese día', libres ? 's-disco' : 's-peligro', libres ? 'carro' : 'aviso') : ''}</span>
+      ${bts.length ? `<div class="tarea-pie">${bts.join('')}</div>` : ''}
+    </div>`;
   }
   function tarjetaViaje(n) {
     const v = vehPorId(n.vehiculoId), r = reunionPorId(n.reunionId);
@@ -649,16 +713,87 @@
         return [['mezclar', 'vehiculos', v.id, { estado: aTaller ? 'en-taller' : 'disponible', conductor: '', historial: paso(v, (aTaller ? 'Entró al taller' : 'Salió del taller') + (m ? ': ' + m : '')) }]];
       } });
   }
+  /* ---------- pedir un carro: pedir, aprobar, rechazar y cancelar ---------- */
+  const fechaValida = f => /^\d{4}-\d{2}-\d{2}$/.test(f) && !isNaN(new Date(f + 'T12:00:00')) && masDias(f, 0) === f;
+  function pedirCarro() {
+    const hoy = A().hoyISO(), max = masDias(hoy, RES_MAX_DIAS);
+    abrir({ titulo: 'Pedir un carro', sub: 'Para un viaje que no es una reunión. Transporte, Bodega o la Jefe lo aprueban y escogen el carro.',
+      campos: `<div class="fields cols"><div class="field"><label for="vpFecha">Qué día</label><input id="vpFecha" type="date" min="${hoy}" max="${max}" value="${masDias(hoy, 1)}"></div>
+        <div class="field"><label for="vpHora">A qué hora</label><input id="vpHora" type="time" value="08:00"></div></div><p class="meta" id="vpLibres" aria-live="polite"></p>` +
+        campoTxt('vpDestino', 'A dónde va', '', 'Ej: Maicao, oficina del cliente', 80) + campoTxt('vpMotivo', 'Para qué', '', 'Ej: entregar los contratos firmados', 140),
+      primario: 'Pedir el carro', icono: 'enviar', listo: 'Listo: pedido enviado. Transporte, Bodega y la Jefe ya recibieron el aviso.',
+      ops: () => {
+        const f = valor('vpFecha'), h = valor('vpHora'), dest = valor('vpDestino'), mot = valor('vpMotivo');
+        if (!fechaValida(f) || f < hoy || f > max) return fallar(`Escoge el día: desde hoy hasta dentro de ${RES_MAX_DIAS} días.`, 'vpFecha');
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(h)) return fallar('Escribe la hora, por ejemplo 08:30.', 'vpHora');
+        if (dest.length < 3) return fallar('Escribe a dónde va.', 'vpDestino');
+        if (mot.length < 3) return fallar('Cuenta para qué es el viaje.', 'vpMotivo');
+        const cuando = `${A().fechaCorta(f)} a las ${h}`;
+        return [['set', 'reservas', window.nube.idNuevo('rs'), { fecha: f, hora: h, destino: dest, motivo: mot, estado: 'pedida', por: persona().nombre, porRol: miRol(), pideCorreo: miCorreo(), en: hoy }]]
+          .concat(['jefe', 'carros', 'asistente'].map(rol => aviso(rol, 'Piden un carro', `${persona().nombre} pide un carro para el ${cuando}: ${dest}. Entra a Vehículos para aprobarlo.`)));
+      } });
+    const libresHoy = () => { const f = valor('vpFecha'), el = $('vpLibres'); if (!el) return; el.textContent = fechaValida(f) ? (() => { const n = libresPara(f).length; return n ? `Ese día hay ${n} ${n === 1 ? 'carro libre' : 'carros libres'} con los papeles al día.` : 'Ese día no hay carros libres con los papeles al día. Igual puedes pedirlo: Transporte lo revisa.'; })() : ''; };
+    $('veCampos').oninput = $('veCampos').onchange = e => { if (e.target && e.target.id === 'vpFecha') libresHoy(); };
+    libresHoy();
+  }
+  function aprobarCarro(r) {
+    const libres = libresPara(r.fecha, '', r.id), conds = Array.from(new Set((r.porRol === 'conductor' ? [r.por] : []).concat(CONDUCTORES)));
+    abrir({ titulo: 'Aprobar el carro', sub: `${r.destino}: ${A().fechaCorta(r.fecha)}, ${r.hora}. Pidió ${r.por} (${r.motivo}).`,
+      campos: libres.length ? campoSel('vrVeh', 'Carro libre ese día', libres.map(v => [v.id, `${v.placa} · ${v.marca} ${v.modelo}${v.estado === 'en-uso' ? ' (ahora en uso)' : ''}`]), libres[0].id) + campoSel('vrCond', 'Conductor', conds.map(x => [x, x]), conds[0])
+        + '<p class="meta">Solo salen carros que no están en el taller, con el SOAT y la técnico-mecánica al día ese día, y sin otra reserva ni reunión.</p>'
+        : '<div class="note">No hay carros libres con los papeles al día para esa fecha. Puedes rechazar el pedido y decir por qué.</div>',
+      primario: libres.length ? 'Aprobar' : '', icono: 'check', listo: 'Listo: carro aprobado. Ya le llegó el aviso a quien lo pidió y al conductor.',
+      ops: () => {
+        const act = resPorId(r.id);
+        if (!act || act.estado !== 'pedida') return fallar('Este pedido ya cambió. Ciérralo y revisa la lista.');
+        if (esMiaRes(act)) return fallar('Nadie aprueba lo suyo: lo decide otra persona.');
+        const veh = libresPara(act.fecha, '', act.id).find(x => x.id === valor('vrVeh')), cond = valor('vrCond');
+        if (!veh) return fallar('Ese carro ya no está libre ese día. Cierra esto y vuelve a abrirlo.', 'vrVeh');
+        if (cond.length < 3) return fallar('Escoge el conductor.', 'vrCond');
+        const txt = `${veh.placa} para el ${A().fechaCorta(act.fecha)} a las ${act.hora} (${act.destino}). Conductor: ${cond}.`;
+        return [['mezclar', 'reservas', act.id, { estado: 'aprobada', vehiculoId: veh.id, placa: veh.placa, conductor: cond, decidePor: persona().nombre, decideCorreo: miCorreo(), decideEn: A().hoyISO() }]]
+          .concat(Array.from(new Set([act.porRol, 'conductor'])).map(rol => aviso(rol, rol === 'conductor' && act.porRol !== 'conductor' ? 'Te tocó un viaje' : 'Te aprobaron el carro', txt)));
+      } });
+  }
+  function rechazarCarro(r) {
+    abrir({ titulo: 'Rechazar el pedido', sub: `${r.destino}: ${A().fechaCorta(r.fecha)}, ${r.hora}. Pidió ${r.por}.`,
+      campos: campoTxt('vrMotivo', 'Por qué no', '', 'Ej: ese día todos los carros están en la reunión', 140),
+      primario: 'Rechazar', icono: 'x', listo: 'Listo: pedido rechazado. Ya le llegó el aviso a quien lo pidió.',
+      ops: () => {
+        const act = resPorId(r.id), mot = valor('vrMotivo');
+        if (!act || act.estado !== 'pedida') return fallar('Este pedido ya cambió. Ciérralo y revisa la lista.');
+        if (esMiaRes(act)) return fallar('Nadie rechaza lo suyo: si ya no lo necesitas, cancélalo.');
+        if (mot.length < 3) return fallar('Cuenta por qué no se puede.', 'vrMotivo');
+        return [['mezclar', 'reservas', act.id, { estado: 'rechazada', motivoRechazo: mot, decidePor: persona().nombre, decideCorreo: miCorreo(), decideEn: A().hoyISO() }],
+          aviso(act.porRol, 'Rechazaron tu pedido de carro', `${act.destino}, ${A().fechaCorta(act.fecha)}: ${mot}`)];
+      } });
+  }
+  function cancelarReserva(r) {
+    const aprobada = r.estado === 'aprobada';
+    abrir({ titulo: aprobada ? 'Cancelar la reserva' : 'Cancelar el pedido', sub: `${r.destino}: ${A().fechaCorta(r.fecha)}, ${r.hora}${aprobada ? ` · ${r.placa}, conductor ${r.conductor}` : ''}.`,
+      campos: `<div class="note">${aprobada ? 'El carro queda libre otra vez ese día.' : 'El pedido se cierra y ya no le llega a nadie.'} Esto no se puede deshacer: si hace falta, se pide de nuevo.</div>`,
+      primario: aprobada ? 'Cancelar la reserva' : 'Cancelar el pedido', icono: 'x', listo: aprobada ? 'Listo: reserva cancelada. El carro quedó libre.' : 'Listo: pedido cancelado.',
+      ops: () => {
+        const act = resPorId(r.id);
+        if (!act || !['pedida', 'aprobada'].includes(act.estado) || !cancelable(act)) return fallar('Esto ya cambió (por ejemplo, el carro ya salió). Ciérralo y revisa la lista.');
+        const quien = esMiaRes(act) ? '' : `${persona().nombre} canceló ${act.estado === 'aprobada' ? 'la reserva' : 'el pedido'} de carro para el ${A().fechaCorta(act.fecha)} (${act.destino}).`;
+        return [['mezclar', 'reservas', act.id, { estado: 'cancelada', canceladaPor: persona().nombre, canceladaEn: A().hoyISO() }]]
+          .concat(quien ? Array.from(new Set([act.porRol].concat(act.estado === 'aprobada' ? ['conductor'] : []))).map(rol => aviso(rol, 'Cancelaron un carro', quien)) : []);
+      } });
+  }
   /** Salida o llegada del carro (con las 5 fotos y la revisión). */
-  function entrega(v, tipo, viajeId) {
+  function entrega(v, tipo, viajeId, reservaId) {
     fotos = {};
     const salida = tipo === 'salida';
     // Si sale desde la hoja de vida y el carro tiene un viaje hoy, la salida queda ligada a ese viaje.
     const viaje = viajeId ? D().necesidades.find(n => n.id === viajeId) : salida ? viajes().find(n => n.vehiculoId === v.id && n.fechaReunion === A().hoyISO() && !salioEn(n)) || null : null;
     const ultima = ultimaSalida(v);
-    const condDefecto = viaje ? viaje.conductor : salida ? (esConductor() ? persona().nombre : CONDUCTORES[0]) : (v.conductor || '');
+    // Si no es un viaje de reunión, puede ser una reserva aprobada: la que se tocó o, al salir desde la hoja de vida, la de hoy de ese carro (la llegada sigue la de su salida).
+    const reserva = viaje ? null : reservaId ? resPorId(reservaId) : salida ? reservas().find(r => r.estado === 'aprobada' && r.vehiculoId === v.id && r.fecha === A().hoyISO() && !salioRes(r)) || null : (ultima && ultima.reservaId ? resPorId(ultima.reservaId) : null);
+    const ligada = reserva && reserva.estado === 'aprobada' && reserva.vehiculoId === v.id ? reserva : null;
+    const condDefecto = viaje ? viaje.conductor : ligada && salida ? ligada.conductor : salida ? (esConductor() ? persona().nombre : CONDUCTORES[0]) : (v.conductor || '');
     const conductores = Array.from(new Set([condDefecto, persona().nombre].concat(CONDUCTORES).filter(Boolean)));
-    abrir({ titulo: `${salida ? 'Salida' : 'Llegada'} del ${v.placa}`, sub: viaje ? `Viaje a la ${viaje.comunidad}. Conductor: ${viaje.conductor || 'sin asignar'}.` : `${v.marca} ${v.modelo}. Va en ${km(v.km)}.`,
+    abrir({ titulo: `${salida ? 'Salida' : 'Llegada'} del ${v.placa}`, sub: viaje ? `Viaje a la ${viaje.comunidad}. Conductor: ${viaje.conductor || 'sin asignar'}.` : ligada ? `Viaje a ${ligada.destino}. Conductor: ${ligada.conductor}.` : `${v.marca} ${v.modelo}. Va en ${km(v.km)}.`,
       campos: (esConductor() && salida ? '' : campoSel('vsCond', 'Conductor', conductores.map(x => [x, x]), condDefecto)) +
         `<div class="fields cols">${campoNum('vsKm', 'Kilometraje', '', 0, 2000000)}${campoSel('vsComb', 'Combustible', COMBUSTIBLE, salida ? 'lleno' : '1/2')}</div>` +
         `<div class="field"><label for="vsCon">${salida ? 'Quién entrega el carro' : 'Quién recibe el carro'}</label><input id="vsCon" list="vsConLista" maxlength="60" autocomplete="off" value="${esH(miRol() === 'conductor' ? QUIEN_ENTREGA[0] : persona().nombre)}"><datalist id="vsConLista">${QUIEN_ENTREGA.map(x => `<option value="${esH(x)}">`).join('')}</datalist></div>` +
@@ -700,10 +835,10 @@
         if (malos.length && obs.length < 5) return fallar(`Marcaste un problema (${malos.join(', ')}): cuéntalo en observaciones.`, 'vsObs');
         const ent = { vehiculoId: v.id, placa: v.placa, tipo, fecha: ahora(), km: kmv, combustible: valor('vsComb'), conductor: cond, con,
           fotos: { frente: fotos.vf_frente, atras: fotos.vf_atras, izquierda: fotos.vf_izquierda, derecha: fotos.vf_derecha, llantas: fotos.vf_llantas },
-          revision, observaciones: obs, por: persona().nombre, porRol: miRol(), reunionId: viaje ? viaje.reunionId : (!salida && ultima ? ultima.reunionId || '' : '') };
+          revision, observaciones: obs, por: persona().nombre, porRol: miRol(), reunionId: viaje ? viaje.reunionId : (!salida && ultima ? ultima.reunionId || '' : ''), reservaId: ligada ? ligada.id : '' };
         const entId = window.nube.idNuevo('en');
         const ops = [['set', 'entregas', entId, ent],
-          ['mezclar', 'vehiculos', v.id, { estado: salida ? 'en-uso' : 'disponible', km: kmv, conductor: salida ? cond : '', ultimaEntrega: entId, historial: paso(v, `${salida ? 'Salió con' : 'Llegó con'} ${cond} (${km(kmv)})${viaje ? ' · viaje a la ' + viaje.comunidad : ''}`) }]];
+          ['mezclar', 'vehiculos', v.id, { estado: salida ? 'en-uso' : 'disponible', km: kmv, conductor: salida ? cond : '', ultimaEntrega: entId, historial: paso(v, `${salida ? 'Salió con' : 'Llegó con'} ${cond} (${km(kmv)})${viaje ? ' · viaje a la ' + viaje.comunidad : ligada ? ' · viaje a ' + ligada.destino : ''}`) }]];
         const txt = `${v.placa} ${salida ? 'salió' : 'llegó'} con ${cond} (${km(kmv)}, combustible ${valor('vsComb')}).${malos.length ? ' Problemas: ' + malos.join(', ') + '.' : ''}`;
         ['carros', 'asistente'].forEach(rol => ops.push(aviso(rol, salida ? 'Salió un carro' : 'Llegó un carro', txt)));
         if (malos.length) ['jefe', 'gerente'].forEach(rol => ops.push(aviso(rol, 'Un carro tiene problemas', `${txt} ${obs}`)));
@@ -757,7 +892,7 @@
     if (p) { periodo = p.dataset.periodo; A().pintarTodo(); return; }
     const b = e.target.closest('[data-accion]'); if (!b) return;
     if (b.dataset.accion === 'excelveh') { excelVehiculos(b); return; }
-    const id = b.dataset.id, v = vehPorId(id), n = D().novedades.find(x => x.id === id);
+    const id = b.dataset.id, v = vehPorId(id), n = D().novedades.find(x => x.id === id), rs = resPorId(id);
     const desde = $('veCampos').contains(b) && accion ? accion.volverA : '';
     const mapa = {
       ver: () => v && ver(v),
@@ -771,8 +906,12 @@
       mttohecho: () => v && esAdmin() ? mttoHecho(v, b.dataset.mtto) : null,
       mttonuevo: () => v && esAdmin() && mttosDe(v).length < 10 ? mttoNuevo(v) : null,
       mttoquitar: () => v && esAdmin() ? mttoQuitar(v, b.dataset.mtto) : null,
-      salida: () => v && v.estado === 'disponible' && (esAdmin() || esConductor()) ? entrega(v, 'salida', b.dataset.viaje) : null,
-      llegada: () => v && v.estado === 'en-uso' && (esAdmin() || esConductor()) ? entrega(v, 'llegada', b.dataset.viaje) : null
+      salida: () => v && v.estado === 'disponible' && (esAdmin() || esConductor()) ? entrega(v, 'salida', b.dataset.viaje, b.dataset.reserva) : null,
+      llegada: () => v && v.estado === 'en-uso' && (esAdmin() || esConductor()) ? entrega(v, 'llegada', b.dataset.viaje, b.dataset.reserva) : null,
+      pedircarro: () => puedeReportar() ? (pedirCarro(), true) : null,
+      aprobares: () => rs && rs.estado === 'pedida' && esAdmin() && !esMiaRes(rs) ? (aprobarCarro(rs), true) : null,
+      rechazares: () => rs && rs.estado === 'pedida' && esAdmin() && !esMiaRes(rs) ? (rechazarCarro(rs), true) : null,
+      cancelares: () => rs && cancelable(rs) ? (cancelarReserva(rs), true) : null
     };
     const fn = mapa[b.dataset.accion]; if (!fn) return;
     if (fn() === null) { A().toast('Eso ya cambió o no te toca. Revisa otra vez.'); return; }

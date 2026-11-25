@@ -1048,6 +1048,115 @@ await prueba('Compra con proveedor: una vez recibida, nadie le cambia el proveed
   await assertFails(updateDoc(doc(await cuenta('pvC7', 'asistente'), 'compras', 'co-pv8'), { estado: 'recibido', entregadoA: 'Sofía', proveedorId: 'pv-otro', historial: H3 }));
   await assertSucceeds(updateDoc(doc(await cuenta('pvC8', 'asistente'), 'compras', 'co-pv8'), { estado: 'recibido', entregadoA: 'Sofía', historial: H3 })); });
 
+console.log('Fase 14: reservas de carro');
+await limpiar();
+const VE14 = o => Object.assign({ placa: 'ABC123', marca: 'Toyota', modelo: 'Hilux', estado: 'disponible', km: 1000, conductor: '', historial: H1, soat: '2027-01-01', tecno: '2027-01-01' }, o);
+/** Una reserva pedida por una cuenta (su correo va dentro, como lo exigen las reglas). */
+const RS = (uid, rol, o = {}) => Object.assign({ fecha: '2026-12-05', hora: '08:30', destino: 'Maicao: llevar documentos', motivo: 'Entregar los contratos firmados', estado: 'pedida', por: 'Persona ' + uid, porRol: rol, pideCorreo: correoCuenta(uid), en: '2026-11-25' }, o);
+const APRUEBA = (uid, o = {}) => Object.assign({ estado: 'aprobada', vehiculoId: 've-r1', placa: 'ABC123', conductor: 'Oscar Farfán', decidePor: 'Persona ' + uid, decideCorreo: correoCuenta(uid), decideEn: '2026-11-25' }, o);
+const RECHAZA = (uid, o = {}) => Object.assign({ estado: 'rechazada', motivoRechazo: 'Ese día no hay carro libre', decidePor: 'Persona ' + uid, decideCorreo: correoCuenta(uid), decideEn: '2026-11-25' }, o);
+const sembrarRs = (id, rol, quien, o = {}) => sembrar(async d => { await setDoc(doc(d, 'vehiculos', 've-r1'), VE14()); await setDoc(doc(d, 'reservas', id), RS(quien, rol, o)); });
+await prueba('Reservas: el Conductor, Transporte, Bodega y la Jefe piden un carro a su nombre', async () => {
+  for (const [uid, rol] of [['rsCon1', 'conductor'], ['rsTra1', 'carros'], ['rsBod1', 'asistente'], ['rsJef1', 'jefe']]) await assertSucceeds(setDoc(doc(await cuenta(uid, rol), 'reservas', 'rs-' + uid.toLowerCase()), RS(uid, rol))); });
+await prueba('Reservas: el Colaborador, el Gerente, el Financiero y Consulta (sin nivel de trabajo en Vehículos) no piden carro', async () => {
+  for (const [uid, rol] of [['rsCol', 'colaborador'], ['rsGer', 'gerente'], ['rsFin', 'financiero'], ['rsCns', 'consulta']]) await assertFails(setDoc(doc(await cuenta(uid, rol), 'reservas', 'rs-x' + uid.toLowerCase()), RS(uid, rol)));
+  await assertFails(setDoc(doc(await cuenta('rsCon9', 'conductor', { permisos: { vehiculos: 'ver' } }), 'reservas', 'rs-xcon9'), RS('rsCon9', 'conductor'))); });
+await prueba('Reservas: nacen «pedida», con hora HH:MM, destino y motivo de largo razonable, a nombre de quien las pide y con su correo', async () => {
+  const con = await cuenta('rsCon2', 'conductor');
+  const mal = [['estado aprobada', { estado: 'aprobada' }], ['hora 25:00', { hora: '25:00' }], ['hora 8:30', { hora: '8:30' }], ['hora en letras', { hora: 'ocho' }], ['fecha mañana', { fecha: 'mañana' }], ['fecha con otro formato', { fecha: '05/12/2026' }],
+    ['destino de 2 letras', { destino: 'ab' }], ['destino de 81 letras', { destino: 'd'.repeat(81) }], ['motivo vacío', { motivo: '' }], ['motivo de 141 letras', { motivo: 'm'.repeat(141) }], ['otro rol', { porRol: 'jefe' }],
+    ['correo de otra persona', { pideCorreo: correoCuenta('otraPersona') }], ['un carro ya puesto', { vehiculoId: 've-r1' }], ['fecha de creación mala', { en: 'ayer' }]];
+  for (const [i, [, o]] of mal.entries()) await assertFails(setDoc(doc(con, 'reservas', 'rs-mala' + i), RS('rsCon2', 'conductor', o)));
+  await assertFails(setDoc(doc(con, 'reservas', 'RS-MAYUS'), RS('rsCon2', 'conductor')));
+  await assertFails(setDoc(doc(con, 'reservas', 'xx-otro1'), RS('rsCon2', 'conductor')));
+  await assertFails(setDoc(doc(con, 'reservas', 'rs-ab'), RS('rsCon2', 'conductor')));
+  await assertSucceeds(setDoc(doc(con, 'reservas', 'rs-buena2'), RS('rsCon2', 'conductor', { hora: '23:59', destino: 'abc', motivo: 'xyz' }))); });
+await prueba('Reservas: las ven quienes ven Vehículos (también «solo ver»), no quien no tiene Vehículos', async () => {
+  await sembrarRs('rs-lee1', 'conductor', 'rsLee0');
+  for (const [uid, rol] of [['rsL1', 'conductor'], ['rsL2', 'carros'], ['rsL3', 'asistente'], ['rsL4', 'jefe'], ['rsL5', 'gerente'], ['rsL6', 'consulta']]) await assertSucceeds(getDoc(doc(await cuenta(uid, rol), 'reservas', 'rs-lee1')));
+  for (const [uid, rol] of [['rsN1', 'colaborador'], ['rsN2', 'logistica'], ['rsN3', 'financiero']]) await assertFails(getDoc(doc(await cuenta(uid, rol), 'reservas', 'rs-lee1')));
+  await assertFails(getDoc(doc(anonimo(), 'reservas', 'rs-lee1'))); });
+await prueba('Reservas: Transporte, Bodega y la Jefe aprueban la reserva de otro con un carro libre y un conductor', async () => {
+  for (const [i, [uid, rol]] of [['rsAp1', 'carros'], ['rsAp2', 'asistente'], ['rsAp3', 'jefe']].entries()) {
+    await sembrarRs('rs-ap' + i, 'conductor', 'rsPide');
+    await assertSucceeds(updateDoc(doc(await cuenta(uid, rol), 'reservas', 'rs-ap' + i), APRUEBA(uid))); } });
+await prueba('Reservas: nadie aprueba ni rechaza la suya (ni siendo Transporte, Bodega o la Jefe)', async () => {
+  for (const [i, [uid, rol]] of [['rsYo1', 'carros'], ['rsYo2', 'asistente'], ['rsYo3', 'jefe']].entries()) {
+    await sembrarRs('rs-yo' + i, rol, uid);
+    const db = await cuenta(uid, rol);
+    await assertFails(updateDoc(doc(db, 'reservas', 'rs-yo' + i), APRUEBA(uid)));
+    await assertFails(updateDoc(doc(db, 'reservas', 'rs-yo' + i), RECHAZA(uid))); } });
+await prueba('Reservas: el Conductor, el Gerente, Consulta y el Colaborador no aprueban ni rechazan', async () => {
+  await sembrarRs('rs-na1', 'carros', 'rsPide2');
+  for (const [uid, rol] of [['rsNa1', 'conductor'], ['rsNa2', 'gerente'], ['rsNa3', 'consulta'], ['rsNa4', 'colaborador']]) { const db = await cuenta(uid, rol);
+    await assertFails(updateDoc(doc(db, 'reservas', 'rs-na1'), APRUEBA(uid))); await assertFails(updateDoc(doc(db, 'reservas', 'rs-na1'), RECHAZA(uid))); } });
+await prueba('Reservas: no se aprueba con un carro en el taller, con el SOAT o la técnico-mecánica vencidos ese día, que no existe o con otra placa', async () => {
+  const tra = await cuenta('rsAp4', 'carros');
+  const casos = [['taller', VE14({ estado: 'en-taller' }), APRUEBA('rsAp4')], ['soat vencido ese día', VE14({ soat: '2026-12-01' }), APRUEBA('rsAp4')], ['técnico vencida ese día', VE14({ tecno: '2026-12-04' }), APRUEBA('rsAp4')],
+    ['otra placa', VE14(), APRUEBA('rsAp4', { placa: 'ZZZ999' })], ['carro que no existe', VE14(), APRUEBA('rsAp4', { vehiculoId: 've-no-existe' })], ['sin conductor', VE14(), APRUEBA('rsAp4', { conductor: '' })],
+    ['correo de quien decide ajeno', VE14(), APRUEBA('rsAp4', { decideCorreo: correoCuenta('otra') })], ['fecha de decisión mala', VE14(), APRUEBA('rsAp4', { decideEn: 'hoy' })]];
+  for (const [i, [, ve, datos]] of casos.entries()) { await sembrar(async d => { await setDoc(doc(d, 'vehiculos', 've-r1'), ve); await setDoc(doc(d, 'reservas', 'rs-mal' + i), RS('rsPide3', 'conductor')); });
+    await assertFails(updateDoc(doc(tra, 'reservas', 'rs-mal' + i), datos)); }
+  await sembrar(async d => { await setDoc(doc(d, 'vehiculos', 've-r1'), VE14({ soat: '2026-12-05', tecno: '2026-12-05' })); await setDoc(doc(d, 'reservas', 'rs-vig'), RS('rsPide3', 'conductor')); });
+  await assertSucceeds(updateDoc(doc(tra, 'reservas', 'rs-vig'), APRUEBA('rsAp4'))); });
+await prueba('Reservas: al aprobar no se cambia nada más (ni la fecha, ni el destino, ni quién la pidió) y no se aprueba una ya decidida', async () => {
+  const tra = await cuenta('rsAp5', 'carros');
+  await sembrarRs('rs-mas1', 'conductor', 'rsPide4');
+  await assertFails(updateDoc(doc(tra, 'reservas', 'rs-mas1'), APRUEBA('rsAp5', { fecha: '2026-12-31' })));
+  await assertFails(updateDoc(doc(tra, 'reservas', 'rs-mas1'), APRUEBA('rsAp5', { destino: 'Otro lugar' })));
+  await assertFails(updateDoc(doc(tra, 'reservas', 'rs-mas1'), APRUEBA('rsAp5', { pideCorreo: correoCuenta('rsAp5') })));
+  await sembrarRs('rs-mas2', 'conductor', 'rsPide4', { estado: 'rechazada', motivoRechazo: 'No hay carro' });
+  await assertFails(updateDoc(doc(tra, 'reservas', 'rs-mas2'), APRUEBA('rsAp5')));
+  await sembrarRs('rs-mas3', 'conductor', 'rsPide4', { estado: 'aprobada', vehiculoId: 've-r1', placa: 'ABC123', conductor: 'Oscar Farfán' });
+  await assertFails(updateDoc(doc(tra, 'reservas', 'rs-mas3'), APRUEBA('rsAp5', { conductor: 'Rafael Ospino' }))); });
+await prueba('Reservas: Transporte rechaza con un motivo; sin motivo o con uno de menos de 3 letras no', async () => {
+  const tra = await cuenta('rsRe1', 'carros');
+  await sembrarRs('rs-re1', 'conductor', 'rsPide5'); await sembrarRs('rs-re2', 'conductor', 'rsPide5'); await sembrarRs('rs-re3', 'conductor', 'rsPide5');
+  await assertFails(updateDoc(doc(tra, 'reservas', 'rs-re1'), RECHAZA('rsRe1', { motivoRechazo: '' })));
+  await assertFails(updateDoc(doc(tra, 'reservas', 'rs-re1'), RECHAZA('rsRe1', { motivoRechazo: 'no' })));
+  await assertFails(updateDoc(doc(tra, 'reservas', 'rs-re1'), RECHAZA('rsRe1', { motivoRechazo: 'x'.repeat(141) })));
+  await assertFails(updateDoc(doc(tra, 'reservas', 'rs-re1'), RECHAZA('rsRe1', { vehiculoId: 've-r1' })));
+  await assertSucceeds(updateDoc(doc(tra, 'reservas', 'rs-re1'), RECHAZA('rsRe1')));
+  await assertSucceeds(updateDoc(doc(await cuenta('rsRe2', 'asistente'), 'reservas', 'rs-re2'), RECHAZA('rsRe2')));
+  await assertSucceeds(updateDoc(doc(await cuenta('rsRe3', 'jefe'), 'reservas', 'rs-re3'), RECHAZA('rsRe3'))); });
+await prueba('Reservas: quien pidió cancela la suya mientras está pedida; no la de otro ni una ya aprobada', async () => {
+  await sembrarRs('rs-ca1', 'conductor', 'rsCa1'); await sembrarRs('rs-ca2', 'conductor', 'rsCa1'); await sembrarRs('rs-ca3', 'conductor', 'rsCa1', { estado: 'aprobada', vehiculoId: 've-r1', placa: 'ABC123', conductor: 'Oscar Farfán' });
+  const dueno = await cuenta('rsCa1', 'conductor'), otro = await cuenta('rsCa2', 'conductor'), CAN = (uid, o = {}) => Object.assign({ estado: 'cancelada', canceladaPor: 'Persona ' + uid, canceladaEn: '2026-11-25' }, o);
+  await assertFails(updateDoc(doc(otro, 'reservas', 'rs-ca1'), CAN('rsCa2')));
+  await assertFails(updateDoc(doc(dueno, 'reservas', 'rs-ca3'), CAN('rsCa1')));
+  await assertFails(updateDoc(doc(dueno, 'reservas', 'rs-ca1'), CAN('rsCa1', { canceladaEn: 'hoy' })));
+  await assertFails(updateDoc(doc(dueno, 'reservas', 'rs-ca1'), CAN('rsCa1', { fecha: '2027-01-01' })));
+  await assertSucceeds(updateDoc(doc(dueno, 'reservas', 'rs-ca1'), CAN('rsCa1')));
+  await assertFails(updateDoc(doc(dueno, 'reservas', 'rs-ca1'), APRUEBA('rsCa1')));
+  await assertSucceeds(updateDoc(doc(await cuenta('rsCa3', 'carros'), 'reservas', 'rs-ca3'), CAN('rsCa3')));
+  await assertSucceeds(updateDoc(doc(await cuenta('rsCa4', 'jefe'), 'reservas', 'rs-ca2'), CAN('rsCa4'))); });
+await prueba('Reservas: una rechazada o ya cancelada no se vuelve a mover, ni siquiera cancelándola', async () => {
+  await sembrarRs('rs-fin1', 'conductor', 'rsFi1', { estado: 'rechazada', motivoRechazo: 'No hay carro' }); await sembrarRs('rs-fin2', 'conductor', 'rsFi1', { estado: 'cancelada', canceladaPor: 'Alguien', canceladaEn: '2026-11-24' });
+  const jef = await cuenta('rsFi2', 'jefe'), CAN = { estado: 'cancelada', canceladaPor: 'Persona', canceladaEn: '2026-11-25' };
+  await assertFails(updateDoc(doc(jef, 'reservas', 'rs-fin1'), CAN)); await assertFails(updateDoc(doc(jef, 'reservas', 'rs-fin2'), CAN)); await assertFails(updateDoc(doc(jef, 'reservas', 'rs-fin2'), APRUEBA('rsFi2'))); });
+await prueba('Reservas: solo la Jefe las borra; la Jefe de prueba las carga con los datos de ejemplo', async () => {
+  await sembrarRs('rs-bo1', 'conductor', 'rsBo0'); await sembrarRs('rs-bo2', 'conductor', 'rsBo0');
+  await assertFails(deleteDoc(doc(await cuenta('rsBo1', 'carros'), 'reservas', 'rs-bo1')));
+  await assertFails(deleteDoc(doc(await cuenta('rsBo2', 'conductor'), 'reservas', 'rs-bo1')));
+  await assertSucceeds(deleteDoc(doc(await cuenta('rsBo3', 'jefe'), 'reservas', 'rs-bo1')));
+  await assertSucceeds(setDoc(doc(prueba_('jefe'), 'reservas', 'rs-ejemplo'), { fecha: '2026-11-26', hora: '07:30', destino: 'Maicao', motivo: 'Documentos', estado: 'aprobada', por: 'Oscar Farfán', porRol: 'conductor', pideCorreo: CORREOS.conductor, en: '2026-11-25', vehiculoId: 've-r1', placa: 'ABC123', conductor: 'Oscar Farfán', decidePor: 'Wilson Muñoz', decideCorreo: CORREOS.carros, decideEn: '2026-11-25' })); });
+const FT14 = { frente: JPG, atras: JPG, izquierda: JPG, derecha: JPG, llantas: JPG };
+const salidaConReserva = async (uid, ve, resId, entId, extra = {}) => { const db = await cuenta(uid, 'conductor');
+  return lote(db, b => { b.update(doc(db, 'vehiculos', ve), { estado: 'en-uso', km: 1100, conductor: 'Persona', historial: H2, ultimaEntrega: entId });
+    b.set(doc(db, 'entregas', entId), Object.assign({ vehiculoId: ve, km: 1100, tipo: 'salida', porRol: 'conductor', fotos: FT14 }, resId ? { reservaId: resId } : {}, extra)); }); };
+await prueba('Salida de un carro con reserva: el Conductor la registra ligada a una reserva aprobada de ese mismo carro', async () => {
+  await sembrar(async d => { await setDoc(doc(d, 'vehiculos', 've-r2'), VE14()); await setDoc(doc(d, 'reservas', 'rs-en1'), RS('rsEn0', 'carros', { estado: 'aprobada', vehiculoId: 've-r2', placa: 'ABC123', conductor: 'Persona' })); });
+  await assertSucceeds(salidaConReserva('rsEn1', 've-r2', 'rs-en1', 'en-rs1')); });
+await prueba('Salida de un carro con reserva: no se acepta una reserva que no existe, que sigue «pedida» o que es de otro carro', async () => {
+  await sembrar(async d => { for (const v of ['ve-r3', 've-r4', 've-r5']) await setDoc(doc(d, 'vehiculos', v), VE14());
+    await setDoc(doc(d, 'reservas', 'rs-en2'), RS('rsEn0', 'carros')); await setDoc(doc(d, 'reservas', 'rs-en3'), RS('rsEn0', 'carros', { estado: 'aprobada', vehiculoId: 've-r5', placa: 'ABC123', conductor: 'Persona' })); });
+  await assertFails(salidaConReserva('rsEn2', 've-r3', 'rs-no-existe', 'en-rs2'));
+  await assertFails(salidaConReserva('rsEn3', 've-r3', 'rs-en2', 'en-rs3'));
+  await assertFails(salidaConReserva('rsEn4', 've-r4', 'rs-en3', 'en-rs4')); });
+await prueba('Salida de un carro sin reserva (reunión o viaje suelto): sigue como antes', async () => {
+  await sembrar(d => setDoc(doc(d, 'vehiculos', 've-r6'), VE14()));
+  await assertSucceeds(salidaConReserva('rsEn5', 've-r6', '', 'en-rs5')); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

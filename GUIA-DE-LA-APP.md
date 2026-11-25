@@ -512,8 +512,8 @@ El **Encargado de equipos** puede tocar el botón de **códigos de barras** que 
 
 | Rol / nivel | Qué hace en Vehículos |
 |---|---|
-| **Conductor** (Oscar Farfán) — nivel «Reporta» | **Reporta novedades** (siempre con foto), **registra la salida y la llegada** del carro (con 5 fotos, kilometraje y combustible). Confirma **su** viaje. |
-| **Transporte** (Wilson Muñoz) y **Bodega** (Andrés Beltrán) — nivel «Autoriza» | **Revisan las novedades** (le ponen costo y nota), actualizan los documentos, asignan conductor, llevan el **plan de mantenimiento** de cada carro y ven **Resumen y Reportes**. |
+| **Conductor** (Oscar Farfán) — nivel «Reporta» | **Reporta novedades** (siempre con foto), **registra la salida y la llegada** del carro (con 5 fotos, kilometraje y combustible), **pide un carro** para un viaje y ve los viajes que le aprobaron. Confirma **su** viaje. |
+| **Transporte** (Wilson Muñoz) y **Bodega** (Andrés Beltrán) — nivel «Autoriza» | **Revisan las novedades** (le ponen costo y nota), actualizan los documentos, asignan conductor, llevan el **plan de mantenimiento** de cada carro, **aprueban o rechazan los pedidos de carro** y ven **Resumen y Reportes**. También pueden pedir un carro (lo decide otra persona). |
 | **Jefe** | Todo. |
 | **Gerente** | Solo ver: Resumen, Reportes, Carros, Novedades, Tanqueos. |
 | **Consulta** y quien tenga «Solo ver» | Solo mirar. |
@@ -523,6 +523,17 @@ El **Encargado de equipos** puede tocar el botón de **códigos de barras** que 
 - En **Carros** hay un **buscador** (placa, marca, modelo o conductor) y botones **Todos · Disponible · En uso · En taller · Documentos**, cada uno con cuántos hay. Se suman al buscador y a las cifras de arriba (tocar «En uso» arriba o en los botones es lo mismo). Si no hay resultados, sale **«Quitar filtro»**.
 - **Tanqueos** lista los últimos 40 (el más nuevo primero), cada uno con la foto del recibo, y avisa cuántos tienen consumo raro.
 - **Resumen** y **Reportes** (solo Transporte, Bodega, Jefe y, en su versión, el Gerente). El Resumen trae el **costo total de los carros este mes** y **el de cada carro**; Reportes lo trae por periodo (este mes, 3 meses o todo).
+
+### 10.2.1 Pedir un carro (viajes que no son reuniones)
+Para un viaje que no es una reunión (por ejemplo, llevar documentos a Maicao o recoger material) se **pide un carro** desde **«Lo que me toca»** con el botón **«Pedir un carro»**. Lo pueden pedir quienes tienen **nivel de trabajo en Vehículos**: el Conductor, Transporte, Bodega y la Jefe. Quien solo ve (Gerente, Consulta) o no tiene Vehículos no lo pide; si hace falta, la Jefe le sube el nivel.
+1. **Se pide:** el día (desde hoy hasta 90 días), la hora, a dónde va y para qué. Al elegir el día la hoja dice **cuántos carros hay libres ese día**. Les llega el aviso a la Jefe, Transporte y Bodega.
+2. **Se aprueba:** en **«Carros por aprobar»** (Transporte, Bodega y la Jefe) se toca **«Aprobar y escoger carro»** y se escoge el **carro** y el **conductor**. Solo salen los carros **libres ese día**: que no estén en el taller, con el **SOAT y la técnico-mecánica al día ese día**, y sin otra reserva ni **reunión** (los carros que la Jefe autorizó para una reunión ese día no salen, y al revés: un carro reservado no sale para una reunión). O se **rechaza** diciendo por qué.
+3. **Nadie decide lo suyo:** quien pidió un carro no lo aprueba ni lo rechaza (lo hace otra persona); su pedido sale en **«Mis pedidos de carro»**, donde puede **cancelarlo** mientras espera respuesta.
+4. **El conductor** ve el viaje en **«Mis viajes con carro reservado»** (en «Lo que me toca»). El día del viaje aparece **«Registrar salida»** (si el carro está disponible) y, al salir, **«Registrar llegada»**. La **salida y la llegada quedan ligadas a la reserva**; al llegar, la reserva sale de la lista.
+5. **Cancelar:** quien pidió cancela su pedido mientras no lo han respondido; Transporte, Bodega y la Jefe cancelan también una **reserva aprobada** (el carro queda libre otra vez) mientras el carro no haya salido. Se avisa al conductor.
+- **Lo que revisan las reglas de Firebase:** que quien pide tenga nivel de trabajo, que el pedido nazca «pedido» a su nombre y con su correo, que nadie decida lo suyo y que el carro exista, no esté en el taller y tenga los papeles vigentes ese día. Que **no haya dos reservas o reuniones con el mismo carro el mismo día** lo revisa la app (las reglas no pueden contar documentos): si dos personas aprueban al mismo tiempo, podrían chocar; la segunda verá el cambio al abrir de nuevo.
+- Lo reservado se cuenta por **día completo** (la hora es para avisar al conductor): igual que en las reuniones, un carro reservado un día no sale para otra cosa ese día.
+- El Excel de Vehículos no trae todavía una hoja de reservas.
 
 ### 10.3 Reglas que se cumplen
 - **Novedad:** siempre con **foto**. Tipos: llanta, choque, rayón, mantenimiento, otro. El conductor **no puede poner costo**; lo pone quien la revisa.
