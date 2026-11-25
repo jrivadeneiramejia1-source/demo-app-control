@@ -149,7 +149,7 @@ try {
   log('Existencias: tocar "Agotados" deja 2', (await t.page.locator('#invContenido .card.art').count()) === 2);
   await t.page.click('#sumInventario button.sum[data-filtro="agotado"]');
   await t.page.fill('#qInventario', 'botas');
-  log('Existencias: la búsqueda encuentra las 2 botas', (await t.page.locator('#invContenido .card.art').count()) === 2);
+  log('Existencias: la búsqueda encuentra las 2 botas (se repinta 300 ms después de escribir)', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.art').length === 2));
   await t.page.fill('#qInventario', '');
   for (const [sec, re] of [['movimientos', /Registró/], ['solicitudes', /En espera/], ['compras', /En curso/], ['conteo', /conteo/i], ['resumen', /Cómo van las compras[\s\S]*Valor de lo que hay en bodega/]]) {
     await t.page.click(`#invSecciones [data-sec="${sec}"]`);

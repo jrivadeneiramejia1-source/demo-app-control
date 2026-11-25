@@ -1076,7 +1076,7 @@
     seccion = b.dataset.sec; A().S.filtro.inventario = ''; $('qInventario').value = '';
     A().pintarTodo();
   });
-  $('qInventario').addEventListener('input', () => pintar());
+  $('qInventario').addEventListener('input', UI.retardar(() => pintar(), 300));
   $('btnPedirMaterial').addEventListener('click', () => pedirMaterial());
   $('btnPedirCompra').addEventListener('click', () => pedirCompra());
   function alTocar(e) {
