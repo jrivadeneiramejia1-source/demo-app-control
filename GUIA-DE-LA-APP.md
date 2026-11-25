@@ -441,15 +441,15 @@ Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin au
 
 **Para qué sirve:** llevar el control de computadores y otros equipos (portátiles, monitores, GPS, cámaras, celulares, etc.): dónde está cada uno, quién lo tiene, cuándo tuvo mantenimiento y backup, y las **actas firmadas** de cada entrega.
 
-**Estados de un equipo:** **En bodega · Asignado · En Recibidos** (devuelto, pendiente de mantenimiento).
+**Estados de un equipo:** **En bodega · Asignado · En Recibidos** (devuelto, pendiente de mantenimiento) y **De baja** (retirado para siempre: sale de las cifras y de la lista, y su hoja de vida queda en la sección **«De baja»**).
 
 ### 9.1 Quién hace qué
 
 | Rol / nivel | Qué hace en Equipos |
 |---|---|
-| **Encargado de equipos** (Fabián Barbosa) | **Entrega** equipos con un acta firmada, **recibe** devoluciones, hace **mantenimiento y backup**, **registra equipos nuevos** y corrige actas con problema. |
-| **Soporte** (Ángel Ortiz) | **Recibe y revisa** lo que registra el Encargado, programa tareas en la **Agenda** (mantenimiento, backup, revisión). Con el permiso extra «actas» **revisa las actas** (nunca las suyas). |
-| **Jefe** | Todo. Revisa actas y programa tareas. |
+| **Encargado de equipos** (Fabián Barbosa) | **Entrega** equipos con un acta firmada, **recibe** devoluciones, hace **mantenimiento y backup**, **registra equipos nuevos**, anota su **compra y garantía**, **pide la baja** de un equipo y corrige actas con problema. |
+| **Soporte** (Ángel Ortiz) | **Recibe y revisa** lo que registra el Encargado, programa tareas en la **Agenda** (mantenimiento, backup, revisión) y **verifica equipos** con el escáner. Con el permiso extra «actas» **revisa las actas** (nunca las suyas). |
+| **Jefe** | Todo. Revisa actas, programa tareas, verifica equipos y **aprueba las bajas** (o las da directas). |
 | **Gerente** | Solo ver: Resumen, Equipos, Actas, Personas. |
 | **Quien tenga «Solo ver»** | Mira, no cambia nada. |
 | **Los demás** | No ven Equipos (a menos que la Jefe se lo dé). |
@@ -460,7 +460,16 @@ Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin au
 - **Actas:** las actas de entrega con su revisión, con **buscador** (persona, serial o número de acta).
 - **Agenda:** mantenimientos y backups programados, en grupos: **Atrasadas** (en rojo, solo si hay), **Esta semana** (hasta el domingo) y **Después**. Las ya hechas están plegadas en **«Ver hechas»**.
 - **Personas:** quién tiene qué equipo, con **buscador** (nombre, cédula o serial).
-- **Resumen:** solo la Jefe (y el Gerente en su versión).
+- **Resumen:** solo la Jefe (y el Gerente en su versión). Además de las cifras trae **«Sin verificar hace más de 6 meses»** y **«Garantías que vencen en 30 días»**.
+
+### 9.2.1 Baja, verificación y garantía de cada equipo
+- **Baja (dar de baja un equipo).** Los motivos son **dañado sin arreglo, robado, perdido u obsoleto**, y siempre lleva una **nota** (qué pasó, al menos unas palabras).
+  - El **Encargado la pide** (botón **«Pedir la baja»** en la hoja de vida de un equipo que está en bodega o en Recibidos). El equipo **sigue donde está** y ya no se ofrece para entregar. A la Jefe le llega un aviso y le sale **«Bajas por aprobar»** en «Lo que me toca».
+  - **Solo la Jefe la aprueba** («Aprobar la baja») o **no la aprueba** («No aprobar», diciendo por qué; la solicitud se quita y el equipo sigue igual). La Jefe también puede darla **directa** («Dar de baja»). Soporte y los demás no pueden darla de baja (lo impiden las reglas de Firebase).
+  - **Un equipo asignado no se da de baja:** primero se recibe (devolución).
+  - Ya de baja, el equipo **sale de las cifras**, ya no se entrega ni se cambia, y las tareas pendientes de la Agenda se cierran. Su hoja de vida (con motivo, nota, quién la pidió y quién la aprobó) queda en **«De baja (N)»** al final de la lista de Equipos («Ver los de baja»). **No hay botón para reactivar** un equipo dado de baja: la baja es definitiva (si fue un error, se corrige a mano en la consola de Firebase).
+- **Verificar equipos** (Soporte y la Jefe). Botón **«Verificar equipos»** en «Lo que me toca» y en Equipos. Se escoge qué se va a revisar (**los de bodega y Recibidos**, **los asignados** o **todos**) y se **escanean uno tras otro** hasta cerrar la cámara (o se escribe el serial y se toca Enter). La pantalla dice en vivo **«Verificados 18 · Sin encontrar 2»**, con la lista de los que faltan. **«Guardar la verificación»** deja en cada equipo escaneado la **fecha de hoy y quién lo verificó** (no agrega líneas al historial). Los de baja no se verifican. Se guardan hasta 400 de una vez.
+- **Compra y garantía** (opcional). Botón **«Compra y garantía»** en la hoja de vida (Encargado y Jefe), al **registrar un equipo nuevo** y en la **base de datos en Excel**: fecha de compra, garantía hasta, proveedor y costo. La garantía no puede terminar antes de la compra. Cuando una garantía vence en 30 días o menos, sale una etiqueta en la tarjeta del equipo y en el Resumen.
 
 ### 9.3 El acta virtual
 1. El Encargado toca **«Entregar»** y escoge a quién y qué equipos.
@@ -631,7 +640,7 @@ Piden **material** de la bodega y **compras** a su nombre, ven **sus** pedidos y
 | **Inventario > Resumen** | Existencias, Movimientos, Compras, Pedidos de material | Quien ve el Resumen |
 | **Inventario > un artículo > Kárdex** | El historial de ese artículo | Quien ve los movimientos |
 | **Vehículos > Reportes** | Carros (con costo de mantenimientos, combustible, total y km por galón), Salidas y llegadas, Novedades, Tanqueos, Por conductor | Transporte, Bodega, Jefe, Gerente |
-| **Equipos** (botón abajo) | Equipos y Actas de entrega (sin cédulas ni firmas) | Quien ve Equipos |
+| **Equipos** (botón abajo) | Equipos (con verificación, compra, garantía y motivo de baja) y Actas de entrega (sin cédulas ni firmas) | Quien ve Equipos |
 | **Reuniones** (botón abajo) | Reuniones y Tareas | Quien ve Reuniones |
 
 ### 13.2 Cómo salen (formato)

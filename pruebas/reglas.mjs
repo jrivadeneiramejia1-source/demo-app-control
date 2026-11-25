@@ -797,6 +797,116 @@ await prueba('Tanqueos: un lote de 100 tanqueos de una cuenta propia cabe en el 
   await sembrarT(); const db = await cuenta('tqLote', 'conductor');
   await assertSucceeds(lote(db, b => { for (let i = 0; i < 100; i++) b.set(doc(db, 'tanqueos', 'ta-lt-' + i), TQ({ km: 45500 + i })); })); });
 
+console.log('Fase 11: equipos (baja, verificación y compra/garantía)');
+await limpiar();
+const EQ11 = extra => Object.assign({ serial: 'S1', tipo: 'Portátil', marca: 'Lenovo', modelo: 'E14', estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', ultimoMtto: '', ultimoBackup: '', obs: '', pendientes: { mtto: false, backup: false }, historial: H1 }, extra);
+const BP = extra => Object.assign({ motivo: 'danado', nota: 'No enciende y no tiene arreglo', por: 'Persona', porRol: 'equipos', en: '2026-11-25' }, extra);
+const sembrarEq = (id, extra) => sembrar(d => setDoc(doc(d, 'equipos', id), EQ11(extra)));
+await prueba('Baja: el Encargado pide la baja de un equipo en bodega y de uno en Recibidos, con su línea de historial', async () => {
+  await sembrarEq('eq-b1'); await sembrarEq('eq-b2', { estado: 'recibido' }); const enc = await cuenta('bjEnc', 'equipos');
+  await assertSucceeds(updateDoc(doc(enc, 'equipos', 'eq-b1'), { bajaPedida: BP(), historial: H2 }));
+  await assertSucceeds(updateDoc(doc(enc, 'equipos', 'eq-b2'), { bajaPedida: BP({ motivo: 'obsoleto' }), historial: H2 })); });
+await prueba('Baja: la persona de prueba Encargado de equipos también la pide', async () => {
+  await sembrarEq('eq-b3'); await assertSucceeds(updateDoc(doc(prueba_('equipos'), 'equipos', 'eq-b3'), { bajaPedida: BP(), historial: H2 })); });
+await prueba('Baja: un equipo asignado no se pide para baja (primero se recibe)', async () => {
+  await sembrarEq('eq-b4', { estado: 'asignado', asignadoA: 'Persona Uno', asignadoCedula: '123456' });
+  await assertFails(updateDoc(doc(await cuenta('bjEnc2', 'equipos'), 'equipos', 'eq-b4'), { bajaPedida: BP(), historial: H2 })); });
+await prueba('Baja: el motivo tiene que ser uno de los 4, la nota de 5 a 200 letras y no puede haber campos de más', async () => {
+  await sembrarEq('eq-b5'); const enc = await cuenta('bjEnc3', 'equipos');
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-b5'), { bajaPedida: BP({ motivo: 'me dio pereza' }), historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-b5'), { bajaPedida: BP({ nota: 'no' }), historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-b5'), { bajaPedida: BP({ nota: 'x'.repeat(201) }), historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-b5'), { bajaPedida: BP({ aprobada: true }), historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-b5'), { bajaPedida: 'dañado', historial: H2 }));
+  await assertSucceeds(updateDoc(doc(enc, 'equipos', 'eq-b5'), { bajaPedida: BP({ nota: 'x'.repeat(200) }), historial: H2 })); });
+await prueba('Baja: sin la línea nueva de historial, o junto con otro dato, no pasa', async () => {
+  await sembrarEq('eq-b6'); const enc = await cuenta('bjEnc4', 'equipos');
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-b6'), { bajaPedida: BP() }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-b6'), { bajaPedida: BP(), obs: 'otra cosa', historial: H2 })); });
+await prueba('Baja: el Encargado no la aprueba (no pone el estado «baja»), ni quita la solicitud, ni pide otra encima', async () => {
+  await sembrarEq('eq-b7', { bajaPedida: BP() }); const enc = await cuenta('bjEnc5', 'equipos');
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-b7'), { estado: 'baja', bajaPor: 'Persona', bajaEn: '2026-11-25', historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-b7'), { bajaPedida: null, historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-b7'), { bajaPedida: BP({ nota: 'otra nota distinta' }), historial: H2 })); });
+await prueba('Baja: Soporte intenta dar de baja (pedirla o aprobarla) y falla; Compras y el Gerente tampoco', async () => {
+  await sembrarEq('eq-b8'); await sembrarEq('eq-b9', { bajaPedida: BP() });
+  const sop = await cuenta('bjSop', 'soporte'), ger = await cuenta('bjGer', 'gerente');
+  await assertFails(updateDoc(doc(sop, 'equipos', 'eq-b8'), { bajaPedida: BP({ porRol: 'soporte' }), historial: H2 }));
+  await assertFails(updateDoc(doc(sop, 'equipos', 'eq-b9'), { estado: 'baja', bajaPor: 'Persona', bajaEn: '2026-11-25', historial: H2 }));
+  await assertFails(updateDoc(doc(ger, 'equipos', 'eq-b9'), { estado: 'baja', bajaPor: 'Persona', bajaEn: '2026-11-25', historial: H2 }));
+  await assertFails(updateDoc(doc(await cuenta('bjCom', 'compras'), 'equipos', 'eq-b8'), { bajaPedida: BP({ porRol: 'compras' }), historial: H2 })); });
+await prueba('Baja: la Jefe aprueba lo pedido (estado «baja», fecha y quién la aprobó, con su línea de historial)', async () => {
+  await sembrarEq('eq-c1', { bajaPedida: BP() }); const jef = await cuenta('bjJef', 'jefe');
+  await assertSucceeds(updateDoc(doc(jef, 'equipos', 'eq-c1'), { estado: 'baja', bajaPedida: BP(), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 })); });
+await prueba('Baja: la Jefe no cambia lo que pidió el Encargado al aprobarla, ni aprueba sin fecha, ni uno asignado', async () => {
+  await sembrarEq('eq-c2', { bajaPedida: BP() }); await sembrarEq('eq-c3', { estado: 'asignado', asignadoA: 'Persona Uno', bajaPedida: BP() }); const jef = await cuenta('bjJef2', 'jefe');
+  await assertFails(updateDoc(doc(jef, 'equipos', 'eq-c2'), { estado: 'baja', bajaPedida: BP({ motivo: 'robado' }), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }));
+  await assertFails(updateDoc(doc(jef, 'equipos', 'eq-c2'), { estado: 'baja', bajaPedida: BP(), bajaPor: 'Persona Jefe', bajaEn: 'ayer', historial: H2 }));
+  await assertFails(updateDoc(doc(jef, 'equipos', 'eq-c3'), { estado: 'baja', bajaPedida: BP(), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 })); });
+await prueba('Baja: la Jefe también la da directa (sin solicitud) con motivo y nota; sin eso no pasa', async () => {
+  await sembrarEq('eq-d1'); await sembrarEq('eq-d2'); const jef = await cuenta('bjJef3', 'jefe');
+  await assertFails(updateDoc(doc(jef, 'equipos', 'eq-d1'), { estado: 'baja', bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }));
+  await assertFails(updateDoc(doc(jef, 'equipos', 'eq-d1'), { estado: 'baja', bajaPedida: BP({ nota: 'ok' }), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }));
+  await assertSucceeds(updateDoc(doc(jef, 'equipos', 'eq-d2'), { estado: 'baja', bajaPedida: BP({ porRol: 'jefe' }), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 })); });
+await prueba('Baja: la Jefe puede no aprobar (quita la solicitud con su línea de historial); el Encargado no', async () => {
+  await sembrarEq('eq-e1', { bajaPedida: BP() }); await sembrarEq('eq-e2', { bajaPedida: BP() });
+  await assertSucceeds(updateDoc(doc(await cuenta('bjJef4', 'jefe'), 'equipos', 'eq-e1'), { bajaPedida: null, historial: H2 }));
+  await assertFails(updateDoc(doc(await cuenta('bjEnc6', 'equipos'), 'equipos', 'eq-e2'), { bajaPedida: null, historial: H2 })); });
+await prueba('Baja: un equipo de baja ya no se mueve: ni el Encargado (volverlo a bodega, cambiar datos) ni la Jefe (quitarle la baja)', async () => {
+  await sembrarEq('eq-f1', { estado: 'baja', bajaPedida: BP(), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25' });
+  const enc = await cuenta('bjEnc7', 'equipos'), jef = await cuenta('bjJef5', 'jefe');
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-f1'), { estado: 'bodega', historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-f1'), { obs: 'lo arreglé', historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-f1'), { proveedor: 'Otro', historial: H2 }));
+  await assertFails(updateDoc(doc(jef, 'equipos', 'eq-f1'), { bajaPedida: null, historial: H2 }));
+  await assertFails(updateDoc(doc(jef, 'equipos', 'eq-f1'), { verificadoEn: '2026-11-25', verificadoPor: 'Persona' })); });
+await prueba('Verificar: Soporte y la Jefe dejan la fecha y quién verificó, sin tocar nada más (sin línea de historial)', async () => {
+  await sembrarEq('eq-v1'); await sembrarEq('eq-v2');
+  await assertSucceeds(updateDoc(doc(await cuenta('vrSop', 'soporte'), 'equipos', 'eq-v1'), { verificadoEn: '2026-11-25', verificadoPor: 'Persona Soporte' }));
+  await assertSucceeds(updateDoc(doc(await cuenta('vrJef', 'jefe'), 'equipos', 'eq-v2'), { verificadoEn: '2026-11-25', verificadoPor: 'Persona Jefe' })); });
+await prueba('Verificar: la persona de prueba de Soporte también', async () => {
+  await sembrarEq('eq-v3'); await assertSucceeds(updateDoc(doc(prueba_('soporte'), 'equipos', 'eq-v3'), { verificadoEn: '2026-11-25', verificadoPor: 'Ángel' })); });
+await prueba('Verificar: con una fecha mala, con otro dato junto (el estado, la baja) o por quien no es Soporte ni la Jefe, no pasa', async () => {
+  await sembrarEq('eq-v4'); const sop = await cuenta('vrSop2', 'soporte');
+  await assertFails(updateDoc(doc(sop, 'equipos', 'eq-v4'), { verificadoEn: 'hoy', verificadoPor: 'Persona' }));
+  await assertFails(updateDoc(doc(sop, 'equipos', 'eq-v4'), { verificadoEn: '2026-11-25', verificadoPor: 'x'.repeat(81) }));
+  await assertFails(updateDoc(doc(sop, 'equipos', 'eq-v4'), { verificadoEn: '2026-11-25', verificadoPor: 'Persona', estado: 'asignado' }));
+  await assertFails(updateDoc(doc(sop, 'equipos', 'eq-v4'), { verificadoEn: '2026-11-25', verificadoPor: 'Persona', obs: 'cambio' }));
+  await assertFails(updateDoc(doc(await cuenta('vrEnc', 'equipos'), 'equipos', 'eq-v4'), { verificadoEn: '2026-11-25', verificadoPor: 'Persona' }));
+  await assertFails(updateDoc(doc(await cuenta('vrCol', 'colaborador'), 'equipos', 'eq-v4'), { verificadoEn: '2026-11-25', verificadoPor: 'Persona' }));
+  await assertFails(updateDoc(doc(await cuenta('vrGer', 'gerente'), 'equipos', 'eq-v4'), { verificadoEn: '2026-11-25', verificadoPor: 'Persona' })); });
+await prueba('Verificar: un lote de 100 equipos de una cuenta propia de Soporte cabe en el límite de las reglas', async () => {
+  await sembrar(async d => { for (let i = 0; i < 100; i++) await setDoc(doc(d, 'equipos', 'eq-vl' + i), EQ11({ serial: 'VL' + i })); });
+  const sop = await cuenta('vrSop3', 'soporte');
+  await assertSucceeds(lote(sop, b => { for (let i = 0; i < 100; i++) b.update(doc(sop, 'equipos', 'eq-vl' + i), { verificadoEn: '2026-11-25', verificadoPor: 'Persona Soporte' }); })); });
+await prueba('Compra y garantía: el Encargado anota fecha de compra, garantía, proveedor y costo, con su línea de historial', async () => {
+  await sembrarEq('eq-g1'); const enc = await cuenta('cgEnc', 'equipos');
+  await assertSucceeds(updateDoc(doc(enc, 'equipos', 'eq-g1'), { fechaCompra: '2025-01-10', garantiaHasta: '2027-01-10', proveedor: 'Tecnoventas Ejemplo', costo: 3200000, historial: H2 }));
+  await assertSucceeds(updateDoc(doc(enc, 'equipos', 'eq-g1'), { fechaCompra: '', garantiaHasta: '', proveedor: '', costo: 0, historial: H3 })); });
+await prueba('Compra y garantía: fechas mal escritas, costo negativo o con letras, proveedor larguísimo y sin historial, no pasan', async () => {
+  await sembrarEq('eq-g2'); const enc = await cuenta('cgEnc2', 'equipos');
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-g2'), { fechaCompra: 'ayer', historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-g2'), { garantiaHasta: '10/01/2027', historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-g2'), { costo: -1, historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-g2'), { costo: 'caro', historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-g2'), { costo: 2000000000, historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-g2'), { proveedor: 'x'.repeat(61), historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-g2'), { proveedor: 123, historial: H2 }));
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-g2'), { costo: 100000 })); });
+await prueba('Compra y garantía: Soporte no la cambia; al registrar un equipo nuevo se puede anotar (y un costo negativo no pasa)', async () => {
+  await sembrarEq('eq-g3');
+  await assertFails(updateDoc(doc(await cuenta('cgSop', 'soporte'), 'equipos', 'eq-g3'), { costo: 100, historial: H2 }));
+  const enc = await cuenta('cgEnc3', 'equipos');
+  await assertSucceeds(setDoc(doc(enc, 'equipos', 'eq-nuevo9'), EQ11({ serial: 'NUEVO9', fechaCompra: '2026-11-01', garantiaHasta: '2027-11-01', proveedor: 'Equipos del Caribe Ejemplo', costo: 1500000 })));
+  await assertFails(setDoc(doc(enc, 'equipos', 'eq-nuevo8'), EQ11({ serial: 'NUEVO8', costo: -5 })));
+  await assertFails(setDoc(doc(enc, 'equipos', 'eq-nuevo7'), EQ11({ serial: 'NUEVO7', fechaCompra: 'mañana' }))); });
+await prueba('Baja: la Jefe de prueba carga los datos de ejemplo con equipos de baja sin pasar por las revisiones', async () => {
+  const db = prueba_('jefe'); await assertSucceeds(setDoc(doc(db, 'equipos', 'eq-ej1'), EQ11({ serial: 'EJ1', estado: 'baja', bajaPedida: BP(), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25' }))); });
+await prueba('Baja: un lote de 100 equipos dados de baja por una cuenta propia de la Jefe cabe en el límite de las reglas', async () => {
+  await sembrar(async d => { for (let i = 0; i < 100; i++) await setDoc(doc(d, 'equipos', 'eq-bl' + i), EQ11({ serial: 'BL' + i, bajaPedida: BP() })); });
+  const jef = await cuenta('bjJef6', 'jefe');
+  await assertSucceeds(lote(jef, b => { for (let i = 0; i < 100; i++) b.update(doc(jef, 'equipos', 'eq-bl' + i), { estado: 'baja', bajaPedida: BP(), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }); })); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

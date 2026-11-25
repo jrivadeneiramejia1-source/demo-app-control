@@ -106,6 +106,27 @@
         ])
     };
 
+    // Ciclo de vida de ejemplo (todo inventado): verificaciones, compras y garantías, una baja pedida (que la Jefe puede aprobar) y un equipo ya dado de baja.
+    const SOPORTE = 'Ángel Ortiz', PROV = ['Tecnoventas Ejemplo S. A. S.', 'Equipos del Caribe Ejemplo'];
+    ['eq-001', 'eq-002', 'eq-003', 'eq-004', 'eq-005', 'eq-006', 'eq-009'].forEach(id => Object.assign(equipos[id], { verificadoEn: dias(-30), verificadoPor: SOPORTE }));
+    Object.assign(equipos['eq-007'], { verificadoEn: dias(-250), verificadoPor: SOPORTE });
+    Object.assign(equipos['eq-001'], { fechaCompra: dias(-700), garantiaHasta: dias(18), proveedor: PROV[0], costo: 3200000 });
+    Object.assign(equipos['eq-002'], { fechaCompra: dias(-900), garantiaHasta: dias(-100), proveedor: PROV[0], costo: 2800000 });
+    Object.assign(equipos['eq-003'], { fechaCompra: dias(-400), garantiaHasta: dias(330), proveedor: PROV[1], costo: 3500000 });
+    Object.assign(equipos['eq-004'], { fechaCompra: dias(-340), garantiaHasta: dias(25), proveedor: PROV[1], costo: 1400000 });
+    Object.assign(equipos['eq-007'], { fechaCompra: dias(-800), garantiaHasta: dias(-60), proveedor: PROV[0], costo: 3200000 });
+    const TXT_BAJA12 = 'La pantalla tiene una raya y el equipo se apaga por el calor; el arreglo sale más caro que uno nuevo.';
+    equipos['eq-012'].bajaPedida = { motivo: 'danado', nota: TXT_BAJA12, por: 'Fabián Barbosa', porRol: 'equipos', en: dias(-1) };
+    equipos['eq-012'].historial.push(H(-1, 'baja-pedida', 'Fabián Barbosa', 'Dañado sin arreglo: ' + TXT_BAJA12));
+    const TXT_BAJA13 = 'Ya no enciende y no hay repuestos para este modelo.';
+    equipos['eq-013'] = Object.assign(equipo('DEMO-0013', 'Portátil', 'Acer', 'Aspire 5', 'baja', '', '', dias(-300), dias(-300), 'Retirado: ya no enciende', [
+      H(-420, 'mantenimiento', 'Fabián Barbosa', 'Mantenimiento preventivo'),
+      H(-300, 'mantenimiento', 'Fabián Barbosa', 'Se cambió el disco y no mejoró'),
+      H(-20, 'baja-pedida', 'Fabián Barbosa', 'Obsoleto: ' + TXT_BAJA13),
+      H(-18, 'baja', 'Carolina Castillo', 'Obsoleto: ' + TXT_BAJA13)
+    ]), { bajaPedida: { motivo: 'obsoleto', nota: TXT_BAJA13, por: 'Fabián Barbosa', porRol: 'equipos', en: dias(-20) }, bajaPor: 'Carolina Castillo', bajaEn: dias(-18),
+      fechaCompra: dias(-1500), garantiaHasta: dias(-1100), proveedor: PROV[0], costo: 2100000 });
+
     // ---------- ACTAS (virtuales, como la hoja «Entrega de equipos y herramientas») ----------
     // Las llena el Encargado con la persona, que firma en la pantalla; la devolución se anota en la misma acta.
     // Le llegan a Soporte para revisarlas. Las firmas son garabatos inventados.
@@ -409,5 +430,5 @@
     return { equipos, hojas, tareasEq, compras, vehiculos, novedades, entregas, tanqueos, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 14, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 15, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

@@ -18,6 +18,7 @@ rules_version = '2';
 //   Reuniones: la Jefe confirma lo que entendió el agente y reparte; Compras, Transporte y Bodega informan lo que hay y la Jefe
 //   autoriza la comida y los carros (escoge el conductor);
 //   el Conductor confirma el viaje, Logística alista, el Profesional confirma si va y Administrativo registra el acta.
+//   Equipos: el Encargado pide la baja de un equipo y solo la Jefe la aprueba; Soporte y la Jefe verifican (escanean) los equipos.
 //   Vehículos: el Conductor reporta novedades con foto y registra salidas y llegadas; Transporte y Bodega revisan, asignan y
 //   actualizan documentos. Los tanqueos (combustible, con la foto del recibo) los crea quien tenga nivel en Vehículos (menos «solo ver»)
 //   a su nombre; no se cambian después (solo la Jefe).
@@ -181,19 +182,45 @@ service cloud.firestore {
     }
     function rutaHoja(h) { return /databases/$(database)/documents/hojas/$(h); }
     function ultimoPaso() { return nuevo().historial[nuevo().historial.size() - 1]; }
+    // Datos de compra y garantía (opcionales): fechas vacías o AAAA-MM-DD, proveedor corto y costo en pesos.
+    function fechaOpc(f) { return f == '' || esFecha(f); }
+    function compraEqOk() {
+      let fc = nuevo().get('fechaCompra', ''); let gh = nuevo().get('garantiaHasta', ''); let pv = nuevo().get('proveedor', ''); let co = nuevo().get('costo', 0);
+      return fc is string && fechaOpc(fc) && gh is string && fechaOpc(gh) && pv is string && pv.size() <= 60 && co is number && co >= 0 && co <= 1000000000;
+    }
+    // La baja de un equipo: motivo, nota y quién la pidió. Solo equipos que están en bodega o en Recibidos (uno asignado se recibe primero).
+    function bajaOk(b) {
+      return b is map && b.keys().hasOnly(['motivo', 'nota', 'por', 'porRol', 'en']) && b.motivo in ['danado', 'robado', 'perdido', 'obsoleto']
+        && b.nota is string && b.nota.size() >= 5 && b.nota.size() <= 200 && b.por is string && b.porRol is string && esFecha(b.en);
+    }
     match /equipos/{id} {
       allow read: if veEquipos();
       allow delete: if esJefe();
-      allow create: if (esJefe() && esPrueba()) || (esEncargadoEq() && id.matches('^eq-[a-z0-9]{4,30}$')
-        && nuevo().estado == 'bodega' && nuevo().serial is string && nuevo().serial.size() <= 30 && nuevo().historial.size() == 1);
-      // El Encargado entrega, recibe, hace mantenimiento y backup (siempre con una línea de historial).
-      // Entregar o recibir (pasar a «asignado» o «recibido») solo junto con el acta en esa misma escritura.
-      allow update: if (esJefe() && esPrueba()) || (esEncargadoEq()
-        && soloCambia(['estado', 'asignadoA', 'asignadoCedula', 'proyecto', 'ultimoMtto', 'ultimoBackup', 'obs', 'pendientes', 'historial'])
-        && nuevo().estado in ['asignado', 'bodega', 'recibido'] && historialEqSigue()
-        && (nuevo().estado == antes().estado || nuevo().estado == 'bodega'
-            || (ultimoPaso().hojaId is string && existsAfter(rutaHoja(ultimoPaso().hojaId))
-                && ultimoPaso().tipo == (nuevo().estado == 'asignado' ? 'entrega' : 'devolucion'))));
+      allow create: if (esPrueba() && esJefe()) || (id.matches('^eq-[a-z0-9]{4,30}$') && nuevo().estado == 'bodega' && nuevo().serial is string && nuevo().serial.size() <= 30
+        && nuevo().historial.size() == 1 && compraEqOk() && esEncargadoEq());
+      // El Encargado entrega, recibe, hace mantenimiento y backup (siempre con una línea de historial) y anota los datos de compra y garantía.
+      // Entregar o recibir (pasar a «asignado» o «recibido») solo junto con el acta en esa misma escritura. Un equipo de baja ya no se mueve.
+      // Primero van las condiciones baratas (qué campos cambian y a qué estado) y al final quién es la persona: así cada rama falla rápido
+      // y el límite de 1000 expresiones de las reglas alcanza hasta para la Jefe (que pasa por varias ramas).
+      allow update: if (esPrueba() && esJefe())
+        || (soloCambia(['estado', 'asignadoA', 'asignadoCedula', 'proyecto', 'ultimoMtto', 'ultimoBackup', 'obs', 'pendientes', 'historial', 'fechaCompra', 'garantiaHasta', 'proveedor', 'costo'])
+            && antes().estado != 'baja' && nuevo().estado in ['asignado', 'bodega', 'recibido'] && esEncargadoEq() && historialEqSigue() && compraEqOk()
+            && (nuevo().estado == antes().estado || nuevo().estado == 'bodega'
+                || (ultimoPaso().hojaId is string && existsAfter(rutaHoja(ultimoPaso().hojaId))
+                    && ultimoPaso().tipo == (nuevo().estado == 'asignado' ? 'entrega' : 'devolucion'))))
+        // Pedir la baja: el Encargado deja la solicitud (con su línea de historial) y el equipo sigue donde está hasta que la Jefe decida.
+        || (soloCambia(['bajaPedida', 'historial']) && antes().estado in ['bodega', 'recibido'] && antes().get('bajaPedida', null) == null && nuevo().bajaPedida != null
+            && bajaOk(nuevo().bajaPedida) && historialEqSigue() && esEncargadoEq())
+        // Solo la Jefe da de baja: aprueba lo pedido (sin cambiarlo) o la hace directa. El equipo pasa a «baja» con la fecha y quién la aprobó.
+        || (soloCambia(['estado', 'bajaPedida', 'bajaPor', 'bajaEn', 'historial']) && nuevo().estado == 'baja' && antes().estado in ['bodega', 'recibido']
+            && bajaOk(nuevo().bajaPedida) && nuevo().bajaPedida == antes().get('bajaPedida', nuevo().bajaPedida) && nuevo().bajaPor is string && esFecha(nuevo().bajaEn)
+            && historialEqSigue() && esJefe())
+        // La Jefe también puede no aprobar lo pedido: la solicitud se quita y el equipo sigue igual.
+        || (soloCambia(['bajaPedida', 'historial']) && nuevo().bajaPedida == null && antes().estado in ['bodega', 'recibido'] && antes().get('bajaPedida', null) != null
+            && historialEqSigue() && esJefe())
+        // Verificar (contar y escanear): Soporte y la Jefe dejan la fecha y quién lo verificó, sin tocar nada más.
+        || (soloCambia(['verificadoEn', 'verificadoPor']) && antes().estado != 'baja' && esFecha(nuevo().verificadoEn) && nuevo().verificadoPor is string
+            && nuevo().verificadoPor.size() <= 80 && (esJefe() || (esDemo() && nivel('equipos') == 'soporte')));
     }
     // Actas (como la hoja de papel): las crea el Encargado con la firma de quien recibe; el id es «ac» + el número,
     // así dos actas no quedan con el mismo número. La devolución se agrega a la misma acta (con su firma).

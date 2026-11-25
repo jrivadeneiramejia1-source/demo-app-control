@@ -106,8 +106,8 @@ try {
   await esp(900); // las cifras cuentan hasta su valor
   const sem = await t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos') || '{}'));
   const COLS = ['equipos', 'hojas', 'tareasEq', 'compras', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'reuniones', 'necesidades', 'avisos'];
-  log('sembró 12 equipos, 6 actas, 3 tareas de equipos, 9 compras, 18 artículos, 13 movimientos, 5 pedidos, 4 carros, 3 novedades, 3 salidas/llegadas, 4 reuniones, 25 tareas de reuniones y 12 avisos',
-    COLS.map(c => Object.keys(sem[c] || {}).length).join(',') === '12,6,3,9,18,13,5,4,3,3,4,25,12', COLS.map(c => c + ':' + Object.keys(sem[c] || {}).length).join(' '));
+  log('sembró 13 equipos (12 en uso y 1 de baja), 6 actas, 3 tareas de equipos, 9 compras, 18 artículos, 13 movimientos, 5 pedidos, 4 carros, 3 novedades, 3 salidas/llegadas, 4 reuniones, 25 tareas de reuniones y 12 avisos',
+    COLS.map(c => Object.keys(sem[c] || {}).length).join(',') === '13,6,3,9,18,13,5,4,3,3,4,25,12', COLS.map(c => c + ':' + Object.keys(sem[c] || {}).length).join(' '));
   log('el saludo dice Hola, Carolina', (await texto(t.page, '#tInicio')) === 'Hola, Carolina');
   log('Jefe ve 9 cifras de pendientes (ya no autoriza compras)', (await t.page.locator('#sumInicio .sum').count()) === 9);
   log('bodega: 5 agotados o bajos y 3 pedidos por entregar', (await cifra(t.page, 'sumInicio', 0)) === 5 && (await cifra(t.page, 'sumInicio', 1)) === 3);
@@ -130,7 +130,7 @@ try {
   await t.page.fill('#qEq', '');
   // Filtros y vistas de Equipos (Fase 3)
   const eqDatos = () => t.page.evaluate(() => Object.values(JSON.parse(localStorage.getItem('__fb_datos')).equipos));
-  const nPort = (await eqDatos()).filter(e => e.tipo === 'Portátil').length;
+  const nPort = (await eqDatos()).filter(e => e.tipo === 'Portátil' && e.estado !== 'baja').length;
   log('Equipos: hay chips por tipo con su número («Todos 12» y los tipos que sí existen)', await hasta(t.page, () => { const c = [...document.querySelectorAll('#eqContenido .chip[data-accion="tipoeq"]')]; const n = x => Number(x.querySelector('.n').textContent); return c.length >= 3 && /^Todos/.test(c[0].textContent) && n(c[0]) === 12 && c.slice(1).reduce((s, x) => s + n(x), 0) === 12; }));
   await t.page.click('#eqContenido .chip[data-id="Portátil"]');
   log('Equipos: escoger «Portátil» deja solo los portátiles, dice «Filtro: Portátil» y cuenta bien', await hasta(t.page, n => document.querySelectorAll('#eqContenido .card[data-accion="ver"]').length === n && new RegExp(`${n} de 12 equipos`).test(document.getElementById('eqContenido').textContent) && /Filtro: Portátil/.test(document.getElementById('eqContenido').textContent) && document.querySelector('#eqContenido .chip[data-id="Portátil"]').getAttribute('aria-pressed') === 'true', nPort));
@@ -487,7 +487,7 @@ try {
   await t.page.click('.tab[data-vista="equipos"]'); await esp(300);
   const [excelEq] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#btnExcelEq')]);
   if (excelEq) { const ruta = path.join(CAPTURAS, 'excel-equipos.xlsx'); await excelEq.saveAs(ruta); const hs = await excelInfo(ruta);
-    log('el Excel de Equipos trae equipos y actas con el mismo formato, y sin cédulas ni firmas', /^Equipos .*\.xlsx$/.test(excelEq.suggestedFilename()) && hs.length === 2 && hs.every(bienFormado) && hs[0].filas.length >= 5 && !JSON.stringify(hs).match(/\b\d{7,10}\b|data:image/), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h), h.filas.length]))); }
+    log('el Excel de Equipos trae equipos y actas con el mismo formato, y sin cédulas ni firmas', /^Equipos .*\.xlsx$/.test(excelEq.suggestedFilename()) && hs.length === 2 && hs.every(bienFormado) && hs[0].filas.length >= 5 && !JSON.stringify(hs).match(/\b(1020304050|1030405060|1040506070|1050607080|1070809010|1080901020)\b|data:image/), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h), h.filas.length]))); }
   else log('el Excel de Equipos se descarga', false);
   await t.page.click('.tab[data-vista="reuniones"]'); await esp(300);
   const [excelReu] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#btnExcelReu')]);
@@ -1544,7 +1544,7 @@ try {
   log('se baja «Base de datos Equipos …xlsx»', !!dEq && /^Base de datos Equipos .*\.xlsx$/.test(dEq.suggestedFilename()), dEq && dEq.suggestedFilename());
   if (dEq) {
     const hs = await excelInfo(rutaBdEq), e = hs.find(h => h.nombre === 'Equipos');
-    log('trae las hojas Equipos, Ayuda y una de listas oculta, con formato y las columnas esperadas', ['Equipos', 'Ayuda', 'Listas'].every(n => hs.some(h => h.nombre === n)) && hs.find(h => h.nombre === 'Listas').oculta && bienFormado(e) && e.titulos.join() === 'ID,Acción,Serial,Tipo,Marca,Modelo,Estado,Asignado a,Proyecto,Último mantenimiento,Último backup,Observaciones', JSON.stringify(e.titulos));
+    log('trae las hojas Equipos, Ayuda y una de listas oculta, con formato y las columnas esperadas', ['Equipos', 'Ayuda', 'Listas'].every(n => hs.some(h => h.nombre === n)) && hs.find(h => h.nombre === 'Listas').oculta && bienFormado(e) && e.titulos.join() === 'ID,Acción,Serial,Tipo,Marca,Modelo,Estado,Asignado a,Proyecto,Último mantenimiento,Último backup,Fecha de compra,Garantía hasta,Proveedor,Costo,Observaciones', JSON.stringify(e.titulos));
     log('trae los 12 equipos con su código, una fila de ejemplo y filas vacías', e.filas.filter(f => /^eq-\d+$/.test(f[0])).length === 12 && e.filas.filter(f => /^Ejemplo/.test(f[1])).length === 1 && e.filas.filter(f => f.slice(0, 12).every(x => x === '')).length >= 15);
   }
   const rutaEq = path.join(CAPTURAS, 'bd-equipos-cambiada.xlsx');
@@ -1561,7 +1561,7 @@ try {
   log('al subir muestra: 1 para agregar, 1 para cambiar y 5 con problema', await hasta(t.page, () => { const x = document.getElementById('eqContenido').textContent; return /1 para agregar · 1 para cambiar/.test(x) && /5 con problema/.test(x); }), (await texto6('#eqContenido')).slice(0, 500));
   log('marca el equipo asignado que no se elimina, el serial repetido, el tipo que no está, el dato fijo y el serial mal escrito', await t.page.evaluate(() => { const x = document.getElementById('eqContenido').textContent; return /Está asignado a una persona/.test(x) && /ya hay uno con «DEMO-0001»/.test(x) && /Tipo: «Nave espacial» no está en la lista/.test(x) && /Marca: el Excel no cambia este dato/.test(x) && /Serial: usa letras, números y guiones/.test(x); }));
   const antesEq = await dBD();
-  log('mientras se ve la vista previa no se guarda nada', Object.keys(antesEq.equipos).length === 12);
+  log('mientras se ve la vista previa no se guarda nada', Object.keys(antesEq.equipos).length === 13);
   await guardarBD('#eqContenido');
   log('guarda 1 agregado y 1 cambiado', await hasta(t.page, () => /1 agregado, 1 cambiado/.test(document.body.textContent) && !document.querySelector('#eqContenido [data-xbd="guardar"]')));
   const dEq1 = await dBD(), nuevoEq = Object.entries(dEq1.equipos).find(([, e]) => e.serial === 'DEMO-0099');
@@ -1577,7 +1577,7 @@ try {
   await subirBD('#eqContenido', 'equipos', rutaEq2);
   log('«Eliminar» muestra 1 para eliminar', await hasta(t.page, () => /1 para eliminar/.test(document.getElementById('eqContenido').textContent)));
   await guardarBD('#eqContenido'); await t.page.click('#cfSi');
-  log('el equipo se elimina (solo la Jefe) y los 12 de siempre siguen', await hasta(t.page, () => Object.keys(JSON.parse(localStorage.getItem('__fb_datos')).equipos).length === 12 && !Object.values(JSON.parse(localStorage.getItem('__fb_datos')).equipos).some(e => e.serial === 'DEMO-0099')));
+  log('el equipo se elimina (solo la Jefe) y los 13 de siempre siguen', await hasta(t.page, () => Object.keys(JSON.parse(localStorage.getItem('__fb_datos')).equipos).length === 13 && !Object.values(JSON.parse(localStorage.getItem('__fb_datos')).equipos).some(e => e.serial === 'DEMO-0099')));
   await t.page.screenshot({ path: path.join(CAPTURAS, '13-excel-equipos-bd.png'), fullPage: true });
 
   // ---------- Carros ----------
@@ -1679,6 +1679,103 @@ try {
   await t.page.click('.tab[data-vista="vehiculos"]'); await t.page.click('#vehSecciones [data-sec="carros"]');
   log('quien solo consulta no ve ninguna subida de Excel (ni en Carros)', await hasta(t.page, () => !document.querySelector('#vehContenido [data-xbd]')));
   await cambiar(t.page, 'jefe');
+
+  console.log('6b. Equipos: baja, verificación y compra y garantía (Fase 11)');
+  const hoy11 = await t.page.evaluate(() => window.App.hoyISO());
+  const cerrarEq = async () => { await esp(700); if (!(await t.page.evaluate(() => document.getElementById('shEq').hidden))) await t.page.keyboard.press('Escape'); return hasta(t.page, () => document.getElementById('shEq').hidden); };
+  const txtEq = () => texto(t.page, '#eqContenido');
+  await t.page.click('.tab[data-vista="equipos"]'); await t.page.click('#eqSecciones [data-sec="equipos"]'); await t.page.waitForSelector('#qEq'); await t.page.fill('#qEq', '');
+  log('Equipos: los 12 en uso salen en la lista y el de baja queda aparte, en «De baja (1)» (no cuenta en «12 de 12 equipos»)', await hasta(t.page, () => { const x = document.getElementById('eqContenido').textContent; return document.querySelectorAll('#eqContenido .card[data-accion="ver"]').length === 12 && /12 de 12 equipos/.test(x) && /De baja \(1\)/.test(x) && !!document.querySelector('#eqContenido [data-accion="verbaja"]'); }), await txtEq());
+  await t.page.click('#eqContenido [data-accion="verbaja"]');
+  log('«Ver los de baja» muestra la tarjeta del DEMO-0013 con su estado «De baja» y el motivo', await hasta(t.page, () => { const c = document.querySelector('#eqContenido .card[data-id="eq-013"]'); return !!c && /De baja/.test(c.textContent) && /Obsoleto/.test(c.textContent) && !/Mantenimiento/.test(c.textContent); }));
+  await t.page.click('#eqContenido .card[data-id="eq-013"]'); await abiertaEq();
+  log('la hoja de vida del equipo de baja dice desde cuándo, por qué, quién la pidió y quién la aprobó, trae su historial y no tiene botones para cambiarlo', await hasta(t.page, () => { const x = document.getElementById('eqCampos').textContent; return /De baja desde/.test(x) && /Obsoleto/.test(x) && /Fabián Barbosa/.test(x) && /Carolina Castillo/.test(x) && /Baja pedida/.test(x) && !document.querySelector('#eqCampos [data-accion="entregar"], #eqCampos [data-accion="pedirbaja"], #eqCampos [data-accion="datoscompra"], #eqCampos [data-accion="programar"], #eqCampos [data-accion="aprobarbaja"]'); }), await texto(t.page, '#eqCampos'));
+  await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shEq').hidden);
+  await t.page.click('#eqSecciones [data-sec="hacer"]');
+  log('a la Jefe le toca «Bajas por aprobar (1)»: el DEMO-0012, con «Aprobar la baja» y «No aprobar»', await hasta(t.page, () => { const s = [...document.querySelectorAll('#eqContenido .section-label')].find(x => /Bajas por aprobar \(1\)/.test(x.textContent)); if (!s) return false; const c = s.nextElementSibling; return /DEMO-0012/.test(c.textContent) && /Dañado sin arreglo/.test(c.textContent) && !!c.querySelector('[data-accion="aprobarbaja"]') && !!c.querySelector('[data-accion="noaprobarbaja"]'); }), await txtEq());
+  await t.page.screenshot({ path: path.join(CAPTURAS, '25-baja-por-aprobar.png'), fullPage: true });
+  await t.page.click('#eqSecciones [data-sec="resumen"]');
+  log('Resumen: el equipo de baja queda fuera de la cifra, y salen «Sin verificar hace más de 6 meses (5)» y «Garantías que vencen en 30 días (2)»', await hasta(t.page, () => { const x = document.getElementById('eqContenido').textContent; return /Equipos[\s\S]{0,12}12[\s\S]{0,80}1 de baja \(fuera de la cifra\)/.test(x) && /Sin verificar hace más de 6 meses \(5\)/.test(x) && /Garantías que vencen en 30 días \(2\)/.test(x) && /vence en 18 días/.test(x) && /vence en 25 días/.test(x); }), await txtEq());
+  await t.page.screenshot({ path: path.join(CAPTURAS, '26-resumen-equipos-ciclo.png'), fullPage: true });
+
+  log('cambia a Daniel (Encargado de equipos)', await cambiar(t.page, 'equipos'));
+  await t.page.click('.tab[data-vista="equipos"]'); await t.page.click('#eqSecciones [data-sec="equipos"]'); await t.page.waitForSelector('#qEq');
+  await t.page.click('#eqContenido .card[data-id="eq-001"]'); await abiertaEq();
+  log('el Encargado ve el DEMO-0001 (asignado): no puede pedir su baja y la hoja le explica que primero hay que recibirlo; trae «Compra y garantía» y la garantía por vencer', await hasta(t.page, () => { const x = document.getElementById('eqCampos').textContent; return !document.querySelector('#eqCampos [data-accion="pedirbaja"]') && /primero hay que recibirlo/.test(x) && !!document.querySelector('#eqCampos [data-accion="datoscompra"]') && /Garantía vence en 18 días/.test(x) && /Tecnoventas Ejemplo/.test(x); }), await texto(t.page, '#eqCampos'));
+  await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shEq').hidden);
+  await t.page.click('#eqContenido .card[data-id="eq-009"]'); await abiertaEq();
+  await t.page.click('#eqCampos [data-accion="pedirbaja"]'); await hasta(t.page, () => !!document.getElementById('ebNota'));
+  await t.page.click('#eqPrimario');
+  log('pedir la baja sin contar qué pasó no deja guardar', await errEq(/Cuenta qué pasó/));
+  await t.page.selectOption('#ebMotivo', 'perdido'); await t.page.fill('#ebNota', 'No apareció en el conteo de la bodega');
+  log('con motivo y nota, la baja queda pedida: el equipo sigue en bodega, con su línea de historial y el aviso para la Jefe', await guardarEq() && await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')), e = d.equipos['eq-009'], b = e.bajaPedida; const ult = e.historial[e.historial.length - 1]; return e.estado === 'bodega' && !!b && b.motivo === 'perdido' && b.porRol === 'equipos' && /No apareció/.test(b.nota) && ult.tipo === 'baja-pedida' && Object.values(d.avisos).some(a => a.para === 'jefe' && a.titulo === 'Piden la baja de un equipo' && /DEMO-0009/.test(a.texto)); }));
+  await cerrarEq();
+  await t.page.click('#btnEntregar'); await abiertaEq(); await esp(100);
+  log('un equipo con la baja pedida ya no se ofrece para entregar', await hasta(t.page, () => !document.getElementById('ehEq_eq-009') && !!document.getElementById('ehEq_eq-007')));
+  await t.page.click('#eqCerrar'); await hasta(t.page, () => document.getElementById('shEq').hidden);
+  await t.page.click('#eqSecciones [data-sec="hacer"]');
+  log('el Encargado ve «Bajas que pediste (esperan a la Jefe) (2)» y no tiene los botones de aprobar', await hasta(t.page, () => { const s = [...document.querySelectorAll('#eqContenido .section-label')].find(x => /Bajas que pediste \(esperan a la Jefe\) \(2\)/.test(x.textContent)); return !!s && /Esperando a la Jefe/.test(s.nextElementSibling.textContent) && !document.querySelector('#eqContenido [data-accion="aprobarbaja"]'); }), await txtEq());
+  await t.page.click('#eqSecciones [data-sec="equipos"]'); await t.page.click('#eqContenido .card[data-id="eq-008"]'); await abiertaEq();
+  await t.page.click('#eqCampos [data-accion="datoscompra"]'); await hasta(t.page, () => !!document.getElementById('ehFCompra'));
+  await t.page.fill('#ehFCompra', '2026-01-10'); await t.page.fill('#ehGarantia', '2025-01-01'); await t.page.click('#eqPrimario');
+  log('una garantía que termina antes de la compra no deja guardar', await errEq(/no puede terminar antes de la compra/));
+  await t.page.fill('#ehGarantia', '2028-01-10'); await t.page.fill('#ehProveedor', 'Tecnoventas Ejemplo S. A. S.'); await t.page.fill('#ehCosto', '1.250.000');
+  log('con datos buenos, la compra y la garantía se guardan (costo como número) y dejan su línea en el historial', await guardarEq() && await hasta(t.page, () => { const e = JSON.parse(localStorage.getItem('__fb_datos')).equipos['eq-008'], ult = e.historial[e.historial.length - 1]; return e.fechaCompra === '2026-01-10' && e.garantiaHasta === '2028-01-10' && e.proveedor === 'Tecnoventas Ejemplo S. A. S.' && e.costo === 1250000 && ult.tipo === 'compra'; }));
+  await cerrarEq();
+  await t.page.click('#btnNuevoEq'); await abiertaEq();
+  await t.page.fill('#ehSerial', 'demo-0100'); await t.page.fill('#ehMarca', 'Lenovo'); await t.page.fill('#ehModelo', 'ThinkPad E14'); await t.page.fill('#ehFCompra', '2026-11-01'); await t.page.fill('#ehGarantia', '2029-11-01'); await t.page.fill('#ehProveedor', 'Equipos del Caribe Ejemplo'); await t.page.fill('#ehCosto', '3100000');
+  log('un equipo nuevo se registra con sus datos de compra y garantía', await guardarEq() && await hasta(t.page, () => { const e = Object.values(JSON.parse(localStorage.getItem('__fb_datos')).equipos).find(x => x.serial === 'DEMO-0100'); return !!e && e.estado === 'bodega' && e.fechaCompra === '2026-11-01' && e.garantiaHasta === '2029-11-01' && e.costo === 3100000 && e.proveedor === 'Equipos del Caribe Ejemplo'; }));
+
+  log('cambia a Carolina Castillo (Jefe)', await cambiar(t.page, 'jefe'));
+  await t.page.click('.tab[data-vista="equipos"]'); await t.page.click('#eqSecciones [data-sec="hacer"]');
+  await t.page.click('#eqContenido [data-accion="aprobarbaja"][data-id="eq-009"]'); await abiertaEq();
+  log('«Aprobar la baja» muestra lo que se pidió y para qué sirve', await hasta(t.page, () => /Aprobar la baja del DEMO-0009/.test(document.getElementById('eqT').textContent) && /Perdido/.test(document.getElementById('eqCampos').textContent) && /sale de las cifras/.test(document.getElementById('eqCampos').textContent)));
+  log('la Jefe aprueba la baja: el equipo pasa a «baja» con la fecha y quién la aprobó, con su línea de historial, y el Encargado recibe el aviso', await guardarEq() && await hasta(t.page, h => { const d = JSON.parse(localStorage.getItem('__fb_datos')), e = d.equipos['eq-009'], ult = e.historial[e.historial.length - 1]; return e.estado === 'baja' && e.bajaEn === h && !!e.bajaPor && e.bajaPedida.motivo === 'perdido' && ult.tipo === 'baja' && Object.values(d.avisos).some(a => a.para === 'equipos' && a.titulo === 'Aprobaron la baja' && /DEMO-0009/.test(a.texto)); }, hoy11));
+  await esp(500);
+  await t.page.click('#eqContenido [data-accion="noaprobarbaja"][data-id="eq-012"]'); await abiertaEq();
+  await t.page.click('#eqPrimario');
+  log('no aprobar una baja sin decir por qué no deja guardar', await errEq(/Cuenta por qué no se aprueba/));
+  await t.page.fill('#ebPorque', 'Todavía sirve: se arregla cambiando la pantalla');
+  log('la Jefe no aprueba la del DEMO-0012: la solicitud se quita, el equipo sigue en Recibidos y queda la línea «Baja no aprobada»', await guardarEq() && await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')), e = d.equipos['eq-012'], ult = e.historial[e.historial.length - 1]; return e.estado === 'recibido' && e.bajaPedida === null && ult.tipo === 'baja-no' && /Todavía sirve/.test(ult.nota) && Object.values(d.avisos).some(a => a.para === 'equipos' && a.titulo === 'No aprobaron la baja'); }));
+  await t.page.click('#eqSecciones [data-sec="equipos"]'); await t.page.click('#eqContenido .card[data-id="eq-008"]'); await abiertaEq();
+  log('la Jefe ve «Dar de baja» (directa) en un equipo de bodega', await hasta(t.page, () => { const b = document.querySelector('#eqCampos [data-accion="pedirbaja"]'); return !!b && /Dar de baja/.test(b.textContent); }));
+  await t.page.click('#eqCampos [data-accion="pedirbaja"]'); await hasta(t.page, () => !!document.getElementById('ebNota'));
+  await t.page.selectOption('#ebMotivo', 'obsoleto'); await t.page.fill('#ebNota', 'Ya no se usa y no tiene repuestos');
+  log('la Jefe la da de baja directa: pasa a «baja» sin solicitud previa, con ella misma como quien la pidió y la aprobó', await guardarEq() && await hasta(t.page, () => { const e = JSON.parse(localStorage.getItem('__fb_datos')).equipos['eq-008']; return e.estado === 'baja' && e.bajaPedida.porRol === 'jefe' && e.bajaPedida.motivo === 'obsoleto' && !!e.bajaPor; }));
+  await cerrarEq();
+  log('las cifras de arriba no cuentan los 3 de baja (bodega baja de 3 a 1)', await hasta(t.page, () => { const x = document.getElementById('sumEquipos').textContent; return /En bodega/.test(x) && Number([...document.querySelectorAll('#sumEquipos .sum')].find(s => /En bodega/.test(s.textContent)).querySelector('.num').textContent) === 2; }), await texto(t.page, '#sumEquipos'));
+
+  log('cambia a Ángel (Soporte)', await cambiar(t.page, 'soporte'));
+  await t.page.click('.tab[data-vista="equipos"]'); await t.page.click('#eqSecciones [data-sec="hacer"]');
+  log('Soporte ve el botón «Verificar equipos» en Lo que me toca', await hasta(t.page, () => !!document.querySelector('#eqContenido [data-accion="verificar"]')));
+  await t.page.click('#eqSecciones [data-sec="equipos"]'); await t.page.click('#eqContenido .card[data-id="eq-007"]'); await abiertaEq();
+  log('en la hoja de vida de Soporte no hay botones de baja ni de compra', await hasta(t.page, () => !document.querySelector('#eqCampos [data-accion="pedirbaja"], #eqCampos [data-accion="datoscompra"], #eqCampos [data-accion="aprobarbaja"]') && /Última verificación/.test(document.getElementById('eqCampos').textContent)));
+  await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shEq').hidden);
+  await t.page.evaluate(async () => { await window.UI.cargarScript('codigos.js?v=1'); });
+  await t.page.click('#eqContenido [data-accion="verificar"]'); await abiertaEq();
+  const faltanVer = alc => t.page.evaluate(a => Object.values(window.App.S.datos.equipos).filter(e => e.estado !== 'baja' && (a === 'todos' || (a === 'asignado' ? e.estado === 'asignado' : e.estado !== 'asignado'))).length, alc);
+  const nBod0 = await faltanVer('bodega');
+  log('«Verificar equipos» abre con «Verificados 0 · Sin encontrar N» (los de bodega y Recibidos que no están de baja) y avisa cuántos llevan más de 6 meses', await hasta(t.page, n => /Verificados 0 · Sin encontrar/.test(document.getElementById('evLista').textContent) && document.getElementById('evLista').textContent.includes('Sin encontrar ' + n) && /llevan más de 6 meses sin verificarse/.test(document.getElementById('eqSub').textContent), nBod0), await texto(t.page, '#evLista'));
+  await t.page.click('#eqPrimario');
+  log('guardar sin haber verificado ninguno no deja', await errEq(/Escanea o escribe al menos un equipo/));
+  await t.page.evaluate(() => { const q = ['demo-0007', 'DEMO-0010', 'XYZ-999', 'DEMO-0009', 'demo-0007']; window.Codigos.leer = async () => (q.length ? q.shift() : null); });
+  await t.page.click('#eqCampos [data-accion="verescanear"]');
+  log('escanear uno tras otro: verifica DEMO-0007 y DEMO-0010, no cuenta el serial que no existe, el de baja, ni el repetido', await hasta(t.page, n => { const x = document.getElementById('evLista').textContent; return x.includes('Verificados 2 · Sin encontrar ' + (n - 2)) && /DEMO-0007/.test(x) && /DEMO-0010/.test(x) && !/DEMO-0009/.test(document.querySelector('#evLista .ver-lista').textContent); }, nBod0), await texto(t.page, '#evLista'));
+  await t.page.fill('#evSerial', 'demo-0011'); await t.page.press('#evSerial', 'Enter');
+  log('escribir un serial y tocar Enter lo agrega sin guardar la hoja (siguen abiertas con 3 verificados)', await hasta(t.page, n => !document.getElementById('shEq').hidden && document.getElementById('evLista').textContent.includes('Verificados 3 · Sin encontrar ' + (n - 3)) && document.getElementById('evSerial').value === '', nBod0));
+  await t.page.selectOption('#evAlcance', 'asignado');
+  const nAsig = await faltanVer('asignado');
+  log('al escoger «Los asignados a personas» el «Sin encontrar» cambia a los 6 asignados (ninguno verificado en esta ronda)', await hasta(t.page, n => document.getElementById('evLista').textContent.includes('Verificados 3 · Sin encontrar ' + n), nAsig) && nAsig === 6);
+  await t.page.selectOption('#evAlcance', 'todos');
+  await t.page.screenshot({ path: path.join(CAPTURAS, '27-verificar-equipos.png'), fullPage: true });
+  const antesV = (await dat()).equipos;
+  log('guardar deja a los 3 con la fecha de hoy y quién los verificó (y el DEMO-0001 sigue con su fecha vieja)', await guardarEq() && await hasta(t.page, h => { const e = JSON.parse(localStorage.getItem('__fb_datos')).equipos; return ['eq-007', 'eq-010', 'eq-011'].every(i => e[i].verificadoEn === h && !!e[i].verificadoPor) && e['eq-001'].verificadoEn !== h; }, hoy11));
+  const desp = (await dat()).equipos;
+  log('el historial de los verificados no cambió y los de baja no se tocaron', ['eq-007', 'eq-010', 'eq-011'].every(i => desp[i].historial.length === antesV[i].historial.length) && desp['eq-009'].verificadoEn === antesV['eq-009'].verificadoEn && desp['eq-013'].verificadoEn === antesV['eq-013'].verificadoEn);
+  log('el mensaje final dice «Verificados 3 · Sin encontrar …»', await hasta(t.page, () => /Verificados 3 · Sin encontrar \d+/.test(document.getElementById('toast').textContent)));
+  log('cambia a Carolina Castillo (Jefe) otra vez', await cambiar(t.page, 'jefe'));
+  await t.page.click('.tab[data-vista="equipos"]'); await t.page.click('#eqSecciones [data-sec="resumen"]');
+  log('Resumen: ahora quedan 2 sin verificar hace más de 6 meses (el DEMO-0012 y el DEMO-0100 recién registrado) y el Resumen cuenta 3 de baja', await hasta(t.page, () => { const x = document.getElementById('eqContenido').textContent; return /Sin verificar hace más de 6 meses \(2\)/.test(x) && /3 de baja \(fuera de la cifra\)/.test(x); }), await txtEq());
 
   console.log('6. Seguridad y errores');
   await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); d.compras['co-002'].que = '<img src=x onerror="window.__hackeado=1">Prueba'; d.articulos['ar-011'].nombre = '<img src=x onerror="window.__hackeado=2">Mouse'; d.solicitudes[Object.keys(d.solicitudes)[0]].paraQue = '<script>window.__hackeado=3</script>'; d.compras['co-xss'] = { que: 'Compra con texto malo', cantidad: 3, unidad: 'artículos', categoria: 'Otro', valorAprox: 6000, paraQue: '<b onmouseover="window.__hackeado=6">x</b>', pide: 'Carolina Castillo', pideRol: 'jefe', autoriza: 'Oscar Muñoz', autorizaJefe: '', estado: 'comprado', proveedor: '<svg onload="window.__hackeado=7">', valorReal: 6000, fechaPedido: '2026-11-01', fechaCompra: '2026-11-02', entregadoA: '', motivoRechazo: '', articuloId: '', factura: '', revisada: false, historial: [],
