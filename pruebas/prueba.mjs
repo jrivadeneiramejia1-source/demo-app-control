@@ -149,7 +149,7 @@ try {
   log('Existencias: tocar "Agotados" deja 2', (await t.page.locator('#invContenido .card.art').count()) === 2);
   await t.page.click('#sumInventario button.sum[data-filtro="agotado"]');
   await t.page.fill('#qInventario', 'botas');
-  log('Existencias: la búsqueda encuentra las 2 botas', (await t.page.locator('#invContenido .card.art').count()) === 2);
+  log('Existencias: la búsqueda encuentra las 2 botas (se repinta 300 ms después de escribir)', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.art').length === 2));
   await t.page.fill('#qInventario', '');
   for (const [sec, re] of [['movimientos', /Registró/], ['solicitudes', /En espera/], ['compras', /En curso/], ['conteo', /conteo/i], ['resumen', /Cómo van las compras[\s\S]*Valor de lo que hay en bodega/]]) {
     await t.page.click(`#invSecciones [data-sec="${sec}"]`);
@@ -159,6 +159,72 @@ try {
   const [descarga] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#invContenido [data-accion="excel"]')]);
   if (descarga) { const ruta = path.join(CAPTURAS, 'excel-inventario.xlsx'); await descarga.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del inventario trae título, columnas en negrilla con cuadros y la primera fila fija (4 hojas)', hs.length === 4 && hs.every(bienFormado) && hs.every(h => h.filas.length >= 1), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); log('los valores de plata salen en pesos y no como texto', await t.page.evaluate(async b64 => { const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer); const ws = wb.getWorksheet('Existencias'); let ok = false; ws.getRow(4).eachCell((c, j) => { if (/Precio/.test(String(c.value))) { const x = ws.getRow(5).getCell(j); ok = typeof x.value === 'number' && /\$/.test(x.numFmt || ''); } }); return ok; }, fs.readFileSync(ruta).toString('base64'))); }
   log('el Excel se descarga con 4 hojas', !!descarga && /^Inventario .*\.xlsx$/.test(descarga.suggestedFilename()), descarga ? descarga.suggestedFilename() : 'sin descarga');
+
+  // --- Existencias como base de datos: bajar, cambiar en Excel, subir con vista previa y guardar ---
+  console.log('2b. Base de datos de Existencias en Excel (Jefe)');
+  const xlsxEx = (filas, ruta) => t.page.evaluate(async f => { const X = await window.Inventario.cargarXlsx(), l = X.utils.book_new(); X.utils.book_append_sheet(l, X.utils.json_to_sheet(f), 'Existencias'); return X.write(l, { type: 'base64', bookType: 'xlsx' }); }, filas).then(b => fs.writeFileSync(ruta, Buffer.from(b, 'base64')));
+  const datosApp = () => t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos')));
+  await t.page.click('#invSecciones [data-sec="existencias"]');
+  log('Existencias trae «Descargar base de datos» y «Subir Excel»', await hasta(t.page, () => !!document.querySelector('#invContenido [data-accion="bdexcel"]') && !!document.getElementById('invArchivo')));
+  const [descBd] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#invContenido [data-accion="bdexcel"]')]);
+  log('la base de datos se baja con nombre «Base de datos Existencias …xlsx»', !!descBd && /^Base de datos Existencias .*\.xlsx$/.test(descBd.suggestedFilename()), descBd && descBd.suggestedFilename());
+  if (descBd) {
+    const ruta = path.join(CAPTURAS, 'base-existencias.xlsx'); await descBd.saveAs(ruta); const hs = await excelInfo(ruta), e = hs.find(h => h.nombre === 'Existencias');
+    log('trae las hojas Existencias, Ayuda y una de listas oculta', ['Existencias', 'Ayuda', 'Listas'].every(n => hs.some(h => h.nombre === n)) && hs.find(h => h.nombre === 'Listas').oculta && !e.oculta, JSON.stringify(hs.map(h => h.nombre)));
+    log('Existencias tiene el formato (título, negrillas, cuadros, fila fija, filtros) y las columnas de una base de datos', !!e && bienFormado(e) && e.titulos.join() === 'ID,Acción,Artículo,Categoría,Unidad,Cantidad hoy,Cantidad real (conteo),Mínimo,Máximo,Ubicación,Precio aprox.,Proveedor,Estado,Valor en bodega', JSON.stringify(e && e.titulos));
+    log('trae los 18 artículos con su código, una fila de ejemplo y filas vacías para agregar', !!e && e.filas.filter(f => /^ar-\d+$/.test(f[0])).length === 18 && e.filas.filter(f => /^Ejemplo/.test(f[1])).length === 1 && e.filas.filter(f => f.slice(0, 12).every(x => x === '')).length >= 15, JSON.stringify(e && e.filas.slice(17, 21)));
+    log('tiene listas desplegables (acción, categoría, unidad), solo enteros desde 0 y fórmulas de Estado y Valor', await t.page.evaluate(async b64 => {
+      const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer);
+      const ws = wb.getWorksheet('Existencias'), fila = ws.rowCount, dv = c => (ws.getCell(fila, c).dataValidation || {}).type;
+      const f5 = ws.getCell(5, 13).value, v5 = ws.getCell(5, 14).value;
+      return dv(2) === 'list' && dv(4) === 'list' && dv(5) === 'list' && dv(7) === 'whole' && dv(8) === 'whole' && dv(11) === 'whole' && !dv(3) && !!f5 && /IF\(/.test(f5.formula || '') && !!v5 && /\*/.test(v5.formula || '');
+    }, fs.readFileSync(ruta).toString('base64')));
+  }
+  // Un Excel con cambios buenos (precio, conteo, artículo nuevo, eliminar) y filas malas.
+  const rutaBd = path.join(CAPTURAS, 'base-existencias-cambiada.xlsx');
+  const nuevaFila = { Artículo: 'Pilas AA', Categoría: 'Eléctricos', Unidad: 'paquetes', 'Cantidad real (conteo)': 7, Mínimo: 3, Máximo: 12, 'Precio aprox.': '$9.500', Ubicación: 'Bodega Riohacha · Estante B3', Proveedor: 'Tecnoguajira Suministros' };
+  await xlsxEx([
+    { ID: 'ar-002', 'Precio aprox.': 90000 },
+    { ID: 'ar-003', 'Cantidad real (conteo)': 12 },
+    nuevaFila,
+    { ID: 'ar-015', Acción: 'Eliminar' },
+    { ID: 'ar-004', Artículo: 'Guantes de vaqueta' },
+    { Acción: 'Ejemplo (se ignora)', Artículo: 'Artículo de ejemplo', Categoría: 'EPP', Unidad: 'unidades', Mínimo: 2, Máximo: 10, 'Precio aprox.': 12000 },
+    { ID: 'ar-999', Acción: 'Cambiar' },
+    { Artículo: 'Botas de seguridad talla 40', Categoría: 'EPP', Unidad: 'pares', Mínimo: 1, Máximo: 5, 'Precio aprox.': 1000 },
+    { Artículo: '=1+1', Categoría: 'EPP', Unidad: 'pares', Mínimo: 1, Máximo: 5, 'Precio aprox.': 1000 },
+    { Artículo: 'Cable raro', Categoría: 'Cosas', Unidad: 'unidades', Mínimo: 1, Máximo: 5, 'Precio aprox.': 1000 },
+    { Artículo: 'Mal máximo', Categoría: 'EPP', Unidad: 'pares', Mínimo: 5, Máximo: 2, 'Precio aprox.': 1 }
+  ], rutaBd);
+  const antesBd = await datosApp();
+  await t.page.setInputFiles('#invArchivo', rutaBd);
+  log('al subir el Excel muestra lo que entendió: 1 para agregar, 2 para cambiar, 1 para eliminar, 5 con problema', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return /1 para agregar · 2 para cambiar · 1 para eliminar/.test(x) && /5 con problema/.test(x) && /1 ya estaba igual/.test(x) && /1 fila de ejemplo/.test(x); }), (await texto(t.page, '#invContenido')).slice(0, 400));
+  log('explica cada cambio: el precio, el ajuste de cantidad, el artículo nuevo y que se elimina', await t.page.evaluate(() => { const x = document.getElementById('invContenido').textContent; return /Precio: \$\s?85\.000 → \$\s?90\.000/.test(x) && /Cantidad: 15 → 12 \(ajuste por conteo\)/.test(x) && /Cantidad inicial: 7/.test(x) && /Se elimina el artículo/.test(x) && /Pilas AA/.test(x); }), (await texto(t.page, '#invContenido')).slice(0, 900));
+  log('marca el código que no existe, el nombre repetido, la fórmula, la categoría mala y el máximo menor', await t.page.evaluate(() => { const x = document.getElementById('invContenido').textContent; return /El código ar-999 no está en la app/.test(x) && /Ya hay un artículo con ese nombre/.test(x) && /no puede empezar con/.test(x) && /No entendí la categoría «Cosas»/.test(x) && /El máximo debe ser mayor que el mínimo/.test(x); }));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '12-excel-existencias-vista-previa.png'), fullPage: true });
+  const duranteVista = await datosApp();
+  log('mientras se ve la vista previa no se guarda nada', Object.keys(duranteVista.articulos).length === Object.keys(antesBd.articulos).length && duranteVista.articulos['ar-002'].costo === antesBd.articulos['ar-002'].costo && !!duranteVista.articulos['ar-015']);
+  await t.page.click('#invContenido [data-accion="exguardar"]');
+  log('al haber algo que eliminar, la app pregunta antes', await hasta(t.page, () => !document.getElementById('cfSi').closest('[hidden]') && /Eliminar 1 artículo/.test(document.body.textContent)));
+  await t.page.click('#cfSi');
+  log('se guarda y avisa qué quedó hecho', await hasta(t.page, () => !document.querySelector('#invContenido [data-accion="exguardar"]') && /1 agregado, 2 cambiados, 1 eliminado/.test(document.body.textContent)), await texto(t.page, '#toast'));
+  const despBd = await datosApp(), pilas = Object.entries(despBd.articulos).find(([, a]) => a.nombre === 'Pilas AA');
+  log('el precio cambió y los demás datos de ese artículo quedaron igual', despBd.articulos['ar-002'].costo === 90000 && despBd.articulos['ar-002'].nombre === antesBd.articulos['ar-002'].nombre && despBd.articulos['ar-002'].cantidad === antesBd.articulos['ar-002'].cantidad);
+  log('el conteo ajustó la cantidad a 12 y dejó su movimiento de ajuste (-3, saldo 12)', (() => { const a = despBd.articulos['ar-003'], m = despBd.movimientos[a.ultimoMov]; return a.cantidad === 12 && !!m && m.tipo === 'ajuste' && m.cantidad === -3 && m.saldo === 12 && m.articuloId === 'ar-003'; })());
+  log('el artículo nuevo quedó con 7, precio 9500 y su movimiento de cantidad inicial', !!pilas && pilas[1].cantidad === 7 && pilas[1].costo === 9500 && pilas[1].categoria === 'Eléctricos' && despBd.movimientos[pilas[1].ultimoMov].motivo === 'inicial' && despBd.movimientos[pilas[1].ultimoMov].articuloId === pilas[0]);
+  log('se eliminó Papel higiénico y no se borró ningún movimiento (solo se sumaron el ajuste y la cantidad inicial)', !despBd.articulos['ar-015'] && Object.keys(despBd.movimientos).length === Object.keys(antesBd.movimientos).length + 2);
+  log('las filas con problema no guardaron nada (sigue 1 sola «Botas de seguridad talla 40», no hay «Cable raro»)', Object.values(despBd.articulos).filter(a => a.nombre === 'Botas de seguridad talla 40').length === 1 && !Object.values(despBd.articulos).some(a => /Cable raro|Mal máximo|^=/.test(a.nombre)));
+  // Volver a subir el mismo Excel no repite nada.
+  await t.page.setInputFiles('#invArchivo', rutaBd);
+  log('al subir el mismo Excel otra vez no hay nada nuevo que guardar (el artículo nuevo no se duplica)', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return /nada para guardar/.test(x) && !!document.querySelector('#invContenido [data-accion="exguardar"][disabled]'); }), (await texto(t.page, '#invContenido')).slice(0, 300));
+  await t.page.click('#invContenido [data-accion="exdescartar"]');
+  log('«Descartar» quita la vista previa', await hasta(t.page, () => !document.querySelector('#invContenido [data-accion="exguardar"]')));
+  const rutaMal = path.join(CAPTURAS, 'no-es-existencias.xlsx');
+  await t.page.evaluate(async () => { window.__x = await window.Inventario.cargarXlsx(); });
+  fs.writeFileSync(rutaMal, Buffer.from(await t.page.evaluate(() => { const X = window.__x, l = X.utils.book_new(); X.utils.book_append_sheet(l, X.utils.json_to_sheet([{ Color: 'rojo', Peso: 3 }]), 'Otra'); return X.write(l, { type: 'base64', bookType: 'xlsx' }); }), 'base64'));
+  await t.page.setInputFiles('#invArchivo', rutaMal);
+  log('un Excel que no es de existencias se explica en español y no guarda nada', await hasta(t.page, () => /No encontré los títulos \(Artículo, Categoría, Unidad…\)/.test(document.getElementById('invContenido').textContent)));
+  await t.page.click('#invSecciones [data-sec="resumen"]');
   await t.page.click('#invSecciones [data-sec="compras"]');
   await t.page.click('#invContenido .chip[data-val="todas"]');
   await t.page.click('#invContenido [data-accion="vercompra"][data-id="co-007"]');
@@ -696,7 +762,9 @@ try {
   log('al confirmar el correo, el código de Jefe la deja entrar como Jefe', await enApp('Jefe'));
   log('el código de Jefe se gastó (sirve una sola vez)', !((await fb()).codigosDireccion || {})['JEF-PRUE-BA23']);
   log('la Jefe con cuenta propia no tiene «Reiniciar los datos de prueba»', await (async () => { await t.page.click('#btnPersona'); await t.page.waitForSelector('#shPersona:not([hidden])'); const r = !(await visible(t.page, '#ajustesJefe')); await t.page.keyboard.press('Escape'); return r; })());
+  log('el panel «Personas y permisos» no se descarga hasta que la Jefe lo abre', await t.page.evaluate(() => !window.Gente && ![...document.scripts].some(s => /gente\.js/.test(s.src))));
   log('la Jefe abre «Personas y permisos»', await abrirPanel());
+  log('al abrirlo se descarga una sola vez y queda listo', await t.page.evaluate(() => !!window.Gente && [...document.scripts].filter(s => /gente\.js/.test(s.src)).length === 1));
   log('el panel trae el Excel, las personas, los códigos y la seguridad', await t.page.evaluate(() => { const x = document.getElementById('genteCuerpo').textContent; return /Descargar plantilla/.test(x) && /Subir Excel/.test(x) && /Personas registradas/.test(x) && /Códigos por rol/.test(x) && /Personas de prueba: encendidas/.test(x); }));
 
   // --- Excel: plantilla y subida con filas buenas y malas ---

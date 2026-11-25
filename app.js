@@ -369,7 +369,7 @@
     const sum = $('sumInicio');
     const algoCargando = ['equipos', 'compras', 'articulos', 'solicitudes', 'vehiculos', 'reuniones'].some(cargando);
     sum.className = 'summary' + (todas.length === 2 || todas.length === 4 ? ' dos' : '');
-    sum.innerHTML = todas.map(c => UI.cifra({ k: c.k, n: algoCargando ? 0 : c.n, lbl: c.lbl, icono: c.icono, tono: c.tono, filtro: c.mod, activo: false })).join('');
+    sum.innerHTML = algoCargando ? UI.esqueletoCifras(todas.length) : todas.map(c => UI.cifra({ k: c.k, n: c.n, lbl: c.lbl, icono: c.icono, tono: c.tono, filtro: c.mod, activo: false })).join('');
     UI.contar(sum);
     $('modulosLista').innerHTML = MODULOS.map(m => {
       const ok = puedeVer(m.k);
@@ -382,9 +382,12 @@
   }
 
   /** Tablero con filtro: al tocar una cifra filtra la lista; tocarla otra vez quita el filtro. */
+  // Colecciones de las que sale cada tablero: mientras no lleguen, se muestran cuadritos fantasma y no un «0» falso.
+  const COLS_MOD = { equipos: ['equipos', 'hojas', 'tareasEq'], inventario: ['articulos', 'compras', 'solicitudes'], vehiculos: ['vehiculos', 'novedades', 'entregas'], reuniones: ['reuniones', 'necesidades'] };
   function tablero(mod, cifras) {
     const el = $('sum' + mod[0].toUpperCase() + mod.slice(1));
     el.className = 'summary' + (cifras.length === 2 || cifras.length === 4 ? ' dos' : '');
+    if ((COLS_MOD[mod] || []).some(cargando)) { el.innerHTML = UI.esqueletoCifras(cifras.length); el.dataset.mod = mod; return; }
     const enfocada = el.contains(document.activeElement) ? document.activeElement.dataset.filtro : null;
     el.innerHTML = cifras.map(c => UI.cifra(Object.assign({ activo: S.filtro[mod] === c.filtro }, c))).join('');
     if (enfocada != null) { const b = el.querySelector(`[data-filtro="${CSS.escape(enfocada)}"]`); if (b) b.focus({ preventScroll: true }); }
@@ -497,7 +500,8 @@
     $('btnPersona').onclick = abrirPersona;
     $('btnAvisos').onclick = abrirAvisos;
     $('btnSalir').onclick = async () => { cerrarHoja('shPersona'); await nube.salir(); };
-    $('btnGente').onclick = () => { cerrarHoja('shPersona'); window.Gente.abrir(); };
+    // «Personas y permisos» (gente.js, 34 KB) solo lo usa la Jefe: se descarga la primera vez que lo abre.
+    $('btnGente').onclick = () => { cerrarHoja('shPersona'); UI.cargarScript('gente.js?v=8').then(() => window.Gente.abrir(), () => toast('No se pudo abrir el panel. Revisa la conexión y vuelve a intentar.')); };
     $('entradaModo').addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return; modoEntrada = b.dataset.modo; $('entradaErr').hidden = true; pintarModoEntrada(); });
     $('ctCambiar').onclick = () => { modoCuenta = modoCuenta === 'crear' ? 'entrar' : 'crear'; $('ctErr').hidden = true; pintarModoEntrada(); };
     $('ctForm').addEventListener('submit', e => { e.preventDefault(); enviarCuenta(); });

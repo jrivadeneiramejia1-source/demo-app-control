@@ -626,7 +626,9 @@
   }
   const ponerCC = () => { const cc = $('ehFirmaPCC'); if (cc && $('ehCedula')) cc.textContent = $('ehCedula').value.replace(/\D/g, '') || '—'; };
   $('eqContenido').addEventListener('click', alTocar);
-  $('eqContenido').addEventListener('input', e => { if (e.target.id === 'qEq') { buscar = e.target.value; const pos = e.target.selectionStart; pintar(); const q = $('qEq'); if (q) { q.focus(); try { q.setSelectionRange(pos, pos); } catch (x) {} } } });
+  // Lo escrito se guarda al instante, pero la lista se repinta 300 ms después de la última tecla.
+  const buscarLuego = UI.retardar(() => { const q = $('qEq'), pos = q ? q.selectionStart : 0; pintar(); const n = $('qEq'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} } }, 300);
+  $('eqContenido').addEventListener('input', e => { if (e.target.id === 'qEq') { buscar = e.target.value; buscarLuego(); } });
   $('eqCampos').addEventListener('click', e => { if (e.target.closest('[data-accion]')) alTocar(e); });
   $('eqCampos').addEventListener('input', e => { if (e.target.id === 'ehCedula' && $('ehQuien') === null) ponerCC(); });
   $('eqCampos').addEventListener('change', e => {
