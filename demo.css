@@ -363,3 +363,7 @@ button.card .card-title { text-align: left; }
 .kardex-tabla td:first-child { white-space: nowrap; }
 .kardex-tabla td:nth-child(2), .kardex-tabla th:nth-child(2) { white-space: normal; }
 .kardex-tabla td.num, .kardex-tabla th:nth-child(n+3) { text-align: right; }
+
+/* Compras: cuadro Autorizado · Pagado · Recibido (todo se parte en renglones para que quepa en el celular) */
+.cuadro-compra td, .cuadro-compra th { white-space: normal !important; }
+.cuadro-compra td .ph { width: 14px; height: 14px; vertical-align: -2px; }

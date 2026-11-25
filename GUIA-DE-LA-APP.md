@@ -390,6 +390,10 @@ Quien decide deja su **correo** en la compra (para que nadie se haga pasar por o
 
 **Cada paso queda en el historial de la compra**, y el historial **solo crece**: no se puede borrar ni cambiar lo que ya está.
 
+**El cuadro «Autorizado · Pagado · Recibido».** En **Ver detalle** de una compra ya pagada o recibida, cada artículo trae lo que se autorizó, lo que se pagó y lo que llegó, lado a lado. Lo que se pagó **más del 10 %** de lo autorizado, o lo que **llegó menos**, sale en rojo con un ícono de aviso (por ejemplo «+25 %» o «faltan 2»), y la fila de abajo suma el total. El pago se anota por toda la compra; en las de varios artículos, la app lo reparte entre ellos según lo que valía cada uno al pedirlo. Lo recibido sale de los movimientos de bodega, así que quien no ve movimientos ve «—».
+
+**Pedir compra de todo lo bajo.** En **Qué hay que hacer**, cuando hay **dos o más** artículos agotados o bajos del mínimo sin compra en curso, sale el botón **«Pedir compra de todo lo bajo (N)»**: abre **una sola compra** con esos artículos ya puestos (el agotado primero, con la cantidad que falta para llegar al máximo y su valor). Una compra lleva hasta 5 artículos: si hay más, van los 5 más urgentes y después se hace otra con el resto. Se revisa y se envía como cualquier compra.
+
 ### 8.3 Pedidos de material (cosas de la bodega)
 1. Cualquiera con nivel de pedir: botón **«Pedir material»**: escoge el artículo, cantidad, para qué y proyecto.
 2. **Bodega** ve el pedido en «Qué hay que hacer» o «Pedidos de material».

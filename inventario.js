@@ -189,6 +189,9 @@
     const mias = lista.filter(esMia), otras = lista.filter(t => !esMia(t));
     const filtroTxt = f === 'entregar' ? ' (solo pedidos por entregar)' : f === 'compras' ? ' (solo compras en curso)' : '';
     let h = '';
+    // Con dos o más artículos por reponer, una sola compra con todos (en vez de una por artículo).
+    const nBajos = (esJefe() ? lista : mias).filter(t => t.tipo === 'pedir').length;
+    if (nBajos >= 2 && puedoPedirCompra() && !f) h += barraBotones([boton('pedirbajo', `Pedir compra de todo lo bajo (${nBajos})`, 'carrito', '', 'primary')]);
     if (esJefe()) {
       // La Jefe ve todo agrupado por quién tiene que hacerlo, y puede hacer cualquier paso ella misma.
       const grupos = {};
@@ -583,7 +586,7 @@
     <div class="fields cols"><div class="field"><label for="lxCant${n}">Cantidad</label><input id="lxCant${n}" data-lx="cant" type="number" inputmode="numeric" min="1" step="1" value="1"></div>
       <div class="field"><label for="lxVal${n}">Valor total (pesos)</label><input id="lxVal${n}" data-lx="val" type="number" inputmode="numeric" min="0" step="1"></div></div>
     <button class="btn small ghost" type="button" data-accion="quitarLinea" data-n="${n}">Quitar este artículo</button></div>`;
-  function pedirCompra(artId, cantSug) {
+  function pedirCompra(artId, cantSug, otros) {
     const a = artId ? artPorId(artId) : null;
     const sug = cantSug || (a ? Math.max(1, num(a.maximo) - num(a.cantidad)) : 1);
     const general = esGerenteGeneral(), aut = autorizadorDe({ pideRol: persona().rol, estado: 'pedido' }), monto = A().montoGerente(), quienAut = aut === 'gerente' ? 'el Gerente general' : nombreRol(aut);
@@ -635,6 +638,15 @@
             : aviso(ROL_DE[aut], 'Compra por autorizar', `${persona().nombre} pide comprar ${resumenTxt} por ${A().cop(total)}.`)];
       }
     });
+    // «Pedir todo lo bajo»: el primer artículo va en la línea de arriba y los demás en líneas extra, ya con su cantidad y su valor.
+    if (otros && otros.length) {
+      $('acProvSug').value = '';
+      otros.slice(0, MAX_EXTRA).forEach(x => {
+        masLinea();
+        const k = extrasN - 1, n = Math.max(1, num(x.maximo) - num(x.cantidad));
+        $('lxArt' + k).value = x.id; $('lxQue' + k).value = x.nombre; $('lxCant' + k).value = n; $('lxVal' + k).value = num(x.costo) * n;
+      });
+    }
     // Al escoger un artículo de bodega se llenan solos el nombre, la unidad, la categoría y el valor.
     $('acArt').addEventListener('change', () => {
       const x = artPorId(valor('acArt')); if (!x) return;
@@ -654,6 +666,15 @@
     });
   }
   // Agregar o quitar artículos extra de una compra (hasta 5 en total).
+  /** Una sola compra con todo lo agotado o bajo del mínimo (lo más urgente primero, hasta 5 artículos). */
+  function pedirBajo() {
+    const bajos = tareas().filter(t => t.tipo === 'pedir').map(t => t.art);
+    if (!bajos.length) return null;
+    const lote = bajos.slice(0, MAX_EXTRA + 1);
+    pedirCompra(lote[0].id, 0, lote.slice(1));
+    if (bajos.length > lote.length) A().toast(`Hay ${bajos.length} artículos por reponer: en esta compra van los ${lote.length} más urgentes. Después haces otra con el resto.`);
+    return true;
+  }
   function masLinea() {
     const cont = $('acExtra'); if (!cont) return;
     if (cont.querySelectorAll('.linea-extra').length >= MAX_EXTRA) { A().toast('Una compra lleva hasta 5 artículos. Haz otra compra para los demás.'); return; }
@@ -671,7 +692,7 @@
     return c ? { cada: Math.round(num(c.valorReal) / num(c.cantidad)), proveedor: c.proveedor, fecha: c.fechaCompra } : null;
   }
   /** Todo lo que hay que saber de una compra antes de decidir: líneas con precio de cada uno, para qué, a quién, cotizaciones, bodega y último precio. */
-  function detalleCompra(c, conMonto) {
+  function detalleCompra(c, conMonto, tablaPropia) {
     const App = A(), cop = App.cop, lineas = lineasDe(c);
     const filas = lineas.map(l => {
       const a = l.articuloId ? artPorId(l.articuloId) : null, ult = ultimoPrecio(l), cada = num(l.cantidad) > 0 ? Math.round(num(l.valor) / num(l.cantidad)) : 0;
@@ -680,12 +701,42 @@
         <td>${esH(String(num(l.cantidad)))} ${esH(l.unidad || '')}</td><td>${esH(cop(cada))}</td><td>${esH(cop(l.valor))}</td></tr>`;
     }).join('');
     const cots = Array.isArray(c.cotizaciones) ? c.cotizaciones.filter(x => /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(typeof x === 'string' ? x : '')) : [];
-    return `<table class="lineas-tabla"><thead><tr><th>Qué</th><th>Cantidad</th><th>Cada uno</th><th>Total</th></tr></thead><tbody>${filas}</tbody>
-      <tfoot><tr><td colspan="3"><b>Total aprox.</b></td><td><b>${esH(cop(c.valorAprox))}</b></td></tr></tfoot></table>
+    const tabla = `<table class="lineas-tabla"><thead><tr><th>Qué</th><th>Cantidad</th><th>Cada uno</th><th>Total</th></tr></thead><tbody>${filas}</tbody>
+      <tfoot><tr><td colspan="3"><b>Total aprox.</b></td><td><b>${esH(cop(c.valorAprox))}</b></td></tr></tfoot></table>`;
+    return `${tablaPropia || tabla}
       <dl class="datos"><dt>Pidió</dt><dd>${esH(c.pide)}${c.fechaPedido ? ' el ' + esH(App.fechaCorta(c.fechaPedido)) : ''}</dd><dt>Para qué</dt><dd>${esH(c.paraQue)}</dd>
         ${c.proveedorSug ? `<dt>A quién se le compra</dt><dd>${esH(c.proveedorSug)}</dd>` : ''}
         ${conMonto ? `<dt>Monto del Gerente</dt><dd>${esH(cop(App.montoGerente()))}: si la compra vale más de eso, también la autoriza el Gerente general</dd>` : ''}</dl>
       ${cots.length ? `<div class="field"><span class="lbl">Cotizaciones (${cots.length})</span><div class="cot-mini">${cots.map((x, i) => `<img src="${esH(x)}" alt="Cotización ${i + 1} de ${esH(c.que)}">`).join('')}</div></div>` : ''}`;
+  }
+
+  /** Lo autorizado, lo pagado y lo recibido de cada artículo, lado a lado, con las diferencias en rojo.
+      Lo pagado se anota por toda la compra: por artículo se reparte según lo que valía cada uno al pedirlo. Lo recibido sale de los movimientos de bodega. */
+  function cuadroCompra(c) {
+    const App = A(), cop = App.cop, lineas = lineasDe(c), pagado = num(c.valorReal), recibida = c.estado === 'recibido';
+    const suma = lineas.reduce((s, l) => s + num(l.valor), 0), factor = pagado > 0 && suma > 0 ? pagado / suma : 1;
+    const movs = D().movimientos.filter(m => m.compraId === c.id && m.motivo === 'compra');
+    const aviso = txt => `<span class="err-txt">${window.ico('aviso')} ${esH(txt)}</span>`;
+    let faltaron = 0;
+    const filas = lineas.map(l => {
+      const pag = lineas.length === 1 ? pagado : Math.round(num(l.valor) * factor);
+      const mas = num(l.valor) > 0 && pag > num(l.valor) * 1.1;
+      let rec;
+      if (!recibida) rec = '<span class="meta">Falta recibir</span>';
+      else if (!l.articuloId) rec = `<span class="meta">No va a bodega${c.entregadoA ? ': se entregó a ' + esH(c.entregadoA) : ''}</span>`;
+      else if (!veMovs()) rec = '<span class="meta">—</span>';
+      else {
+        const llego = movs.filter(m => m.articuloId === l.articuloId).reduce((s, m) => s + num(m.cantidad), 0);
+        if (llego < num(l.cantidad)) faltaron++;
+        rec = `${esH(String(llego))} ${esH(l.unidad || '')}${llego < num(l.cantidad) ? `<br>${aviso(`faltan ${num(l.cantidad) - llego}`)}` : ''}`;
+      }
+      return `<tr><td><b>${esH(l.que)}</b></td><td>${esH(String(num(l.cantidad)))} ${esH(l.unidad || '')}<span class="meta">${esH(cop(l.valor))}</span></td>
+        <td>${esH(cop(pag))}${mas ? `<br>${aviso(`+${Math.round((pag / num(l.valor) - 1) * 100)} %`)}` : ''}</td><td>${rec}</td></tr>`;
+    }).join('');
+    const sobre = sobrecosto(c);
+    return `<table class="lineas-tabla cuadro-compra"><thead><tr><th>Qué</th><th>Autorizado</th><th>Pagado</th><th>Recibido</th></tr></thead><tbody>${filas}</tbody>
+      <tfoot><tr><td><b>Total aprox.</b></td><td><b>${esH(cop(c.valorAprox))}</b></td><td><b>${esH(cop(c.valorReal))}</b>${sobre ? `<br>${aviso(`+${sobre.pct} %`)}` : ''}</td><td>${faltaron ? aviso(faltaron === 1 ? 'llegó menos en 1 artículo' : `llegó menos en ${faltaron} artículos`) : ''}</td></tr></tfoot></table>
+      <p class="meta">Lo pagado se anota por toda la compra; por artículo se reparte según lo que valía cada uno al pedirlo.</p>`;
   }
 
   function autorizar(c) {
@@ -880,7 +931,7 @@
     abrirAccion({
       titulo: c.que, sub: `${lineasDe(c).length > 1 ? lineasDe(c).length + ' artículos' : cantTxt(c.cantidad, c.unidad)} · ${c.categoria}`,
       campos: `<div class="row">${App.pill(e[0], e[1])}${esPorAutorizar(c) ? App.pill('Le toca a ' + nombreRol(autorizadorDe(c)), 'none', 'persona') : ''}${sobre ? App.pill(`Pagó ${sobre.pct} % más de lo autorizado`, 's-peligro', 'aviso') : ''}${c.pideRol === 'gerente' ? App.pill('La pidió el Gerente', 's-pend', 'info') : ''}</div>
-        ${detalleCompra(c, esPorAutorizar(c))}
+        ${detalleCompra(c, esPorAutorizar(c), ['comprado', 'recibido'].includes(c.estado) && num(c.valorReal) > 0 ? cuadroCompra(c) : '')}
         <dl class="datos">
           ${num(c.valorReal) ? `<dt>Pagado</dt><dd>${esH(App.cop(c.valorReal))}${sobre ? ' (' + esH(String(sobre.pct)) + ' % más)' : ''}</dd>` : ''}
           ${c.autorizaJefe ? `<dt>Primero autorizó</dt><dd>${esH(c.autorizaJefe)}</dd>` : ''}
@@ -1485,7 +1536,7 @@
     const d = D(), id = b.dataset.id;
     const c = d.compras.find(x => x.id === id) || null, s = d.solicitudes.find(x => x.id === id) || null, a = artPorId(id);
     const mapa = {
-      pedir: () => a && pedirCompra(a.id, Number(b.dataset.cant) || 0), autorizar: () => c && autorizar(c), rechazar: () => c && rechazar(c),
+      pedir: () => a && pedirCompra(a.id, Number(b.dataset.cant) || 0), pedirbajo: () => pedirBajo(), autorizar: () => c && autorizar(c), rechazar: () => c && rechazar(c),
       comprar: () => c && registrarCompra(c), recibir: () => c && recibir(c), revisada: () => c && marcarRevisada(c), vercompra: () => c && verCompra(c),
       entregar: () => s && entregar(s), noentregar: () => s && noEntregar(s), sinaut: () => registrarCompra(null, true),
       entrada: () => entradaSalida('entrada', a ? a.id : ''), salida: () => entradaSalida('salida', a ? a.id : ''),

@@ -520,9 +520,24 @@ try {
   // Se quita lo que se creó para esta prueba.
   await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return window.nube.lote([['borrar', 'articulos', 'ar-kx'], ['borrar', 'compras', 'co-kx']].concat(Object.entries(d.movimientos).filter(([, m]) => m.articuloId === 'ar-kx').map(([id]) => ['borrar', 'movimientos', id]))); });
   await t.page.click('#invSecciones [data-sec="hacer"]');
+  // «Pedir compra de todo lo bajo»
+  const nBajos = await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')), abiertas = ['pedido', 'por-gerente', 'autorizado', 'comprado']; const enCurso = id => Object.values(d.compras).some(c => abiertas.includes(c.estado) && (c.articuloId === id || (c.lineas || []).some(l => l.articuloId === id))); return Object.entries(d.articulos).filter(([id, a]) => a.cantidad <= a.minimo && !enCurso(id)).length; });
+  log('con varios artículos por reponer sale el botón «Pedir compra de todo lo bajo (N)», con N igual a los que están agotados o bajos y sin compra en curso', nBajos >= 2 && await hasta(t.page, n => !!document.querySelector('#invContenido [data-accion="pedirbajo"]') && new RegExp(`Pedir compra de todo lo bajo \\(${n}\\)`).test(document.querySelector('#invContenido [data-accion="pedirbajo"]').textContent), nBajos), `${nBajos} artículos por reponer; botón: ${await t.page.evaluate(() => (document.querySelector('#invContenido [data-accion="pedirbajo"]') || {}).textContent)}`);
+  await t.page.click('#invContenido [data-accion="pedirbajo"]'); await t.page.waitForSelector('#shAccion:not([hidden])'); await esp(150);
+  const esperadas = Math.min(nBajos, 5);
+  log('abre una sola compra con los artículos más urgentes ya puestos (el agotado primero, con su cantidad y su valor)', await hasta(t.page, n => { const extras = [...document.querySelectorAll('#acExtra .linea-extra')]; const ids = [document.getElementById('acArt').value].concat(extras.map(f => f.querySelector('[data-lx="art"]').value)); return ids.length === n && ids.every(Boolean) && new Set(ids).size === n && (a => !a.some(x => x.cantidad === 0) || a[0].cantidad === 0)(ids.map(i => JSON.parse(localStorage.getItem('__fb_datos')).articulos[i])) && extras.every(f => Number(f.querySelector('[data-lx="cant"]').value) >= 1 && Number(f.querySelector('[data-lx="val"]').value) > 0) && Number(document.getElementById('acCant').value) >= 1; }, esperadas));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '18b-pedir-todo-bajo.png'), fullPage: true });
+  await t.page.click('#acCerrar');
+  log('si no se toca nada, Cancelar cierra sin preguntar', await hasta(t.page, () => document.getElementById('shAccion').hidden && document.getElementById('shConfirmar').hidden));
   await t.page.click('#invContenido [data-accion="pedir"][data-id="ar-016"]');
   await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
   log('pedir compra del café crea la compra por autorizar y quita la tarea', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return Object.values(d.compras).some(c => c.articuloId === 'ar-016' && c.estado === 'pedido') && !document.querySelector('#invContenido [data-accion="pedir"][data-id="ar-016"]'); }));
+  const nBajos2 = await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')), abiertas = ['pedido', 'por-gerente', 'autorizado', 'comprado']; const enCurso = id => Object.values(d.compras).some(c => abiertas.includes(c.estado) && (c.articuloId === id || (c.lineas || []).some(l => l.articuloId === id))); return Object.entries(d.articulos).filter(([id, a]) => a.cantidad <= a.minimo && !enCurso(id)).length; });
+  if (nBajos2 >= 2) {
+    await t.page.click('#invContenido [data-accion="pedirbajo"]'); await t.page.waitForSelector('#shAccion:not([hidden])'); await esp(150);
+    await t.page.click('#acPrimario');
+    log('«Pedir todo lo bajo» guarda UNA compra con una línea por artículo (hasta 5) y quita esas tareas', await hasta(t.page, ([n, antes]) => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const cs = Object.values(d.compras).filter(c => c.estado === 'pedido' && Array.isArray(c.lineas) && c.lineas.length > 1 && c.paraQue.startsWith('Reponer la bodega')); const c = cs[0]; return !!c && c.lineas.length === Math.min(n, 5) && c.lineas.every(l => l.articuloId && l.cantidad >= 1 && l.valor > 0) && c.valorAprox === c.lineas.reduce((s, l) => s + l.valor, 0) && document.querySelectorAll('#invContenido [data-accion="pedir"]').length < antes; }, [nBajos2, await t.page.locator('#invContenido [data-accion="pedir"]').count()]));
+  }
   await t.page.click('#invContenido [data-accion="recibir"][data-id="co-009"]');
   await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
   log('Sofía recibe los portátiles que compró Luis y le avisa a Ángel', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.compras['co-009'].estado === 'recibido' && Object.values(d.avisos).some(a => a.para === 'soporte' && /Llegó tu compra/.test(a.titulo)); }));
@@ -669,6 +684,15 @@ try {
   if (descK) { const ruta = path.join(CAPTURAS, 'excel-kardex.xlsx'); await descK.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del kárdex tiene formato y su título dice el artículo', hs.length === 1 && bienFormado(hs[0]) && /Cinta aislante/.test(hs[0].titulo), JSON.stringify(hs.map(h => [h.nombre, h.titulo]))); }
   log('descarga el Excel de ese artículo', !!descK && /^Kardex Cinta aislante .*\.xlsx$/.test(descK.suggestedFilename()), descK && descK.suggestedFilename());
   await t.page.keyboard.press('Escape');
+  // Cuadro Autorizado · Pagado · Recibido en el detalle de la compra
+  await t.page.click('#invSecciones [data-sec="compras"]');
+  await t.page.click(`#invContenido [data-accion="vercompra"][data-id="${cv.id}"]`); await hasta(t.page, () => !document.getElementById('shAccion').hidden);
+  log('el detalle de una compra pagada y recibida trae el cuadro Autorizado · Pagado · Recibido, una fila por artículo', await hasta(t.page, () => { const th = [...document.querySelectorAll('#acCampos .cuadro-compra thead th')].map(x => x.textContent); return th.join() === 'Qué,Autorizado,Pagado,Recibido' && document.querySelectorAll('#acCampos .cuadro-compra tbody tr').length === 2; }));
+  log('lo pagado se reparte por artículo (+25 %) y lo que no va a bodega dice a quién se entregó', await hasta(t.page, () => { const f = [...document.querySelectorAll('#acCampos .cuadro-compra tbody tr')].map(r => r.textContent); return /Taladro percutor/.test(f[0]) && /\$\s?5\.875\.000/.test(f[0]) && /\+25 %/.test(f[0]) && /No va a bodega: se entregó a Mauricio Giraldo/.test(f[0]) && /\$\s?1\.625\.000/.test(f[1]); }));
+  log('si llegó menos, lo marca en rojo (llegaron 8 de 10: faltan 2) y el total dice lo autorizado y lo pagado', await hasta(t.page, () => { const f = document.querySelectorAll('#acCampos .cuadro-compra tbody tr')[1], pie = document.querySelector('#acCampos .cuadro-compra tfoot').textContent; return /8 .*faltan 2/.test(f.textContent) && !!f.querySelector('.err-txt') && /Total aprox\./.test(pie) && /\$\s?6\.000\.000/.test(pie) && /\$\s?7\.500\.000/.test(pie) && /\+25 %/.test(pie) && /llegó menos en 1 artículo/.test(pie); }));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '18-compra-cuadro.png') });
+  await t.page.keyboard.press('Escape');
+  await t.page.click('#invSecciones [data-sec="existencias"]');
   // Kárdex largo: con 120 movimientos más se muestran de 50 en 50 y «Ver más» agrega los siguientes sin rehacer la lista.
   await t.page.evaluate(() => { const S = window.App.S, base = S.datos.movimientos.find(m => m.articuloId === 'ar-009'); S.datos.movimientos = S.datos.movimientos.concat(Array.from({ length: 120 }, (_, i) => Object.assign({}, base, { id: 'mov-prueba-' + i, fecha: new Date(Date.now() - (i + 1) * 3600000).toISOString() }))); });
   await t.page.locator('#invContenido [data-accion="verart"][data-id="ar-009"]').click();
