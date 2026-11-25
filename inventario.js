@@ -318,7 +318,7 @@
     let h = barraBotones(esBodega() ? [boton('entrada', 'Registrar entrada', 'importar'), boton('salida', 'Registrar salida', 'entrega')] : []);
     h += subChips('movimientos', [['todos', 'Todos', todos.length], ['entrada', 'Entradas', cuenta('entrada')], ['salida', 'Salidas', cuenta('salida')], ['ajuste', 'Ajustes', cuenta('ajuste')]]);
     if (!vis.length) return h + UI.vacio('historial', 'No hay movimientos', 'Aquí queda cada entrada y salida de la bodega.');
-    return h + `<div class="list">${vis.slice(0, 80).map(m => {
+    const pg = UI.pagina(`mov|${sub.movimientos}|${q}`, vis.map(m => {
       const a = artPorId(m.articuloId), u = a ? a.unidad : '';
       const signo = m.tipo === 'entrada' ? '+' : m.tipo === 'salida' ? '-' : (num(m.cantidad) > 0 ? '+' : '');
       const tono = m.tipo === 'entrada' ? 'disco' : m.tipo === 'salida' ? 'listo' : 'org';
@@ -327,7 +327,8 @@
         <span class="meta">${esH([MOTIVO_MOV[m.motivo] || m.motivo, m.persona ? (m.tipo === 'salida' ? 'a ' : 'de ') + m.persona : '', m.proyecto, 'quedan ' + cantTxt(m.saldo, u)].filter(Boolean).join(' · '))}</span>
         <span class="meta">${esH(`Registró ${m.por} ${App.hace(m.fecha)}`)}${m.nota ? ' · ' + esH(m.nota) : ''}</span>
       </div>`;
-    }).join('')}</div>${vis.length > 80 ? `<p class="meta">Se muestran los 80 más recientes de ${vis.length}.</p>` : ''}`;
+    }), { n: 50 });
+    return h + `<div class="list">${pg.html}</div>${pg.mas}`;
   }
 
   /* --- Pedidos de material --- */
@@ -1003,10 +1004,12 @@
   /** Kárdex: todas las entradas y salidas de un artículo, con su saldo, y el Excel de ese artículo. */
   function kardex(a) {
     const movs = movsDe(a);
+    // Un artículo puede tener cientos de movimientos: se muestran de 50 en 50.
+    const pg = UI.pagina('kardex-' + a.id, movs.map(m => `<tr><td>${esH(fechaLocal(m.fecha, false))}</td><td>${esH(MOTIVO_MOV[m.motivo] || m.motivo)}<span class="meta">${esH([m.persona, m.proyecto, m.por].filter(Boolean).join(' · '))}</span></td><td>${esH(signoMov(m))}</td><td>${esH(num(m.saldo))}</td></tr>`), { reiniciar: true });
     abrirAccion({
       titulo: `Kárdex: ${a.nombre}`, sub: `Hay ${cantTxt(a.cantidad, a.unidad)}. Cada entrada y salida con lo que quedó.`,
       campos: `<div class="row">${boton('excelkardex', 'Descargar Excel de este artículo', 'excel', ` data-id="${esH(a.id)}"`, 'primary small')}</div>` +
-        (movs.length ? `<table class="lineas-tabla"><thead><tr><th>Fecha</th><th>Movimiento</th><th>Cant.</th><th>Quedó</th></tr></thead><tbody>${movs.map(m => `<tr><td>${esH(fechaLocal(m.fecha, false))}</td><td>${esH(MOTIVO_MOV[m.motivo] || m.motivo)}<span class="meta">${esH([m.persona, m.proyecto, m.por].filter(Boolean).join(' · '))}</span></td><td>${esH(signoMov(m))}</td><td>${esH(num(m.saldo))}</td></tr>`).join('')}</tbody></table>` : '<p class="meta">Sin movimientos.</p>')
+        (movs.length ? `<table class="lineas-tabla"><thead><tr><th>Fecha</th><th>Movimiento</th><th>Cant.</th><th>Quedó</th></tr></thead><tbody>${pg.html}</tbody></table>${pg.mas}` : '<p class="meta">Sin movimientos.</p>')
     });
   }
   async function descargarKardex(b, a) {

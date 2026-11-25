@@ -94,6 +94,13 @@ Firebase revisa los permisos extra en las reglas, no solo la pantalla.
 - `buzon/Codigo.gs`: Apps Script del Gmail de prueba. Cada minuto pasa a la app los correos sin leer que hablen de reuniones (solo asunto, texto y fecha; no guarda quién lo mandó).
 - `pruebas/`: Firebase falso (`firebase-*.js`) y pruebas con Playwright.
 
+## Rendimiento (frontend)
+- **Esqueletos** (`UI.esqueleto`, `UI.esqueletoCifras`): mientras llegan los datos se ven tarjetas, renglones y cuadritos fantasma; el tablero ya no muestra un «0» falso.
+- **Buscadores** de Equipos e Inventario: repintan 300 ms después de la última tecla (`UI.retardar`). Vehículos no tiene buscador, solo filtros de un toque.
+- **Carga bajo demanda**: `gente.js` (panel de la Jefe) se descarga al abrirlo (`UI.cargarScript`). Equipos, Inventario, Vehículos y Reuniones siguen cargando al inicio porque Inicio usa sus resúmenes.
+- **Repintado**: los datos que llegan en ráfaga repintan una sola vez cada 50 ms (`pintarLuego` en `app.js`); si solo llegaron avisos se repinta la campana y no el módulo; `UI.poner` no rehace una lista si su HTML no cambió.
+- **Listas largas** (`UI.pagina`): Kárdex y Movimientos de 50 en 50, historial de un equipo de 30 en 30, con botón «Ver más».
+
 ## Datos en Firestore
 Colecciones nuevas: `invitaciones` (una por correo, en minúscula: nombre, rol, niveles y permisos extra; la crea la Jefe y se gasta al entrar la persona) y `ajustesApp` (`compras` = `{ montoGerente }`, lo cambia solo el Gerente con cuenta propia; `seguridad` = `{ personasPrueba }`, lo cambia solo la Jefe con cuenta propia). En `usuarios`, además del rol, cada perfil puede llevar `permisos` (nivel por módulo que le puso la Jefe). En `compras` y `solicitudes` las cuentas propias dejan su `pideUid`.
 

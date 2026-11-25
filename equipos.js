@@ -533,6 +533,8 @@
   function ver(e) {
     const App = A(), st = EST[e.estado] || ['Sin estado', 'none'], hs = hojasDe(e.id), ts = D().tareasEq.filter(t => t.equipoId === e.id && t.estado === 'pendiente');
     const pasos = historial(e).slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    // El historial de un equipo crece con cada mantenimiento y backup: se muestra de 30 en 30.
+    const pgH = UI.pagina('hist-eq-' + e.id, pasos.map(x => `<li><b>${esH(TIPO_PASO[x.tipo] || x.tipo)}${x.persona ? ': ' + esH(x.persona) : ''}</b><span class="meta">${esH(App.fechaCorta(x.fecha))}${x.nota ? ' · ' + esH(x.nota) : ''}</span></li>`), { n: 30, reiniciar: true });
     const bts = [];
     if (esEncargado()) {
       if (e.estado === 'bodega') bts.push(boton('entregar', 'Entregar', 'entrega', e.id, 'primary small'));
@@ -548,7 +550,7 @@
         ${e.obs ? `<p class="meta">${esH(e.obs)}</p>` : ''}${bts.length ? `<div class="tarea-pie">${bts.join('')}</div>` : ''}
         ${ts.length ? `<div class="section-label">Agenda (${ts.length})</div><div class="list">${ts.map(tarjetaTarea).join('')}</div>` : ''}
         <div class="section-label">Actas (${hs.length})</div>${hs.length ? `<div class="list">${hs.map(tarjetaActa).join('')}</div>` : '<p class="meta">Sin actas.</p>'}
-        <div class="section-label">Historial</div><ol class="linea">${pasos.map(x => `<li><b>${esH(TIPO_PASO[x.tipo] || x.tipo)}${x.persona ? ': ' + esH(x.persona) : ''}</b><span class="meta">${esH(App.fechaCorta(x.fecha))}${x.nota ? ' · ' + esH(x.nota) : ''}</span></li>`).join('') || '<li><span class="meta">Sin historial.</span></li>'}</ol>` });
+        <div class="section-label">Historial</div><ol class="linea">${pgH.html || '<li><span class="meta">Sin historial.</span></li>'}</ol>${pgH.mas}` });
     accion.volverA = e.id;
   }
   /** El acta como la hoja de papel: encabezado, datos, tabla de equipos y de otros, firma y devolución. */

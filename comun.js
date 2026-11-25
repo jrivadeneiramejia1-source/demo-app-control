@@ -10,6 +10,18 @@
   const ico = n => (window.ico ? window.ico(n) : '');
   const abiertos = [];   // pila de diálogos abiertos: { el, volver }
   const visible = el => !el.hidden && el.isConnected;
+  const PAGINAS = new Map();   // listas largas por partes: clave → { filas (HTML), mostradas }
+  // «Ver más»: agrega las siguientes filas al final de la lista que está justo antes del botón.
+  document.addEventListener('click', e => {
+    const b = e.target.closest && e.target.closest('[data-mas]'); if (!b) return;
+    const p = PAGINAS.get(b.dataset.mas), lista = b.previousElementSibling;
+    if (!p || !lista) { b.remove(); return; }
+    const cont = lista.tagName === 'TABLE' ? lista.tBodies[0] : lista, n = Number(b.dataset.n) || 50, desde = cont.children.length;
+    p.mostradas = Math.min(p.filas.length, desde + n);
+    cont.insertAdjacentHTML('beforeend', p.filas.slice(desde, p.mostradas).join(''));
+    if (window.llenarIconos) window.llenarIconos(cont);
+    if (p.mostradas >= p.filas.length) b.remove(); else b.textContent = `Ver más (${p.filas.length - p.mostradas} más)`;
+  });
 
   function preparar(el) {
     if (el.dataset.dialogo) return;
@@ -239,6 +251,17 @@
     /** Pone el HTML en un elemento solo si cambió desde la última vez (así no se rehace la pantalla, ni se pierde el desplazamiento, por un dato que llegó igual).
         Devuelve true si lo cambió. */
     poner: (el, html) => { if (el._html === html && el.firstChild) return false; el.innerHTML = html; el._html = html; return true; },
+    /** Lista larga por partes: muestra las primeras `n` filas (ya en HTML) y un botón «Ver más» que agrega las siguientes sin rehacer la lista.
+        `clave` identifica la lista (si se vuelve a pintar con la misma clave, sigue mostrando lo que ya se había abierto; con `reiniciar` vuelve a empezar).
+        El botón va justo después de la lista (<ol>, <div> o <table>). Devuelve { html: las filas, mas: el botón }. */
+    pagina: (clave, filas, o) => {
+      const n = (o && o.n) || 50, p = PAGINAS.get(clave) || { mostradas: n };
+      if (o && o.reiniciar) p.mostradas = n;
+      p.filas = filas; PAGINAS.delete(clave); PAGINAS.set(clave, p);
+      if (PAGINAS.size > 60) PAGINAS.delete(PAGINAS.keys().next().value);
+      const hasta = Math.min(filas.length, Math.max(p.mostradas, n));
+      return { html: filas.slice(0, hasta).join(''), mas: hasta < filas.length ? `<button type="button" class="btn ghost small ver-mas" data-mas="${esH(clave)}" data-n="${n}">Ver más (${filas.length - hasta} más)</button>` : '' };
+    },
     /** Carga un script propio la primera vez que hace falta (una sola vez, aunque se pida varias). Devuelve una promesa. */
     cargarScript: (() => { const hechos = {}; return src => hechos[src] || (hechos[src] = new Promise((ok, mal) => {
       const s = document.createElement('script'); s.src = src; s.onload = ok;

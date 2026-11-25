@@ -522,6 +522,18 @@ try {
   if (descK) { const ruta = path.join(CAPTURAS, 'excel-kardex.xlsx'); await descK.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del kárdex tiene formato y su título dice el artículo', hs.length === 1 && bienFormado(hs[0]) && /Cinta aislante/.test(hs[0].titulo), JSON.stringify(hs.map(h => [h.nombre, h.titulo]))); }
   log('descarga el Excel de ese artículo', !!descK && /^Kardex Cinta aislante .*\.xlsx$/.test(descK.suggestedFilename()), descK && descK.suggestedFilename());
   await t.page.keyboard.press('Escape');
+  // Kárdex largo: con 120 movimientos más se muestran de 50 en 50 y «Ver más» agrega los siguientes sin rehacer la lista.
+  await t.page.evaluate(() => { const S = window.App.S, base = S.datos.movimientos.find(m => m.articuloId === 'ar-009'); S.datos.movimientos = S.datos.movimientos.concat(Array.from({ length: 120 }, (_, i) => Object.assign({}, base, { id: 'mov-prueba-' + i, fecha: new Date(Date.now() - (i + 1) * 3600000).toISOString() }))); });
+  await t.page.locator('#invContenido [data-accion="verart"][data-id="ar-009"]').click();
+  await t.page.click('#acCampos [data-accion="kardex"]');
+  const filasK = () => t.page.evaluate(() => document.querySelectorAll('#acCampos .lineas-tabla tbody tr').length);
+  const totalK = await t.page.evaluate(() => window.App.S.datos.movimientos.filter(m => m.articuloId === 'ar-009').length);
+  log('el kárdex largo muestra solo 50 filas y el botón dice cuántas faltan', await hasta(t.page, n => document.querySelectorAll('#acCampos .lineas-tabla tbody tr').length === 50 && new RegExp(`Ver más \\(${n - 50} más\\)`).test((document.querySelector('#acCampos .ver-mas') || {}).textContent || ''), totalK));
+  await t.page.click('#acCampos .ver-mas');
+  log('«Ver más» agrega otras 50 filas', (await filasK()) === 100);
+  await t.page.click('#acCampos .ver-mas');
+  log('al llegar al final, se muestran todas y el botón desaparece', (await filasK()) === totalK && !(await t.page.locator('#acCampos .ver-mas').count()));
+  await t.page.keyboard.press('Escape');
   await t.page.locator('#invContenido [data-accion="verart"][data-id="ar-004"]').click();
   log('un artículo que sale seguido muestra cuánto sale y el mínimo sugerido', await hasta(t.page, () => !document.getElementById('shAccion').hidden && /En los últimos 30 días salieron/.test(document.getElementById('acCampos').textContent) && /mínimo de \d+ alcanza para unos 10 días/.test(document.getElementById('acCampos').textContent), await texto(t.page, '#acCampos')));
   await t.page.keyboard.press('Escape');
