@@ -19,7 +19,8 @@ rules_version = '2';
 //   autoriza la comida y los carros (escoge el conductor);
 //   el Conductor confirma el viaje, Logística alista, el Profesional confirma si va y Administrativo registra el acta.
 //   Vehículos: el Conductor reporta novedades con foto y registra salidas y llegadas; Transporte y Bodega revisan, asignan y
-//   actualizan documentos.
+//   actualizan documentos. Los tanqueos (combustible, con la foto del recibo) los crea quien tenga nivel en Vehículos (menos «solo ver»)
+//   a su nombre; no se cambian después (solo la Jefe).
 //   Todos: piden material y piden compras a su nombre, y marcan sus avisos como leídos.
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -284,6 +285,21 @@ service cloud.firestore {
         && nuevo().fotos.izquierda is string && nuevo().fotos.izquierda.size() < 200000
         && nuevo().fotos.derecha is string && nuevo().fotos.derecha.size() < 200000
         && nuevo().fotos.llantas is string && nuevo().fotos.llantas.size() < 200000);
+      allow update, delete: if esJefe();
+    }
+
+    // Tanqueos: cada vez que un carro echa combustible, con la foto del recibo (JPEG pequeña). Los crean el Conductor, Transporte, Bodega y
+    // la Jefe a su nombre, para un carro que existe. No se cambian ni se borran después (solo la Jefe). Con ellos se calcula cuántos km
+    // rinde cada carro y cuánto cuesta. La Jefe de prueba los carga y reinicia con los datos de ejemplo.
+    match /tanqueos/{id} {
+      allow read: if veVehiculos();
+      allow create: if (esJefe() && esPrueba()) || (esDemo() && nivel('vehiculos') in ['reporta', 'autoriza', 'jefe']
+        && nuevo().keys().hasOnly(['vehiculoId', 'placa', 'fecha', 'km', 'galones', 'valor', 'lleno', 'foto', 'por', 'porRol'])
+        && nuevo().vehiculoId is string && exists(/databases/$(database)/documents/vehiculos/$(nuevo().vehiculoId))
+        && nuevo().placa is string && nuevo().fecha is string && nuevo().por is string && nuevo().porRol == rol()
+        && nuevo().km is number && nuevo().km >= 0 && nuevo().galones is number && nuevo().galones > 0 && nuevo().galones <= 100
+        && nuevo().valor is number && nuevo().valor > 0 && nuevo().valor <= 5000000 && nuevo().lleno is bool
+        && nuevo().foto is string && nuevo().foto.size() < 400000 && nuevo().foto.matches('^data:image/jpeg;base64,.*'));
       allow update, delete: if esJefe();
     }
 

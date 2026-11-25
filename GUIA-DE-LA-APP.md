@@ -490,13 +490,14 @@ El **Encargado de equipos** puede tocar el botón de **códigos de barras** que 
 | **Conductor** (Oscar Farfán) — nivel «Reporta» | **Reporta novedades** (siempre con foto), **registra la salida y la llegada** del carro (con 5 fotos, kilometraje y combustible). Confirma **su** viaje. |
 | **Transporte** (Wilson Muñoz) y **Bodega** (Andrés Beltrán) — nivel «Autoriza» | **Revisan las novedades** (le ponen costo y nota), actualizan los documentos, asignan conductor, llevan el **plan de mantenimiento** de cada carro y ven **Resumen y Reportes**. |
 | **Jefe** | Todo. |
-| **Gerente** | Solo ver: Resumen, Reportes, Carros, Novedades. |
+| **Gerente** | Solo ver: Resumen, Reportes, Carros, Novedades, Tanqueos. |
 | **Consulta** y quien tenga «Solo ver» | Solo mirar. |
 
 ### 10.2 Las pestañas de Vehículos
-- **Lo que me toca**, **Carros**, **Novedades**. En «Lo que me toca» de Transporte, Bodega y la Jefe sale **«Mantenimientos por hacer»**.
+- **Lo que me toca**, **Carros**, **Novedades**, **Tanqueos**. En «Lo que me toca» de Transporte, Bodega y la Jefe sale **«Mantenimientos por hacer»**, y todos los que reportan tienen el botón **«Registrar tanqueo»**.
 - En **Carros** hay un **buscador** (placa, marca, modelo o conductor) y botones **Todos · Disponible · En uso · En taller · Documentos**, cada uno con cuántos hay. Se suman al buscador y a las cifras de arriba (tocar «En uso» arriba o en los botones es lo mismo). Si no hay resultados, sale **«Quitar filtro»**.
-- **Resumen** y **Reportes** (solo Transporte, Bodega, Jefe y, en su versión, el Gerente).
+- **Tanqueos** lista los últimos 40 (el más nuevo primero), cada uno con la foto del recibo, y avisa cuántos tienen consumo raro.
+- **Resumen** y **Reportes** (solo Transporte, Bodega, Jefe y, en su versión, el Gerente). El Resumen trae el **costo total de los carros este mes** y **el de cada carro**; Reportes lo trae por periodo (este mes, 3 meses o todo).
 
 ### 10.3 Reglas que se cumplen
 - **Novedad:** siempre con **foto**. Tipos: llanta, choque, rayón, mantenimiento, otro. El conductor **no puede poner costo**; lo pone quien la revisa.
@@ -515,6 +516,12 @@ El **Encargado de equipos** puede tocar el botón de **códigos de barras** que 
   - **«Hecho»** pide el **kilometraje** (si es mayor que el del carro, el carro sube a ese kilometraje), la **fecha** (no puede ser de mañana), el **costo** y una nota; la tarea queda al día y el **historial** del carro guarda la línea («Mantenimiento hecho: Cambio de aceite (62.900 km, …, costó $ 210.000)»).
   - Lo que está por tocar o ya tocó aparece en **«Mantenimientos por hacer»** (los que ya tocan, primero), en la tarjeta del carro en **Carros** y en la cifra de arriba, que ahora se llama **«Documentos y mantenimientos»** (suma los documentos por vencer o vencidos y los mantenimientos por hacer). El botón **«Documentos y mantenimientos»** de Carros filtra los carros con algo de eso.
   - El Inicio sigue contando solo documentos (SOAT y técnico-mecánica).
+- **Tanqueos y costo por carro.** Cada vez que un carro echa combustible se registra un **tanqueo** (botón «Registrar tanqueo» en «Lo que me toca», en Tanqueos y en la hoja de vida): **carro, kilometraje, galones** (con decimales, por ejemplo 12,5), **lo que se pagó** en pesos, si **llenó el tanque** y la **foto del recibo** (obligatoria, JPEG pequeña). Lo registran el Conductor, Transporte, Bodega y la Jefe, siempre a su nombre; **no se editan ni se borran después** (solo la Jefe puede corregir). El Gerente y quien solo consulta lo ven.
+  - **Revisiones del formulario:** el kilometraje no puede ser menor que el del último tanqueo de ese carro ni pasarse 3.000 km del que tiene el carro; el precio por galón que sale de dividir lo pagado entre los galones tiene que estar entre $ 5.000 y $ 40.000 (para atrapar un cero de más o de menos).
+  - **Cuánto rinde:** se calcula **de un tanque lleno al siguiente**: los km recorridos entre los galones echados desde el primero. Si en medio hubo un tanqueo que no llenó el tanque, sus galones se suman al siguiente lleno. Por eso importa dejar la marca «Llené el tanque» bien puesta. Sale «Rindió 26,4 km por galón · el combustible costó $ 495 por km» en cada tanqueo que cierra un tramo, y el promedio en la hoja de vida del carro.
+  - **Consumo raro:** si un tramo rinde **más de 25 % menos** que el promedio de los tramos anteriores del mismo carro (hacen falta al menos 2 tramos anteriores), el tanqueo sale marcado y la app avisa a **Transporte, Bodega y la Jefe**. No prueba que haya robo: puede ser una ruta de subida, carga o un error al anotar el kilometraje; sirve para preguntar.
+  - **Costo total de un carro** = novedades revisadas con costo + mantenimientos «Hecho» con costo + combustible. Cada «Hecho» del plan guarda su costo (hasta 12 por tarea) para poder sumar cualquier periodo; los planes hechos antes de esta versión solo tienen el último.
+  - El tanqueo **no sube el kilometraje del carro**: eso lo hacen las salidas y llegadas.
 - Las salidas y llegadas **no se cambian después**.
 - Si un carro de una reunión ya salió, hay que registrar su llegada antes de reasignarlo.
 
@@ -623,7 +630,7 @@ Piden **material** de la bodega y **compras** a su nombre, ven **sus** pedidos y
 | **Personas y permisos > Descargar plantilla** | La plantilla de personas | Solo la Jefe |
 | **Inventario > Resumen** | Existencias, Movimientos, Compras, Pedidos de material | Quien ve el Resumen |
 | **Inventario > un artículo > Kárdex** | El historial de ese artículo | Quien ve los movimientos |
-| **Vehículos > Reportes** | Carros, Salidas y llegadas, Novedades, Por conductor | Transporte, Bodega, Jefe, Gerente |
+| **Vehículos > Reportes** | Carros (con costo de mantenimientos, combustible, total y km por galón), Salidas y llegadas, Novedades, Tanqueos, Por conductor | Transporte, Bodega, Jefe, Gerente |
 | **Equipos** (botón abajo) | Equipos y Actas de entrega (sin cédulas ni firmas) | Quien ve Equipos |
 | **Reuniones** (botón abajo) | Reuniones y Tareas | Quien ve Reuniones |
 

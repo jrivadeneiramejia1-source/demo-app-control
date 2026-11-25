@@ -15,7 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
-    datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], reuniones: [], necesidades: [], avisos: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [], ajustesApp: [], invitaciones: [] },
+    datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], tanqueos: [], reuniones: [], necesidades: [], avisos: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [], ajustesApp: [], invitaciones: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     suscritas: new Set(),  // colecciones a las que esta persona se suscribió (las demás no las puede leer y nunca «cargan»)
     oyentes: [],
@@ -228,7 +228,7 @@
     const ve = m => permiso(m) !== 'no';
     const cols = ['avisos', 'ajustesApp']
       .concat(ve('equipos') ? ['equipos', 'hojas', 'tareasEq'] : [], ve('inventario') ? ['compras', 'articulos', 'solicitudes'].concat(permiso('inventario') === 'pide' ? [] : ['movimientos']) : [],
-        ve('vehiculos') ? ['vehiculos', 'novedades', 'entregas'] : [], ve('reuniones') ? ['reuniones', 'necesidades'] : [], panel);
+        ve('vehiculos') ? ['vehiculos', 'novedades', 'entregas', 'tanqueos'] : [], ve('reuniones') ? ['reuniones', 'necesidades'] : [], panel);
     // Una cuenta real que solo pide material solo puede leer SUS pedidos y compras (las reglas lo exigen): se piden filtrados.
     const soloLoMio = p.real && permiso('inventario') === 'pide';
     const donde = col => (soloLoMio && ['compras', 'solicitudes'].includes(col) ? ['pideUid', nube.uid()] : null);
@@ -383,7 +383,7 @@
 
   /** Tablero con filtro: al tocar una cifra filtra la lista; tocarla otra vez quita el filtro. */
   // Colecciones de las que sale cada tablero: mientras no lleguen, se muestran cuadritos fantasma y no un «0» falso.
-  const COLS_MOD = { equipos: ['equipos', 'hojas', 'tareasEq'], inventario: ['articulos', 'compras', 'solicitudes'], vehiculos: ['vehiculos', 'novedades', 'entregas'], reuniones: ['reuniones', 'necesidades'] };
+  const COLS_MOD = { equipos: ['equipos', 'hojas', 'tareasEq'], inventario: ['articulos', 'compras', 'solicitudes'], vehiculos: ['vehiculos', 'novedades', 'entregas', 'tanqueos'], reuniones: ['reuniones', 'necesidades'] };
   function tablero(mod, cifras) {
     const el = $('sum' + mod[0].toUpperCase() + mod.slice(1));
     el.className = 'summary' + (cifras.length === 2 || cifras.length === 4 ? ' dos' : '');

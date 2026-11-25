@@ -716,6 +716,87 @@ await prueba('Plan de mantenimiento: sigue sin poderse cambiar otro dato del car
   await sembrar(d => setDoc(doc(d, 'vehiculos', 've-m7'), VE9));
   await assertFails(updateDoc(doc(tra, 'vehiculos', 've-m7'), { mttos: [MT(1)], placa: 'ZZZ999', historial: H2 })); });
 
+console.log('Fase 10: tanqueos (combustible, con la foto del recibo)');
+await limpiar();
+const TQ = extra => Object.assign({ vehiculoId: 've-t1', placa: 'AAA111', fecha: '2026-11-25T10:00:00Z', km: 45500, galones: 12.5, valor: 160000, lleno: true, foto: JPG, por: 'Persona', porRol: 'conductor' }, extra);
+const sembrarT = () => sembrar(d => setDoc(doc(d, 'vehiculos', 've-t1'), { placa: 'AAA111', estado: 'disponible', km: 45210, conductor: '', historial: H1, soat: '2027-01-01', tecno: '2027-01-01' }));
+await prueba('Tanqueos: el Conductor, Transporte, Bodega y la Jefe (cuentas propias) crean un tanqueo a su nombre', async () => {
+  await sembrarT();
+  await assertSucceeds(setDoc(doc(await cuenta('tqCon', 'conductor'), 'tanqueos', 'ta-1'), TQ({ porRol: 'conductor' })));
+  await assertSucceeds(setDoc(doc(await cuenta('tqTra', 'carros'), 'tanqueos', 'ta-2'), TQ({ porRol: 'carros' })));
+  await assertSucceeds(setDoc(doc(await cuenta('tqBod', 'asistente'), 'tanqueos', 'ta-3'), TQ({ porRol: 'asistente' })));
+  await assertSucceeds(setDoc(doc(await cuenta('tqJef', 'jefe'), 'tanqueos', 'ta-4'), TQ({ porRol: 'jefe' }))); });
+await prueba('Tanqueos: las personas de prueba (Conductor y Transporte) también', async () => {
+  await sembrarT();
+  await assertSucceeds(setDoc(doc(prueba_('conductor'), 'tanqueos', 'ta-5'), TQ({ porRol: 'conductor' })));
+  await assertSucceeds(setDoc(doc(prueba_('carros'), 'tanqueos', 'ta-6'), TQ({ porRol: 'carros' }))); });
+await prueba('Tanqueos: nadie lo crea a nombre de otro rol', async () => {
+  await sembrarT();
+  await assertFails(setDoc(doc(await cuenta('tqCon2', 'conductor'), 'tanqueos', 'ta-7'), TQ({ porRol: 'jefe' }))); });
+await prueba('Tanqueos: la foto del recibo tiene que ser JPEG (una PNG, un texto cualquiera o nada no pasan)', async () => {
+  await sembrarT(); const db = await cuenta('tqCon3', 'conductor'), sinFoto = TQ(); delete sinFoto.foto;
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-8'), TQ({ foto: PNG })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-9'), TQ({ foto: 'hola' })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-10'), TQ({ foto: 12345 })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-11'), sinFoto)); });
+await prueba('Tanqueos: una foto de 400.000 caracteres o más no pasa; una de menos sí', async () => {
+  await sembrarT(); const db = await cuenta('tqCon4', 'conductor');
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-12'), TQ({ foto: JPG + 'A'.repeat(400000) })));
+  await assertSucceeds(setDoc(doc(db, 'tanqueos', 'ta-13'), TQ({ foto: JPG + 'A'.repeat(300000) }))); });
+await prueba('Tanqueos: kilometraje, galones y valor tienen que ser números dentro de lo razonable', async () => {
+  await sembrarT(); const db = await cuenta('tqCon5', 'conductor');
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-14'), TQ({ km: -1 })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-15'), TQ({ km: '45500' })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-16'), TQ({ galones: 0 })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-17'), TQ({ galones: 101 })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-18'), TQ({ valor: 0 })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-19'), TQ({ valor: 5000001 })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-20'), TQ({ valor: 'mucho' })));
+  await assertSucceeds(setDoc(doc(db, 'tanqueos', 'ta-21'), TQ({ galones: 0.5, valor: 1, km: 0 }))); });
+await prueba('Tanqueos: «lleno» tiene que ser verdadero o falso', async () => {
+  await sembrarT(); const db = await cuenta('tqCon6', 'conductor');
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-22'), TQ({ lleno: 'si' })));
+  await assertSucceeds(setDoc(doc(db, 'tanqueos', 'ta-23'), TQ({ lleno: false }))); });
+await prueba('Tanqueos: un campo de más (por ejemplo «aprobado») no pasa', async () => {
+  await sembrarT();
+  await assertFails(setDoc(doc(await cuenta('tqCon7', 'conductor'), 'tanqueos', 'ta-24'), TQ({ aprobado: true }))); });
+await prueba('Tanqueos: el carro tiene que existir', async () => {
+  await sembrarT();
+  await assertFails(setDoc(doc(await cuenta('tqCon8', 'conductor'), 'tanqueos', 'ta-25'), TQ({ vehiculoId: 've-no-existe' })));
+  await assertFails(setDoc(doc(await cuenta('tqCon9', 'conductor'), 'tanqueos', 'ta-26'), TQ({ vehiculoId: 123 }))); });
+await prueba('Tanqueos: no se editan ni se borran (ni el Conductor ni Transporte ni Bodega)', async () => {
+  await sembrarT(); await sembrar(d => setDoc(doc(d, 'tanqueos', 'ta-e'), TQ()));
+  for (const [uid, rol] of [['tqE1', 'conductor'], ['tqE2', 'carros'], ['tqE3', 'asistente']]) { const db = await cuenta(uid, rol);
+    await assertFails(updateDoc(doc(db, 'tanqueos', 'ta-e'), { valor: 1000 }));
+    await assertFails(deleteDoc(doc(db, 'tanqueos', 'ta-e'))); } });
+await prueba('Tanqueos: solo la Jefe corrige o borra uno', async () => {
+  await sembrarT(); await sembrar(d => setDoc(doc(d, 'tanqueos', 'ta-j'), TQ()));
+  const j = await cuenta('tqJ1', 'jefe');
+  await assertSucceeds(updateDoc(doc(j, 'tanqueos', 'ta-j'), { valor: 150000 }));
+  await assertSucceeds(deleteDoc(doc(j, 'tanqueos', 'ta-j'))); });
+await prueba('Tanqueos: sin acceso a Vehículos (Colaborador) no lee ni crea; con «solo ver» (Consulta y Gerente) lee pero no crea', async () => {
+  await sembrarT(); await sembrar(d => setDoc(doc(d, 'tanqueos', 'ta-l'), TQ()));
+  const col = await cuenta('tqCol', 'colaborador'), cons = await cuenta('tqCons', 'consulta'), ger = await cuenta('tqGer', 'gerente');
+  await assertFails(getDoc(doc(col, 'tanqueos', 'ta-l'))); await assertFails(setDoc(doc(col, 'tanqueos', 'ta-m'), TQ({ porRol: 'colaborador' })));
+  await assertSucceeds(getDoc(doc(cons, 'tanqueos', 'ta-l'))); await assertFails(setDoc(doc(cons, 'tanqueos', 'ta-n'), TQ({ porRol: 'consulta' })));
+  await assertSucceeds(getDoc(doc(ger, 'tanqueos', 'ta-l'))); await assertFails(setDoc(doc(ger, 'tanqueos', 'ta-o'), TQ({ porRol: 'gerente' }))); });
+await prueba('Tanqueos: un Conductor al que la Jefe le quitó Vehículos (permiso «no») ya no lo crea ni lo lee; con «reporta» sí', async () => {
+  await sembrarT(); await sembrar(d => setDoc(doc(d, 'tanqueos', 'ta-p'), TQ()));
+  const sin = await cuenta('tqSin', 'conductor', { permisos: { vehiculos: 'no' } }), con = await cuenta('tqConP', 'colaborador', { permisos: { vehiculos: 'reporta' } });
+  await assertFails(getDoc(doc(sin, 'tanqueos', 'ta-p'))); await assertFails(setDoc(doc(sin, 'tanqueos', 'ta-q'), TQ({ porRol: 'conductor' })));
+  await assertSucceeds(setDoc(doc(con, 'tanqueos', 'ta-r'), TQ({ porRol: 'colaborador' }))); });
+await prueba('Tanqueos: una cuenta pausada o sin el correo confirmado no crea', async () => {
+  await sembrarT();
+  await assertFails(setDoc(doc(await cuenta('tqPau', 'conductor', { activo: false }), 'tanqueos', 'ta-s'), TQ()));
+  await sembrar(d => setDoc(doc(d, 'usuarios', 'tqNoConf'), { nombre: 'Sin Confirmar', correo: 'tqnoconf@correo-inventado.test', rol: 'conductor', codigo: 'X', activo: true, en: '2026-11-20' }));
+  await assertFails(setDoc(doc(env.authenticatedContext('tqNoConf', { email: 'tqnoconf@correo-inventado.test', email_verified: false }).firestore(), 'tanqueos', 'ta-t'), TQ())); });
+await prueba('Tanqueos: la Jefe de prueba carga los datos de ejemplo (sin pasar por las revisiones del formulario) en un lote grande', async () => {
+  const db = prueba_('jefe');
+  await assertSucceeds(lote(db, b => { for (let i = 0; i < 30; i++) b.set(doc(db, 'tanqueos', 'ta-ej-' + i), { vehiculoId: 've-ej', placa: 'ABC 123', km: i, galones: 10, valor: 100000, lleno: true, foto: JPG, por: 'Oscar', porRol: 'conductor', fecha: '2026-11-25T10:00:00Z' }); })); });
+await prueba('Tanqueos: un lote de 100 tanqueos de una cuenta propia cabe en el límite de las reglas', async () => {
+  await sembrarT(); const db = await cuenta('tqLote', 'conductor');
+  await assertSucceeds(lote(db, b => { for (let i = 0; i < 100; i++) b.set(doc(db, 'tanqueos', 'ta-lt-' + i), TQ({ km: 45500 + i })); })); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

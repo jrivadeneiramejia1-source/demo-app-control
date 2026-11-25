@@ -5,6 +5,9 @@
    Salida y llegada del carro: kilometraje, combustible, fotos de los 4 lados y las llantas, y revisión de luces, llantas,
    documentos y herramienta. Si el carro va a una reunión, la salida queda unida a ese viaje.
    Avisos dentro de la app cuando el SOAT o la técnico-mecánica están por vencer (30 días) o vencidos.
+   Tanqueos con la foto del recibo: de un tanque lleno al siguiente se saca cuántos km rinde el carro y cuánto cuesta el combustible por km;
+   si un tanqueo rinde más de 25 % menos que lo normal del carro, se avisa a Transporte, Bodega y la Jefe. El costo total de cada carro suma
+   novedades, mantenimientos del plan y combustible.
    La Jefe puede todo; el Gerente ve el resumen y la hoja de vida sin botones. */
 (function () {
   'use strict';
@@ -45,12 +48,13 @@
   }
   const CONDUCTORES = ['Oscar Farfán', 'Rafael Ospino', 'Hernán Brito'];
   const QUIEN_ENTREGA = ['Wilson Muñoz', 'Andrés Beltrán'];
-  let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], fotos = {}, fotoNov = '', periodo = 'mes', buscar = '';
+  let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], fotos = {}, fotoNov = '', fotoTan = '', periodo = 'mes', buscar = '';
 
   /* ---------- datos derivados ---------- */
   const vehPorId = id => D().vehiculos.find(v => v.id === id) || null;
   const novDe = id => D().novedades.filter(n => n.vehiculoId === id).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
   const entDe = id => D().entregas.filter(e => e.vehiculoId === id).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  const tanDe = id => D().tanqueos.filter(t => t.vehiculoId === id).sort((a, b) => num(a.km) - num(b.km) || String(a.fecha).localeCompare(String(b.fecha)));
   const sinRevisar = () => D().novedades.filter(n => !n.revisada);
   const dias = f => A().diasHasta(f);
   /** Estado de un documento: vencido, por vencer (30 días) o al día. */
@@ -79,6 +83,44 @@
   /** Tareas del plan de todos los carros que ya tocan o están por tocar (las vencidas primero). */
   const mttosPend = () => D().vehiculos.flatMap(v => mttosDe(v).map(m => ({ v, m, e: estMtto(m, v) }))).filter(x => x.e.est !== 'ok')
     .sort((a, b) => (a.e.est === b.e.est ? String(a.v.placa).localeCompare(String(b.v.placa)) : a.e.est === 'vencido' ? -1 : 1));
+  /* ---------- combustible: tanqueos, rendimiento y costo ---------- */
+  const TAN_RARO = 0.75, TAN_MIN_TRAMOS = 2, TAN_PRECIO_MIN = 5000, TAN_PRECIO_MAX = 40000;
+  const nGal = v => Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 });
+  const nKmGal = v => Number(v || 0).toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  /** Tramos de rendimiento (los tanqueos van ordenados por km): de un tanque lleno al siguiente, los km recorridos entre los galones echados
+      desde el primero (los tanqueos que no llenan el tanque suman sus galones al siguiente lleno). Un tramo es «raro» si rindió más de 25 %
+      menos que el promedio de los tramos anteriores (hacen falta al menos 2 para tener un promedio). */
+  function tramosDe(ts) {
+    const out = []; let ancla = null, g = 0, val = 0, sumKm = 0, sumGal = 0;
+    ts.forEach(t => {
+      if (ancla) { g += num(t.galones); val += num(t.valor); }
+      if (t.lleno === false) return;
+      if (ancla && g > 0 && num(t.km) > num(ancla.km)) {
+        const k = num(t.km) - num(ancla.km), prom = out.length >= TAN_MIN_TRAMOS ? sumKm / sumGal : 0;
+        out.push({ t, km: k, galones: g, valor: val, kmGal: k / g, costoKm: val / k, prom, raro: prom > 0 && k / g < prom * TAN_RARO });
+        sumKm += k; sumGal += g;
+      }
+      ancla = t; g = 0; val = 0;
+    });
+    return out;
+  }
+  const tramosVeh = id => tramosDe(tanDe(id));
+  /** Promedio de varios tramos: km por galón y pesos de combustible por km. */
+  function rendimiento(trs) {
+    const k = trs.reduce((s, x) => s + x.km, 0), g = trs.reduce((s, x) => s + x.galones, 0), v = trs.reduce((s, x) => s + x.valor, 0);
+    return { tramos: trs.length, km: k, kmGal: g ? k / g : 0, costoKm: k ? v / k : 0 };
+  }
+  /** Lo que costó cada mantenimiento «Hecho» del plan (los planes anteriores solo guardaban el último). */
+  const gastosMtto = v => mttosDe(v).flatMap(m => (Array.isArray(m.hechos) ? m.hechos.filter(h => h && typeof h === 'object')
+    : num(m.ultimoCosto) > 0 && m.ultimaFecha ? [{ fecha: m.ultimaFecha, costo: m.ultimoCosto }] : []));
+  /** Cuánto costó un carro desde `ini` (YYYY-MM-DD; vacío = todo): novedades, mantenimientos del plan y combustible. */
+  function costosDe(v, ini) {
+    const en = f => !ini || String(f || '').slice(0, 10) >= ini;
+    const nov = novDe(v.id).filter(n => en(n.fecha)).reduce((s, n) => s + num(n.costo), 0);
+    const mtt = gastosMtto(v).filter(h => en(h.fecha)).reduce((s, h) => s + num(h.costo), 0);
+    const comb = tanDe(v.id).filter(t => en(t.fecha)).reduce((s, t) => s + num(t.valor), 0);
+    return { nov, mtt, comb, total: nov + mtt + comb };
+  }
   const ultimaSalida = v => entDe(v.id).find(e => e.tipo === 'salida') || null;
   const reunionPorId = id => D().reuniones.find(r => r.id === id) || null;
   /** Viajes de reunión con carro asignado que todavía no terminan (para el conductor). */
@@ -133,8 +175,8 @@
 
   /* ---------- pintar ---------- */
   function secciones() {
-    if (esGerente()) return [['resumen', 'Resumen'], ['reportes', 'Reportes'], ['carros', 'Carros'], ['novedades', 'Novedades']];
-    const s = [['hacer', 'Lo que me toca'], ['carros', 'Carros'], ['novedades', 'Novedades']];
+    if (esGerente()) return [['resumen', 'Resumen'], ['reportes', 'Reportes'], ['carros', 'Carros'], ['novedades', 'Novedades'], ['tanqueos', 'Tanqueos']];
+    const s = [['hacer', 'Lo que me toca'], ['carros', 'Carros'], ['novedades', 'Novedades'], ['tanqueos', 'Tanqueos']];
     if (esAdmin()) s.push(['resumen', 'Resumen'], ['reportes', 'Reportes']);
     return s;
   }
@@ -155,8 +197,8 @@
     ]);
     $('vehSecciones').innerHTML = secciones().map(([k, t]) => `<button type="button" class="chip" data-sec="${k}" aria-pressed="${seccion === k}">${esH(t)}${k === 'hacer' && n.mias ? ` <span class="n">${n.mias}</span>` : ''}</button>`).join('');
     const c = $('vehContenido');
-    if (['vehiculos', 'novedades', 'entregas'].some(App.cargando)) { UI.poner(c, UI.esqueleto(3)); return; }
-    if (UI.poner(c, ({ hacer: htmlHacer, carros: () => htmlCarros(f), novedades: () => htmlNovedades(f), resumen: htmlResumen, reportes: htmlReportes })[seccion]())) window.llenarIconos(c);
+    if (['vehiculos', 'novedades', 'entregas', 'tanqueos'].some(App.cargando)) { UI.poner(c, UI.esqueleto(3)); return; }
+    if (UI.poner(c, ({ hacer: htmlHacer, carros: () => htmlCarros(f), novedades: () => htmlNovedades(f), tanqueos: htmlTanqueos, resumen: htmlResumen, reportes: htmlReportes })[seccion]())) window.llenarIconos(c);
     avisarVencimientos();
   }
   const boton = (acc, txt, icono, id, clase, extra) => `<button class="btn ${clase || 'small'}" type="button" data-accion="${acc}" data-id="${esH(id)}"${extra || ''}>${icono ? `<span data-ico="${icono}"></span>` : ''}${esH(txt)}</button>`;
@@ -166,7 +208,7 @@
   /* --- Lo que me toca --- */
   function htmlHacer() {
     let h = '';
-    if (puedeReportar()) h += `<div class="barra-botones">${boton('novedad', 'Reportar una novedad', 'aviso', '', 'primary')}</div>`;
+    if (puedeReportar()) h += `<div class="barra-botones">${boton('novedad', 'Reportar una novedad', 'aviso', '', 'primary')}${boton('tanqueo', 'Registrar tanqueo', 'pagada', '', 'small')}</div>`;
     if (esConductor() || esJefe()) {
       const vs = esJefe() ? viajes() : misViajes();
       h += `<div class="section-label">Viajes de reuniones (${vs.length})</div>`;
@@ -247,6 +289,27 @@
     let h = puedeReportar() ? `<div class="barra-botones">${boton('novedad', 'Reportar una novedad', 'aviso', '', 'primary')}</div>` : '';
     return h + (ns.length ? `<div class="list">${ns.map(tarjetaNovedad).join('')}</div>` : UI.vacio('checkCirculo', 'No hay novedades', ''));
   }
+  /** Un tanqueo: cuánto echó, cuánto pagó, la foto del recibo y, si cerró un tramo entre dos tanques llenos, lo que rindió. */
+  function tarjetaTanqueo(t, x) {
+    const f = foto(t.foto);
+    return `<div class="card tarea st-${x && x.raro ? 'peligro' : 'disco'}">
+      <div class="nov-fila">${f ? `<img class="nov-foto" src="${esH(f)}" alt="Recibo del tanqueo del ${esH(t.placa)}">` : ''}
+        <div class="tarea-t"><b><span class="placa">${esH(t.placa)}</span> ${esH(A().cop(t.valor))}</b>
+        <span class="meta">${esH(nGal(t.galones))} galones${t.lleno === false ? ' (no llenó el tanque)' : ''} · ${esH(km(t.km))} · ${esH(t.por)} · ${esH(A().hace(t.fecha))}</span>
+        ${x ? `<span class="meta">Rindió ${esH(nKmGal(x.kmGal))} km por galón${x.raro ? ` (lo normal: ${esH(nKmGal(x.prom))})` : ''} · el combustible costó ${esH(A().cop(Math.round(x.costoKm)))} por km</span>` : ''}</div></div>
+      ${x && x.raro ? `<span class="docs">${A().pill(`Consumo raro: ${Math.round((1 - x.kmGal / x.prom) * 100)} % menos de lo normal`, 's-peligro', 'aviso')}</span>` : ''}
+    </div>`;
+  }
+  function htmlTanqueos() {
+    const ts = D().tanqueos.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    const tramos = new Map(); D().vehiculos.forEach(v => tramosVeh(v.id).forEach(x => tramos.set(x.t.id, x)));
+    const h = puedeReportar() ? `<div class="barra-botones">${boton('tanqueo', 'Registrar tanqueo', 'pagada', '', 'primary')}</div>` : '';
+    if (!ts.length) return h + UI.vacio('pagada', 'Todavía no hay tanqueos', puedeReportar() ? 'Cuando un carro eche combustible, registra el tanqueo con la foto del recibo.' : '');
+    const raros = ts.filter(t => tramos.get(t.id) && tramos.get(t.id).raro).length;
+    return h + (raros ? `<div class="aviso peligro" role="status"><span><b>${raros} ${raros === 1 ? 'tanqueo con consumo raro' : 'tanqueos con consumo raro'}:</b> el carro rindió mucho menos de lo normal. Revisa el recibo y pregunta qué pasó.</span></div>` : '')
+      + `<div class="list">${ts.slice(0, 40).map(t => tarjetaTanqueo(t, tramos.get(t.id))).join('')}</div>`
+      + (ts.length > 40 ? `<p class="meta">Se muestran los últimos 40 de ${ts.length}. Todos van en el Excel de Reportes.</p>` : '');
+  }
   function htmlResumen() {
     const App = A(), vs = D().vehiculos, mes = A().hoyISO().slice(0, 7);
     const delMes = D().novedades.filter(n => String(n.fecha).slice(0, 7) === mes);
@@ -254,11 +317,17 @@
     const porTipo = Object.keys(TIPO_NOV).map(t => [TIPO_NOV[t], delMes.filter(n => n.tipo === t).length]).filter(x => x[1]);
     const max = Math.max(1, ...porTipo.map(x => x[1]));
     const proximos = viajes();
+    const ini = mes + '-01', cs = vs.slice().sort((a, b) => String(a.placa).localeCompare(String(b.placa))).map(v => ({ v, c: costosDe(v, ini) }));
+    const tot = cs.reduce((t, x) => ({ nov: t.nov + x.c.nov, mtt: t.mtt + x.c.mtt, comb: t.comb + x.c.comb, total: t.total + x.c.total }), { nov: 0, mtt: 0, comb: 0, total: 0 });
     let h = `<div class="resumen-grid">
+      <div class="card"><span class="meta">Costo total de los carros este mes</span><span class="rm-n">${esH(App.cop(tot.total))}</span><span class="meta">Novedades ${esH(App.cop(tot.nov))} · mantenimientos ${esH(App.cop(tot.mtt))} · combustible ${esH(App.cop(tot.comb))}</span></div>
       <div class="card"><span class="meta">Costo de novedades este mes</span><span class="rm-n">${esH(App.cop(costo))}</span><span class="meta">${delMes.length} novedades</span></div>
       <div class="card"><span class="meta">Carros</span><span class="rm-n">${vs.length}</span><span class="meta">${resumen().disponibles} disponibles · ${resumen().enUso} en uso · ${vs.filter(v => v.estado === 'en-taller').length} en taller</span></div>
       <div class="card"><span class="meta">Documentos por vencer o vencidos</span><span class="rm-n">${resumen().docs}</span>${resumen().docs ? App.pill('Revisar fechas', 's-peligro', 'aviso') : App.pill('Al día', 's-disco', 'check')}</div>
     </div>`;
+    h += `<div class="section-label">Costo de cada carro este mes</div><div class="list">${cs.sort((a, b) => b.c.total - a.c.total).map(({ v, c }) => `<button type="button" class="card" data-accion="ver" data-id="${esH(v.id)}">
+      <span class="card-head"><span class="card-title"><span class="placa">${esH(v.placa)}</span> ${esH(v.marca)} ${esH(v.modelo)}</span><b class="valor">${esH(App.cop(c.total))}</b></span>
+      <span class="facts"><span>Novedades ${esH(App.cop(c.nov))}</span><span>Mantenimientos ${esH(App.cop(c.mtt))}</span><span>Combustible ${esH(App.cop(c.comb))}</span></span></button>`).join('')}</div>`;
     h += `<div class="section-label">Novedades del mes por tipo</div><div class="card">${porTipo.length ? `<div class="barras">${porTipo.map(([t, v]) => `<div class="bf"><span class="bf-n">${esH(t)}</span><span class="bf-b"><i style="width:${Math.max(4, Math.round(v / max * 100))}%"></i></span><span class="bf-v">${v}</span></div>`).join('')}</div>` : '<p class="meta">Sin novedades este mes.</p>'}</div>`;
     h += `<div class="section-label">Carros para las próximas reuniones (${proximos.length})</div>` + (proximos.length ? `<div class="list">${proximos.map(n => `<div class="card"><b><span class="placa">${esH(n.placa)}</span> → ${esH(n.comunidad)}</b><span class="meta">${esH(App.fechaCorta(n.fechaReunion))} · ${esH(n.conductor)}</span></div>`).join('')}</div>` : '<p class="meta">Ninguna reunión tiene carro asignado todavía.</p>');
     return h;
@@ -294,14 +363,17 @@
     const vs = viajesHechos().filter(x => enPeriodo(x.salida.fecha)), ns = D().novedades.filter(n => enPeriodo(n.fecha));
     const porCarro = D().vehiculos.slice().sort((a, b) => String(a.placa).localeCompare(String(b.placa))).map(v => {
       const mv = vs.filter(x => x.v.id === v.id), mn = ns.filter(n => n.vehiculoId === v.id);
-      return { v, salidas: mv.length, km: mv.reduce((s, x) => s + x.km, 0), problemas: mv.filter(x => x.problemas).length, novedades: mn.length, costo: mn.reduce((s, n) => s + num(n.costo), 0), sinRevisar: mn.filter(n => !n.revisada).length };
+      const c = costosDe(v, desde()), rd = rendimiento(tramosVeh(v.id).filter(x => enPeriodo(x.t.fecha)));
+      return { v, salidas: mv.length, km: mv.reduce((s, x) => s + x.km, 0), problemas: mv.filter(x => x.problemas).length, novedades: mn.length, costo: mn.reduce((s, n) => s + num(n.costo), 0), sinRevisar: mn.filter(n => !n.revisada).length,
+        mtt: c.mtt, comb: c.comb, total: c.nov + c.mtt + c.comb, kmGal: rd.kmGal, costoKm: rd.costoKm };
     });
     const nombres = Array.from(new Set(vs.map(x => x.salida.conductor).concat(ns.filter(n => n.reportaRol === 'conductor').map(n => n.reporta)).filter(Boolean))).sort();
     const porConductor = nombres.map(c => {
       const mv = vs.filter(x => x.salida.conductor === c);
       return { c, salidas: mv.length, km: mv.reduce((s, x) => s + x.km, 0), problemas: mv.filter(x => x.problemas).length, novedades: ns.filter(n => n.reporta === c).length };
     });
-    return { vs, ns, porCarro, porConductor };
+    const ts = D().tanqueos.filter(t => enPeriodo(t.fecha)).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    return { vs, ns, ts, porCarro, porConductor };
   }
   function htmlReportes() {
     const App = A(), r = datosReporte(), kmTotal = r.vs.reduce((s, x) => s + x.km, 0), costo = r.ns.reduce((s, n) => s + num(n.costo), 0);
@@ -310,11 +382,13 @@
       <div class="card"><span class="meta">Salidas</span><span class="rm-n">${r.vs.length}</span><span class="meta">${r.vs.filter(x => !x.llegada).length} sin llegada todavía</span></div>
       <div class="card"><span class="meta">Kilómetros recorridos</span><span class="rm-n">${esH(kmTotal.toLocaleString('es-CO'))}</span><span class="meta">${r.vs.filter(x => x.problemas).length} salidas con problemas en la revisión</span></div>
       <div class="card"><span class="meta">Novedades</span><span class="rm-n">${r.ns.length}</span><span class="meta">${esH(App.cop(costo))} en costos · ${r.ns.filter(n => !n.revisada).length} sin revisar</span></div>
+      <div class="card"><span class="meta">Costo total de los carros</span><span class="rm-n">${esH(App.cop(r.porCarro.reduce((t, x) => t + x.total, 0)))}</span><span class="meta">Novedades ${esH(App.cop(costo))} · mantenimientos ${esH(App.cop(r.porCarro.reduce((t, x) => t + x.mtt, 0)))} · combustible ${esH(App.cop(r.porCarro.reduce((t, x) => t + x.comb, 0)))}</span></div>
     </div>`;
     h += `<div class="barra-botones">${boton('excelveh', 'Descargar Excel', 'excel', '', 'small')}</div>`;
     h += `<div class="section-label">Por carro</div><div class="list">${r.porCarro.map(x => `<button type="button" class="card" data-accion="ver" data-id="${esH(x.v.id)}">
       <span class="card-head"><span class="card-title"><span class="placa">${esH(x.v.placa)}</span> ${esH(x.v.marca)} ${esH(x.v.modelo)}</span>${App.pill((EST[x.v.estado] || ['Sin estado'])[0], (EST[x.v.estado] || ['', 'none'])[1])}</span>
       <span class="facts"><span>${x.salidas} ${x.salidas === 1 ? 'salida' : 'salidas'}</span><span>${esH(km(x.km))} recorridos</span><span>${x.novedades} ${x.novedades === 1 ? 'novedad' : 'novedades'}${x.costo ? ' · ' + esH(App.cop(x.costo)) : ''}</span></span>
+      <span class="facts"><span>Combustible ${esH(App.cop(x.comb))}</span><span>${x.kmGal ? esH(nKmGal(x.kmGal)) + ' km por galón' : 'sin rendimiento todavía'}</span><span><b>Total ${esH(App.cop(x.total))}</b></span></span>
       <span class="docs">${docPill('SOAT', x.v.soat)}${docPill('Técnico-mecánica', x.v.tecno)}${x.problemas ? App.pill(`${x.problemas} con problemas en la revisión`, 's-peligro', 'aviso') : ''}${x.sinRevisar ? App.pill(`${x.sinRevisar} sin revisar`, 's-org', 'aviso') : ''}</span>
     </button>`).join('')}</div>`;
     h += `<div class="section-label">Por conductor</div>` + (r.porConductor.length ? `<div class="list">${r.porConductor.map(x => `<div class="card"><span class="card-head"><span class="card-title">${esH(x.c)}</span>${x.problemas ? App.pill(`${x.problemas} con problemas`, 's-peligro', 'aviso') : ''}</span>
@@ -330,11 +404,15 @@
     try {
       const f = window.Inventario.fechaLocal, r = datosReporte(), hojas = [], gen = `Generado el ${A().hoyISO()}.`;
       const TIT = { Carros: ['Carros', 'Estado, kilometraje y salidas de cada carro.'], 'Salidas y llegadas': ['Salidas y llegadas', 'Cada salida con su llegada, kilómetros y revisión.'],
-        Novedades: ['Novedades', 'Lo que reportaron los conductores, con su costo y si ya se revisó.'], 'Por conductor': ['Por conductor', 'Resumen de cada conductor.'] };
+        Novedades: ['Novedades', 'Lo que reportaron los conductores, con su costo y si ya se revisó.'], 'Por conductor': ['Por conductor', 'Resumen de cada conductor.'],
+        Tanqueos: ['Tanqueos', 'Cada vez que un carro echó combustible, con lo que rindió entre un tanque lleno y el siguiente.'] };
       const hoja = (nombre, filas) => hojas.push(window.Excel.deObjetos(nombre, TIT[nombre][0], `${TIT[nombre][1]} ${gen}`, filas));
-      hoja('Carros', r.porCarro.map(x => ({ Placa: x.v.placa, Carro: `${x.v.marca} ${x.v.modelo} ${x.v.anio}`, Estado: (EST[x.v.estado] || [x.v.estado])[0], Conductor: x.v.conductor, Kilometraje: num(x.v.km), Salidas: x.salidas, 'Km recorridos': x.km, 'Con problemas': x.problemas, Novedades: x.novedades, 'Costo novedades': x.costo, 'SOAT vence': x.v.soat, 'Técnico-mecánica vence': x.v.tecno })));
+      hoja('Carros', r.porCarro.map(x => ({ Placa: x.v.placa, Carro: `${x.v.marca} ${x.v.modelo} ${x.v.anio}`, Estado: (EST[x.v.estado] || [x.v.estado])[0], Conductor: x.v.conductor, Kilometraje: num(x.v.km), Salidas: x.salidas, 'Km recorridos': x.km, 'Con problemas': x.problemas, Novedades: x.novedades, 'Costo novedades': x.costo, 'Costo mantenimientos': x.mtt, 'Costo combustible': x.comb, 'Costo total': x.total, 'Km por galón': x.kmGal ? Math.round(x.kmGal * 10) / 10 : '', 'Costo combustible por km': x.costoKm ? Math.round(x.costoKm) : '', 'SOAT vence': x.v.soat, 'Técnico-mecánica vence': x.v.tecno })));
       hoja('Salidas y llegadas', r.vs.map(x => ({ Placa: x.v.placa, Conductor: x.salida.conductor, Reunión: x.reunion, Salió: f(x.salida.fecha, true), 'Km salida': num(x.salida.km), 'Combustible salida': x.salida.combustible, Entregó: x.salida.con, Llegó: x.llegada ? f(x.llegada.fecha, true) : 'Todavía no', 'Km llegada': x.llegada ? num(x.llegada.km) : '', 'Combustible llegada': x.llegada ? x.llegada.combustible : '', Recibió: x.llegada ? x.llegada.con : '', 'Km recorridos': x.km, Horas: x.horas, Revisión: x.problemas ? 'Con problemas' : 'Bien', 'Críticos (salida)': textoRevision(x.salida.revision).criticos, 'Otros (salida)': textoRevision(x.salida.revision).otros, 'Críticos (llegada)': x.llegada ? textoRevision(x.llegada.revision).criticos : '', 'Otros (llegada)': x.llegada ? textoRevision(x.llegada.revision).otros : '', Observaciones: [x.salida.observaciones, x.llegada && x.llegada.observaciones].filter(Boolean).join(' · ') })));
       hoja('Novedades', r.ns.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).map(n => ({ Fecha: f(n.fecha, true), Placa: n.placa, Tipo: TIPO_NOV[n.tipo] || n.tipo, Qué: n.descripcion, Km: num(n.km), Reportó: n.reporta, Costo: num(n.costo), Revisada: n.revisada ? 'Sí' : 'No', 'Revisó': n.revisadaPor, Nota: n.nota })));
+      const tramos = new Map(); D().vehiculos.forEach(v => tramosVeh(v.id).forEach(x => tramos.set(x.t.id, x)));
+      hoja('Tanqueos', r.ts.map(t => { const x = tramos.get(t.id); return { Fecha: f(t.fecha, true), Placa: t.placa, Km: num(t.km), Galones: num(t.galones), Valor: num(t.valor), 'Tanque lleno': t.lleno === false ? 'No' : 'Sí',
+        'Km por galón': x ? Math.round(x.kmGal * 10) / 10 : '', 'Costo combustible por km': x ? Math.round(x.costoKm) : '', 'Consumo raro': x ? (x.raro ? 'Sí' : 'No') : '', Registró: t.por }; }));
       hoja('Por conductor', r.porConductor.map(x => ({ Conductor: x.c, Salidas: x.salidas, 'Km recorridos': x.km, 'Con problemas': x.problemas, 'Novedades reportadas': x.novedades })));
       await window.Excel.descargar({ archivo: `Vehiculos ${A().hoyISO()}`, hojas });
       A().toast('Listo: Excel descargado');
@@ -361,6 +439,8 @@
   const campoFoto = (id, lbl) => `<div class="field foto-campo"><span class="lbl">${esH(lbl)}</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="${id}Txt">Tomar foto</span><input id="${id}" class="archivo-oculto" type="file" accept="image/*" capture="environment" data-foto="${id}"></label><img id="${id}Ver" class="nov-foto" alt="${esH(lbl)}" hidden></div>`;
   const valor = id => ($(id) ? $(id).value.trim() : '');
   const entero = id => { const v = valor(id); return /^\d+$/.test(v) ? Number(v) : NaN; };
+  // Decimal con coma o punto y hasta 2 decimales (los galones: 12,5).
+  const decimal = id => { const v = valor(id).replace(',', '.'); return /^\d{1,3}(\.\d{1,2})?$/.test(v) ? Number(v) : NaN; };
   function fallar(msg, id) { const e = $('veErr'); e.textContent = msg; e.hidden = false; if (id && $(id)) $(id).focus(); return false; }
   function abrir(o) {
     accion = o;
@@ -372,7 +452,7 @@
     $('veCerrar').textContent = o.primario ? 'Cancelar' : 'Cerrar';
     $('veErr').hidden = true;
     A().abrirHoja('shVeh');
-    A().vigilar('shVeh', () => $('veForm'), () => JSON.stringify([fotoNov.length, Object.entries(fotos).map(([k, f]) => [k, f.length])]));
+    A().vigilar('shVeh', () => $('veForm'), () => JSON.stringify([fotoNov.length, fotoTan.length, Object.entries(fotos).map(([k, f]) => [k, f.length])]));
     const sh = $('shVeh').querySelector('.sheet'); if (sh) sh.scrollTop = 0;
   }
   function aviso(para, titulo, txt) {
@@ -416,8 +496,9 @@
     const txt = $(id + 'Txt'), ver = $(id + 'Ver');
     txt.textContent = 'Preparando…';
     try {
-      const dato = await window.Inventario.leerFoto(f, id === 'vnFoto' ? 1280 : 720, id === 'vnFoto' ? 300000 : 140000);
-      if (id === 'vnFoto') fotoNov = dato; else fotos[id] = dato;
+      const grande = id === 'vnFoto' || id === 'vqFoto';   // la novedad y el recibo llevan una sola foto más grande; las 5 de la salida, pequeñas
+      const dato = await window.Inventario.leerFoto(f, grande ? 1280 : 720, grande ? 300000 : 140000);
+      if (id === 'vnFoto') fotoNov = dato; else if (id === 'vqFoto') fotoTan = dato; else fotos[id] = dato;
       ver.src = dato; ver.hidden = false; txt.textContent = 'Cambiar'; $('veErr').hidden = true;
     } catch (er) { txt.textContent = 'Tomar foto'; fallar(er.message === 'grande' ? 'La foto es muy pesada. Toma otra más de cerca.' : 'Ese archivo no es una foto.'); }
   }
@@ -445,6 +526,42 @@
         return [['set', 'novedades', window.nube.idNuevo('no'), { vehiculoId: veh.id, placa: veh.placa, tipo, fecha: ahora(), km: kmv, descripcion: desc, foto: fotoNov,
           reporta: persona().nombre, reportaRol: miRol(), costo, revisada: false, revisadaPor: '', revisadaEn: '', nota: '' }]]
           .concat(['jefe', 'carros', 'asistente', 'gerente'].map(rol => aviso(rol, 'Novedad en un carro', `${persona().nombre} reportó ${(TIPO_NOV[tipo] || 'una novedad').toLowerCase()} en el ${veh.placa}: ${desc.slice(0, 100)}`)));
+      } });
+  }
+  /** Un tanqueo: kilometraje, galones, lo pagado y la foto del recibo. Si rinde mucho menos de lo normal del carro, avisa a Transporte, Bodega y la Jefe. */
+  function tanqueo(v) {
+    fotoTan = '';
+    const opciones = D().vehiculos.slice().sort((a, b) => String(a.placa).localeCompare(String(b.placa))).map(x => [x.id, `${x.placa} · ${x.marca} ${x.modelo}`]);
+    abrir({ titulo: 'Registrar un tanqueo', sub: 'La foto del recibo es obligatoria. Con dos tanques llenos seguidos se calcula cuántos km rinde el carro.',
+      campos: campoSel('vqVeh', 'Carro', opciones, v ? v.id : (D().vehiculos.find(x => x.conductor === persona().nombre) || D().vehiculos[0] || {}).id) +
+        `<div class="fields cols">${campoNum('vqKm', 'Kilometraje', '', 0, 2000000)}<div class="field"><label for="vqGal">Galones</label><input id="vqGal" type="text" inputmode="decimal" maxlength="6" autocomplete="off" placeholder="Ej: 12,5"></div></div>` +
+        campoNum('vqValor', 'Lo que se pagó, en pesos', '', 0, 5000000) +
+        marca('vqLleno', 'Llené el tanque hasta arriba', true) + '<p class="meta">Quita la marca si fue solo un poco de combustible: así el cálculo de km por galón sale bien.</p>' +
+        campoFoto('vqFoto', 'Foto del recibo (obligatoria)'),
+      primario: 'Guardar tanqueo', icono: 'check', listo: 'Listo: tanqueo guardado.',
+      ops: () => {
+        const veh = vehPorId(valor('vqVeh')), kmv = entero('vqKm'), g = decimal('vqGal'), pagado = entero('vqValor'), lleno = $('vqLleno').checked;
+        if (!veh) return fallar('Escoge el carro.', 'vqVeh');
+        if (!(kmv >= 0)) return fallar('Escribe el kilometraje (solo números).', 'vqKm');
+        const ult = tanDe(veh.id).slice(-1)[0];
+        if (ult && kmv < num(ult.km)) return fallar(`El kilometraje no puede ser menor que el del último tanqueo (${km(ult.km)}).`, 'vqKm');
+        if (kmv + 5000 < num(veh.km)) return fallar(`El kilometraje parece bajo: el carro va en ${km(veh.km)}.`, 'vqKm');
+        if (kmv > num(veh.km) + 3000) return fallar('El kilometraje parece muy alto. Revísalo.', 'vqKm');
+        if (!(g >= 0.5 && g <= 100)) return fallar('Escribe los galones (de 0,5 a 100), por ejemplo 12,5.', 'vqGal');
+        if (!(pagado > 0 && pagado <= 5000000)) return fallar('Escribe lo que se pagó en pesos, sin puntos ni comas.', 'vqValor');
+        const precio = pagado / g;
+        if (precio < TAN_PRECIO_MIN || precio > TAN_PRECIO_MAX) return fallar(`Eso da ${A().cop(Math.round(precio))} por galón. Revisa los galones y lo que se pagó.`, 'vqValor');
+        if (!fotoTan) return fallar('Falta la foto del recibo.');
+        const id = window.nube.idNuevo('ta');
+        const nuevo = { vehiculoId: veh.id, placa: veh.placa, fecha: ahora(), km: kmv, galones: g, valor: pagado, lleno, foto: fotoTan, por: persona().nombre, porRol: miRol() };
+        const x = tramosDe(tanDe(veh.id).concat([Object.assign({ id }, nuevo)])).find(y => y.t.id === id);
+        const ops = [['set', 'tanqueos', id, nuevo]];
+        if (x && x.raro) {
+          const txt = `El ${veh.placa} rindió ${nKmGal(x.kmGal)} km por galón; lo normal es ${nKmGal(x.prom)}. Tanqueó ${persona().nombre}.`;
+          accion.listo = 'Listo: tanqueo guardado. El consumo salió raro y ya les llegó el aviso.';
+          ['carros', 'asistente', 'jefe'].forEach(rol => ops.push(aviso(rol, 'Consumo raro en un carro', txt)));
+        }
+        return ops;
       } });
   }
   function revisar(n) {
@@ -486,7 +603,10 @@
         if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > A().hoyISO()) return fallar('Revisa la fecha: no puede ser de mañana.', 'vmFecha');
         if (!(costo >= 0)) return fallar('Escribe el costo en pesos, sin puntos ni comas.', 'vmCosto');
         const act = vehPorId(v.id) || v;
-        const campos = { mttos: mttosDe(act).map(x => (x.id === mid ? Object.assign({}, x, { ultimoKm: kmv, ultimaFecha: fecha, ultimoCosto: costo }) : x)),
+        // Cada «Hecho» con costo se guarda (hasta 12 por tarea) para sumar lo gastado en cualquier periodo; los planes anteriores traían solo el último.
+        const previos = Array.isArray(m.hechos) ? m.hechos : num(m.ultimoCosto) > 0 && m.ultimaFecha ? [{ fecha: m.ultimaFecha, km: m.ultimoKm, costo: m.ultimoCosto }] : [];
+        const hechos = costo > 0 ? previos.concat([{ fecha, km: kmv, costo }]).slice(-12) : previos;
+        const campos = { mttos: mttosDe(act).map(x => (x.id === mid ? Object.assign({}, x, { ultimoKm: kmv, ultimaFecha: fecha, ultimoCosto: costo, hechos }) : x)),
           historial: paso(act, `Mantenimiento hecho: ${m.tarea} (${km(kmv)}, ${A().fechaCorta(fecha)}${costo ? ', costó ' + A().cop(costo) : ''})${nota ? '. ' + nota : ''}`) };
         if (kmv > num(act.km)) campos.km = kmv;
         return [['mezclar', 'vehiculos', v.id, campos]];
@@ -599,9 +719,10 @@
   /* ---------- hoja de vida ---------- */
   function ver(v) {
     const App = A(), st = EST[v.estado] || ['Sin estado', 'none'];
+    const tans = tanDe(v.id).slice().reverse(), trs = tramosVeh(v.id), rd = rendimiento(trs), cm = costosDe(v, A().hoyISO().slice(0, 8) + '01');
     const ns = novDe(v.id), es = entDe(v.id).slice(0, 6), hist = historial(v).slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).slice(0, 8);
     const bts = [];
-    if (puedeReportar()) bts.push(boton('novedad', 'Reportar novedad', 'aviso', v.id, 'small'));
+    if (puedeReportar()) { bts.push(boton('novedad', 'Reportar novedad', 'aviso', v.id, 'small')); bts.push(boton('tanqueo', 'Registrar tanqueo', 'pagada', v.id, 'small')); }
     if ((esAdmin() || esConductor()) && v.estado === 'disponible') bts.push(boton('salida', 'Registrar salida', 'llave', v.id, 'primary small'));
     if (v.estado === 'en-uso' && (esAdmin() || (esConductor() && (v.conductor === persona().nombre || !persona().prueba)))) bts.push(boton('llegada', 'Registrar llegada', 'llave', v.id, 'primary small'));
     if (esAdmin()) {
@@ -616,6 +737,9 @@
         <div class="docs">${docPill('SOAT', v.soat)}${docPill('Técnico-mecánica', v.tecno)}</div>
         ${bts.length ? `<div class="tarea-pie">${bts.join('')}</div>` : ''}
         <div class="section-label">Plan de mantenimiento (${mttosDe(v).length})</div>${mttosDe(v).length ? `<div class="list">${mttosDe(v).map(m => tarjetaMtto({ v, m, e: estMtto(m, v) }, false)).join('')}</div>` : '<p class="meta">Este carro todavía no tiene plan de mantenimiento.</p>'}${esAdmin() && mttosDe(v).length < 10 ? `<div class="tarea-pie">${boton('mttonuevo', 'Agregar tarea al plan', 'mas', v.id, 'small')}</div>` : ''}
+        <div class="section-label">Combustible y costo (${tans.length} ${tans.length === 1 ? 'tanqueo' : 'tanqueos'})</div>
+        <dl class="datos"><dt>Rinde</dt><dd>${trs.length ? esH(nKmGal(rd.kmGal)) + ' km por galón' : 'Falta calcularlo'}</dd><dt>Combustible</dt><dd>${trs.length ? esH(App.cop(Math.round(rd.costoKm))) + ' por km' : 'Con dos tanques llenos seguidos se calcula'}</dd><dt>Costo este mes</dt><dd>${esH(App.cop(cm.total))} <span class="meta">(novedades ${esH(App.cop(cm.nov))}, mantenimientos ${esH(App.cop(cm.mtt))}, combustible ${esH(App.cop(cm.comb))})</span></dd></dl>
+        ${tans.length ? `<div class="list">${tans.slice(0, 4).map(t => tarjetaTanqueo(t, trs.find(x => x.t.id === t.id))).join('')}</div>${tans.length > 4 ? `<p class="meta">Los últimos 4 de ${tans.length}. Todos están en Tanqueos.</p>` : ''}` : '<p class="meta">Todavía no hay tanqueos de este carro.</p>'}
         <div class="section-label">Novedades (${ns.length})</div>${ns.length ? `<div class="list">${ns.map(tarjetaNovedad).join('')}</div>` : '<p class="meta">Sin novedades.</p>'}
         <div class="section-label">Salidas y llegadas</div>${es.length ? `<ul class="necesidades-l">${es.map(e => `<li><span class="nf-cab"><span class="nf-t"><b>${e.tipo === 'salida' ? 'Salida' : 'Llegada'} · ${esH(km(e.km))}</b><span class="meta">${esH(e.conductor)} · ${e.tipo === 'salida' ? 'entregó' : 'recibió'} ${esH(e.con)} · ${esH(App.hace(e.fecha))} · combustible ${esH(e.combustible)}</span>${e.observaciones ? `<span class="meta">${esH(e.observaciones)}</span>` : ''}</span>${Object.values(e.revision || {}).every(Boolean) ? App.pill('Revisión bien', 's-disco', 'check') : App.pill('Con problemas', 's-peligro', 'aviso')}</span><span class="meta rev-res">Críticos: ${esH(textoRevision(e.revision).criticos)} · Otros: ${esH(textoRevision(e.revision).otros)}</span><div class="fotos-fila">${fotosDe(e)}</div></li>`).join('')}</ul>` : '<p class="meta">Todavía no hay salidas registradas.</p>'}
         <div class="section-label">Historial</div><ol class="linea">${hist.map(x => `<li><b>${esH(x.texto)}</b><span class="meta">${esH(x.por || '')} · ${esH(App.hace(x.fecha))}</span></li>`).join('') || '<li><span class="meta">Sin historial.</span></li>'}</ol>` });
@@ -639,6 +763,7 @@
       ver: () => v && ver(v),
       filtroveh: () => { const s = A().S; s.filtro.vehiculos = !id || s.filtro.vehiculos === id ? '' : id; if (b.dataset.modo === 'todo') buscar = ''; A().pintarTodo(); return true; },
       novedad: () => puedeReportar() ? novedad(v) : null,
+      tanqueo: () => puedeReportar() ? tanqueo(v) : null,
       revisar: () => n && !n.revisada && esAdmin() ? revisar(n) : null,
       docs: () => v && esAdmin() ? docs(v) : null,
       estado: () => v && esAdmin() ? estado(v) : null,

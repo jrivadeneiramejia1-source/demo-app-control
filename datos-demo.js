@@ -265,7 +265,9 @@
     // ---------- VEHÍCULOS ----------
     // Cada carro tiene su hoja de vida aquí; las novedades y las entregas (salida y llegada) van aparte, con sus fotos.
     // Plan de mantenimiento de ejemplo: { id, tarea, cadaKm, cadaDias, ultimoKm, ultimaFecha (días atrás), ultimoCosto }.
-    const mtto = (id, tarea, cadaKm, cadaDias, ultimoKm, haceDias, ultimoCosto) => ({ id, tarea, cadaKm, cadaDias, ultimoKm, ultimaFecha: dias(haceDias), ultimoCosto });
+    // «hechos» guarda cada vez que se hizo con su costo (así se suma lo gastado en un periodo).
+    const mtto = (id, tarea, cadaKm, cadaDias, ultimoKm, haceDias, ultimoCosto) => ({ id, tarea, cadaKm, cadaDias, ultimoKm, ultimaFecha: dias(haceDias), ultimoCosto,
+      hechos: ultimoCosto ? [{ fecha: dias(haceDias), km: ultimoKm, costo: ultimoCosto }] : [] });
     const vehiculos = {
       've-abc123': { placa: 'ABC 123', marca: 'Toyota', modelo: 'Hilux', anio: 2022, color: 'Blanco', conductor: 'Oscar Farfán', km: 45210,
         soat: dias(12), tecno: dias(200), estado: 'en-uso', historial: [{ fecha: iso(-1, 6, 40), texto: 'Salió con Oscar Farfán (45.180 km)', por: 'Oscar Farfán' }],
@@ -300,6 +302,18 @@
       'en-003': { vehiculoId: 've-abc123', placa: 'ABC 123', tipo: 'salida', fecha: iso(-1, 6, 40), km: 45180, combustible: 'lleno', conductor: 'Oscar Farfán', con: 'Wilson Muñoz',
         fotos: fotos5, revision: revisionOk, observaciones: '', por: 'Oscar Farfán', porRol: 'conductor', reunionId: '' }
     };
+
+    // Tanqueos de ejemplo (valores inventados): [días atrás, hora, km, galones, tanque lleno]. El valor sale del precio del galón de cada carro.
+    // El ABC 123 trae un último tanqueo con consumo raro (rindió mucho menos que lo normal) para ver el aviso.
+    const tanqueos = {};
+    const tanqueosDe = (veh, placa, precio, lista) => lista.forEach(([haceDias, hora, km, galones, lleno], i) => {
+      tanqueos['ta-' + veh.slice(3, 6) + '-' + (i + 1)] = { vehiculoId: veh, placa, fecha: iso(-haceDias, hora, 10), km, galones, valor: Math.round(galones * (precio + (i % 3) * 150) / 100) * 100, lleno: lleno !== false,
+        foto: FOTO, por: i % 4 === 3 ? 'Wilson Muñoz' : 'Oscar Farfán', porRol: i % 4 === 3 ? 'carros' : 'conductor' };
+    });
+    tanqueosDe('ve-abc123', 'ABC 123', 12900, [[52, 17, 43380, 18.0], [38, 16, 43900, 17.6], [24, 17, 44420, 17.4], [11, 17, 44930, 17.9], [1, 6, 45170, 15.0]]);
+    tanqueosDe('ve-def456', 'DEF 456', 12950, [[48, 16, 61650, 20.5], [33, 17, 62100, 16.8], [26, 15, 62250, 8.0, false], [19, 17, 62430, 4.4], [4, 6, 62690, 9.8]]);
+    tanqueosDe('ve-ghi789', 'GHI 789', 12900, [[40, 16, 87300, 21.2], [24, 17, 87800, 18.0], [9, 16, 88190, 14.2]]);
+    tanqueosDe('ve-jkl012', 'JKL 012', 15500, [[44, 15, 20300, 22.5], [29, 16, 20720, 17.4], [15, 17, 21100, 15.5], [3, 16, 21340, 10.0]]);
 
     // ---------- REUNIONES ----------
     // La reunión guarda lo general; lo que le toca a cada rol va aparte en «necesidades» (una por tarea),
@@ -392,8 +406,8 @@
       'av-006': aviso('asistente', 'Pedidos de material por entregar', 'Tienes 3 pedidos de material por entregar.', iso(-1, 17, 10), 'inventario')
     };
 
-    return { equipos, hojas, tareasEq, compras, vehiculos, novedades, entregas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
+    return { equipos, hojas, tareasEq, compras, vehiculos, novedades, entregas, tanqueos, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 13, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 14, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();
