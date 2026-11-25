@@ -64,7 +64,8 @@ Además hay una pestaña **Inicio** con un resumen de lo que le toca a cada pers
 | **Correo confirmado** | Cuando una persona crea su cuenta con clave, le llega un correo con un enlace. Hasta que lo toca, no ve nada. Con Google no hace falta (Google ya lo confirmó). |
 | **Pausar** | La Jefe le quita el acceso a una persona sin borrarla. Se puede devolver. |
 | **Campana** | El icono arriba donde llegan los avisos de lo que te toca. |
-| **Kárdex** | El historial de entradas y salidas de **un** artículo, con lo que quedó después de cada una. |
+| **Kárdex** | El historial de entradas y salidas de **un** artículo, con lo que quedó después de cada una y **cuánto valía** cada movimiento. |
+| **Costo promedio** | Lo que vale cada unidad de un artículo, sacado del promedio de lo que había y de lo que entra en cada compra (ver «Kárdex con plata» en el capítulo 8). |
 | **Acta** | La hoja firmada que dice qué equipos se entregaron a una persona (en Equipos), o el registro de lo que pasó en una reunión (en Reuniones). |
 
 ---
@@ -407,6 +408,12 @@ Quien decide deja su **correo** en la compra (para que nadie se haga pasar por o
   3. **Revisar:** recién ahora aparece, por cada artículo, lo contado, lo que decía la app y la diferencia (las que no cuadran van primero y en rojo). Si hay diferencias se escribe el **motivo** y se guarda; la app ajusta y deja un movimiento por cada una. Si mientras se revisaba alguien movió la cantidad de un artículo, la app avisa y muestra la revisión otra vez sin guardar.
   - Un conteo que cuadra del todo no deja ajustes, así que no aparece en «último ajuste por conteo».
 - **Kárdex:** el historial de **un** artículo con lo que quedó después de cada movimiento (y su Excel).
+- **Kárdex con plata (costo promedio ponderado):** cada movimiento guarda a cuánto entró o salió cada unidad (**costo unitario**), cuánto vale el movimiento (**valor**) y cuánto vale lo que quedó (**valor que quedó**). El Excel del kárdex trae esas tres columnas y el título dice cuánto vale hoy lo que hay.
+  - Cuando se **recibe una compra**, cada unidad entra a lo que se pagó por ella (total pagado ÷ cantidad comprada; en las compras de varios artículos, lo pagado se reparte según lo que valía cada línea al pedirla) y el **costo del artículo se recalcula con el promedio** de lo que había y lo que entra. Ejemplo: había 10 a $1.000 y llegan 5 a $1.300 → el costo pasa a **$1.100** (hay 15, valen $16.500). Si después salen 3, el movimiento vale **$3.300** y lo que queda (12) vale **$13.200**.
+  - Las **salidas, las entregas, los daños, los conteos y los traslados** usan el costo promedio de ese momento. Un traslado lleva el mismo costo a la otra bodega (si allá ya había, se promedia).
+  - «Salió de bodega este mes» en el Resumen suma lo que valía cada salida **cuando salió** (no al precio de hoy).
+  - Los movimientos de **antes** de este cambio no traen valores: el kárdex dice «sin dato» en vez de inventarlos.
+  - El «Precio aprox.» del artículo es este mismo costo promedio; si alguien lo cambia a mano (o por Excel), el nuevo valor manda desde ese momento.
 - **Regla de oro:** **cada cambio de cantidad deja su movimiento en la misma escritura**. No se puede cambiar el stock sin dejar rastro. La cantidad **nunca queda negativa**.
 - Si un artículo se **daña o se pierde**, se avisa a la Jefe.
 

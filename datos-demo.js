@@ -219,7 +219,9 @@
     function mov(articuloId, tipo, motivo, cantidad, saldo, persona, proyecto, fecha, nota, extra) {
       return Object.assign({
         articuloId, articulo: articulos[articuloId].nombre, tipo, motivo, cantidad, saldo, persona, proyecto,
-        por: 'Andrés Beltrán', porRol: 'asistente', fecha, nota, compraId: '', solicitudId: ''
+        por: 'Andrés Beltrán', porRol: 'asistente', fecha, nota, compraId: '', solicitudId: '',
+        // Kárdex con plata: cada unidad al costo del artículo (la demo no tiene historia de precios).
+        costoUnit: articulos[articuloId].costo, valor: Math.abs(cantidad) * articulos[articuloId].costo, valorSaldo: saldo * articulos[articuloId].costo
       }, extra);
     }
     const movimientos = {
@@ -387,5 +389,5 @@
     return { equipos, hojas, tareasEq, compras, vehiculos, novedades, entregas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 11, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 12, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

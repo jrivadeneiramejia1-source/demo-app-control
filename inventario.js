@@ -410,7 +410,7 @@
     const totalMes = comprasMes.reduce((s, c) => s + num(c.valorReal || c.valorAprox), 0);
     const sinAutMes = comprasMes.filter(c => c.estado === 'sin-autorizar').reduce((s, c) => s + num(c.valorReal || c.valorAprox), 0);
     const salidas = d.movimientos.filter(m => m.tipo === 'salida' && delMes(m.fecha));
-    const costoDe = m => num(m.cantidad) * num((artPorId(m.articuloId) || {}).costo);
+    const costoDe = m => (m.valor == null ? num(m.cantidad) * num((artPorId(m.articuloId) || {}).costo) : num(m.valor));
     const catDe = m => (artPorId(m.articuloId) || {}).categoria;
     let h = '';
     if (esGerenteGeneral()) {
@@ -469,7 +469,7 @@
     const hoyMes = App.hoyISO().slice(0, 7), g1 = gasto(hoyMes), g0 = gasto(mesAnterior());
     const delta = g0 > 0 ? Math.round((g1 / g0 - 1) * 100) : null;
     const salidas = d.movimientos.filter(m => m.tipo === 'salida' && delMes(m.fecha));
-    const costoDe = m => num(m.cantidad) * num((artPorId(m.articuloId) || {}).costo);
+    const costoDe = m => (m.valor == null ? num(m.cantidad) * num((artPorId(m.articuloId) || {}).costo) : num(m.valor));
     const comprasMes = d.compras.filter(c => ['comprado', 'recibido', 'sin-autorizar'].includes(c.estado) && delMes(c.fechaCompra));
     let h = `<div class="section-label">Lo urgente</div>` + (u.length ? `<div class="list">${u.join('')}</div>` : UI.vacio('checkCirculo', 'Todo en orden', 'No hay nada urgente en el inventario.'));
     h += barraBotones([boton('excel', 'Descargar Excel', 'excel', '', 'primary')]);
@@ -527,8 +527,25 @@
     return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'inventario', leido: {}, deUid: window.nube.uid() }];
   }
   /** Cambia la cantidad de un artículo y deja su movimiento en la misma escritura: el artículo apunta a su movimiento (ultimoMov) y las reglas lo comprueban. */
-  const mover = (a, delta, o) => { const id = window.nube.idNuevo('mo'); return [['update', 'articulos', a.id, { cantidad: window.nube.incremento(delta), ultimoMov: id }], movimiento(o, id)]; };
-  const movimiento = (o, id) => ['set', 'movimientos', id || window.nube.idNuevo('mo'), Object.assign({ persona: '', proyecto: '', nota: '', compraId: '', solicitudId: '', por: persona().nombre, porRol: persona().rol, fecha: ahora() }, o)];
+  /* Kárdex con plata: cada movimiento guarda a cuánto salió o entró cada unidad (costoUnit), cuánto vale el movimiento (valor)
+     y cuánto vale lo que quedó (valorSaldo, al costo promedio de ese momento). El costo del artículo es el promedio ponderado:
+     cuando llega una compra se recalcula con lo que había y lo que entra. Salidas, traslados y ajustes usan el costo vigente. */
+  const promedio = (hay, costoHay, n, costoN) => (hay + n > 0 ? Math.round((hay * costoHay + n * costoN) / (hay + n)) : Math.round(costoN));
+  const conPlata = o => {
+    if (o.costoUnit == null) return o;
+    const r = Object.assign({}, o, { valor: Math.round(Math.abs(num(o.cantidad)) * num(o.costoUnit)), valorSaldo: Math.round(num(o.saldo) * num(o.costoProm == null ? o.costoUnit : o.costoProm)) });
+    delete r.costoProm;
+    return r;
+  };
+  /** `o.costoUnit`: a cuánto entra o sale cada unidad (si no, al costo del artículo). `o.costoNuevo`: el nuevo costo promedio del artículo (solo cuando entra algo con otro precio). */
+  const mover = (a, delta, o) => {
+    const id = window.nube.idNuevo('mo'), cu = o.costoUnit == null ? num(a.costo) : num(o.costoUnit), prom = o.costoNuevo == null ? num(a.costo) : num(o.costoNuevo);
+    const resto = Object.assign({}, o, { costoUnit: cu, costoProm: prom }); delete resto.costoNuevo;
+    const datos = { cantidad: window.nube.incremento(delta), ultimoMov: id };
+    if (o.costoNuevo != null) datos.costo = prom;
+    return [['update', 'articulos', a.id, datos], movimiento(resto, id)];
+  };
+  const movimiento = (o, id) => ['set', 'movimientos', id || window.nube.idNuevo('mo'), Object.assign({ persona: '', proyecto: '', nota: '', compraId: '', solicitudId: '', por: persona().nombre, porRol: persona().rol, fecha: ahora() }, conPlata(o))];
   const historial = c => (Array.isArray(c.historial) ? c.historial : []).filter(h => h && typeof h === 'object');
   const paso = (c, txt) => historial(c).concat([{ fecha: ahora(), texto: txt, por: persona().nombre }]);
 
@@ -796,13 +813,17 @@
         const llegaron = lineas.map((l, i) => entero('rl' + i));
         if (llegaron.some(n => !(n >= 0))) return fallar('Escribe un número entero (0 o más) en cada artículo.');
         if (hayFuera && !valor('acQuien')) return fallar('Escribe a quién se entregó lo que no va a bodega.', 'acQuien');
-        const stock = {}, ops = [], faltan = [];
+        const stock = {}, costos = {}, ops = [], faltan = [];
+        // Lo pagado se reparte entre las líneas en proporción a lo que valía cada una al pedirla; cada unidad entra a ese precio.
+        const suma = lineas.reduce((s, l) => s + num(l.valor), 0), pagado = num(c.valorReal), factor = pagado > 0 && suma > 0 ? pagado / suma : 1;
         lineas.forEach((l, i) => {
           const n = llegaron[i], a = l.articuloId ? artPorId(l.articuloId) : null;
           if (n < num(l.cantidad)) faltan.push(`${l.que}: ${n} de ${num(l.cantidad)}`);
           if (!a || n === 0) return;
-          stock[a.id] = (stock[a.id] === undefined ? num(a.cantidad) : stock[a.id]) + n;
-          ops.push(...mover(a, n, { articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: stock[a.id], persona: c.proveedor || '', nota: [valor('acNota'), n < num(l.cantidad) ? `Llegaron ${n} de ${num(l.cantidad)}` : ''].filter(Boolean).join('. '), compraId: c.id }));
+          const hayAntes = stock[a.id] === undefined ? num(a.cantidad) : stock[a.id], costoAntes = costos[a.id] === undefined ? num(a.costo) : costos[a.id];
+          const unit = num(l.valor) > 0 && num(l.cantidad) > 0 ? Math.round(num(l.valor) * factor / num(l.cantidad)) : num(a.costo);
+          stock[a.id] = hayAntes + n; costos[a.id] = promedio(hayAntes, costoAntes, n, unit);
+          ops.push(...mover(a, n, { costoUnit: unit, costoNuevo: costos[a.id], articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: stock[a.id], persona: c.proveedor || '', nota: [valor('acNota'), n < num(l.cantidad) ? `Llegaron ${n} de ${num(l.cantidad)}` : ''].filter(Boolean).join('. '), compraId: c.id }));
         });
         const nota = [valor('acNota'), faltan.length ? 'Llegó menos: ' + faltan.join('; ') : ''].filter(Boolean).join('. ');
         return [['mezclar', 'compras', c.id, { estado: 'recibido', entregadoA: hayFuera ? valor('acQuien') : '', historial: paso(c, `Recibida${nota ? '. ' + nota : ''}`) }]].concat(ops,
@@ -825,12 +846,14 @@
           return [['mezclar', 'compras', c.id, { estado: 'recibido', entregadoA: valor('acQuien'), historial: paso(c, `Entregado a ${valor('acQuien')}${valor('acNota') ? '. ' + valor('acNota') : ''}`) }],
             aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya llegó y se entregó a ${valor('acQuien')}.`)];
         }
-        const n = entero('acCant'), hay = num((artPorId(a.id) || a).cantidad);
+        const act = artPorId(a.id) || a, n = entero('acCant'), hay = num(act.cantidad);
         if (!(n > 0)) return fallar('Escribe una cantidad entera mayor que 0.', 'acCant');
+        // Cada unidad entra a lo que se pagó por ella (total pagado ÷ cantidad comprada) y el costo del artículo pasa a ser el promedio.
+        const unit = num(c.valorReal) > 0 && num(c.cantidad) > 0 ? Math.round(num(c.valorReal) / num(c.cantidad)) : num(act.costo);
         const nota = [valor('acNota'), n < num(c.cantidad) ? `Llegaron ${n} de ${num(c.cantidad)}` : ''].filter(Boolean).join('. ');
         return [
           ['mezclar', 'compras', c.id, { estado: 'recibido', historial: paso(c, `Recibido en bodega: ${cantTxt(n, a.unidad)}${nota ? '. ' + nota : ''}`) }],
-          ...mover(a, n, { articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: hay + n, persona: c.proveedor || '', nota, compraId: c.id }),
+          ...mover(a, n, { costoUnit: unit, costoNuevo: promedio(hay, num(act.costo), n, unit), articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: hay + n, persona: c.proveedor || '', nota, compraId: c.id }),
           c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya está en bodega.`) : null,
           n < num(c.cantidad) ? aviso('coordcompras', 'Llegó menos de lo comprado', `${c.que}: llegaron ${n} de ${num(c.cantidad)}.`) : null
         ];
@@ -982,7 +1005,7 @@
         const id = window.nube.idNuevo('ar');
         const movId = window.nube.idNuevo('mo');
         return [['set', 'articulos', id, Object.assign({ cantidad: ini }, ini > 0 ? { ultimoMov: movId } : {}, datos)],
-          ini > 0 ? movimiento({ articuloId: id, articulo: datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo' }, movId) : null];
+          ini > 0 ? movimiento({ costoUnit: datos.costo, articuloId: id, articulo: datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo' }, movId) : null];
       }
     });
   }
@@ -1002,10 +1025,10 @@
         const tid = window.nube.idNuevo('tr'), d = articulos().find(x => x.id !== a.id && String(x.nombre).toLowerCase() === String(a.nombre).toLowerCase() && bodegaDe(x) === dest);
         const sale = mover(a, -n, { articuloId: a.id, articulo: a.nombre, tipo: 'salida', motivo: 'traslado', cantidad: n, saldo: hay - n, nota: `Traslado a ${dest}${nota ? ': ' + nota : ''}`, trasladoId: tid });
         const notaIn = `Traslado desde ${origen}${nota ? ': ' + nota : ''}`;
-        if (d) return [...sale, ...mover(d, n, { articuloId: d.id, articulo: d.nombre, tipo: 'entrada', motivo: 'traslado', cantidad: n, saldo: num(d.cantidad) + n, nota: notaIn, trasladoId: tid })];
+        if (d) return [...sale, ...mover(d, n, { costoUnit: num(a.costo), costoNuevo: promedio(num(d.cantidad), num(d.costo), n, num(a.costo)), articuloId: d.id, articulo: d.nombre, tipo: 'entrada', motivo: 'traslado', cantidad: n, saldo: num(d.cantidad) + n, nota: notaIn, trasladoId: tid })];
         const id = window.nube.idNuevo('ar'), movId = window.nube.idNuevo('mo');
         return [...sale, ['set', 'articulos', id, { nombre: a.nombre, categoria: a.categoria, unidad: a.unidad, cantidad: n, ultimoMov: movId, minimo: num(a.minimo), maximo: num(a.maximo), ubicacion: '', costo: num(a.costo), proveedor: a.proveedor || '', bodega: dest }],
-          movimiento({ articuloId: id, articulo: a.nombre, tipo: 'entrada', motivo: 'traslado', cantidad: n, saldo: n, nota: notaIn, trasladoId: tid }, movId)];
+          movimiento({ costoUnit: num(a.costo), articuloId: id, articulo: a.nombre, tipo: 'entrada', motivo: 'traslado', cantidad: n, saldo: n, nota: notaIn, trasladoId: tid }, movId)];
       }
     });
   }
@@ -1039,21 +1062,21 @@
   }
   /** Kárdex: todas las entradas y salidas de un artículo, con su saldo, y el Excel de ese artículo. */
   function kardex(a) {
-    const movs = movsDe(a);
-    // Un artículo puede tener cientos de movimientos: se muestran de 50 en 50.
-    const pg = UI.pagina('kardex-' + a.id, movs.map(m => `<tr><td>${esH(fechaLocal(m.fecha, false))}</td><td>${esH(MOTIVO_MOV[m.motivo] || m.motivo)}<span class="meta">${esH([m.persona, m.proyecto, m.por].filter(Boolean).join(' · '))}</span></td><td>${esH(signoMov(m))}</td><td>${esH(num(m.saldo))}</td></tr>`), { reiniciar: true });
+    const App = A(), movs = movsDe(a), cop = App.cop, sinDato = '<span class="meta">sin dato</span>';
+    // Un artículo puede tener cientos de movimientos: se muestran de 50 en 50. Los movimientos viejos, de antes del kárdex con plata, no traen valores.
+    const pg = UI.pagina('kardex-' + a.id, movs.map(m => `<tr><td>${esH(App.fechaCorta(m.fecha))}</td><td>${esH(MOTIVO_MOV[m.motivo] || m.motivo)}<span class="meta">${esH([m.persona, m.proyecto, m.por].filter(Boolean).join(' · '))}</span></td><td class="num">${esH(signoMov(m))}</td><td class="num">${m.valor == null ? sinDato : `${esH((m.tipo === 'salida' || (m.tipo === 'ajuste' && num(m.cantidad) < 0) ? '-' : '') + cop(m.valor))}<span class="meta">a ${esH(cop(m.costoUnit))} c/u</span>`}</td><td class="num">${esH(num(m.saldo))}${m.valorSaldo == null ? '' : `<span class="meta">${esH(cop(m.valorSaldo))}</span>`}</td></tr>`), { reiniciar: true });
     abrirAccion({
-      titulo: `Kárdex: ${a.nombre}`, sub: `Hay ${cantTxt(a.cantidad, a.unidad)}. Cada entrada y salida con lo que quedó.`,
+      titulo: `Kárdex: ${a.nombre}`, sub: `Hay ${cantTxt(a.cantidad, a.unidad)}, que valen ${cop(num(a.cantidad) * num(a.costo))} (costo promedio ${cop(a.costo)} por unidad). Cada entrada y salida con su valor y lo que quedó.`,
       campos: `<div class="row">${boton('excelkardex', 'Descargar Excel de este artículo', 'excel', ` data-id="${esH(a.id)}"`, 'primary small')}</div>` +
-        (movs.length ? `<table class="lineas-tabla"><thead><tr><th>Fecha</th><th>Movimiento</th><th>Cant.</th><th>Quedó</th></tr></thead><tbody>${pg.html}</tbody></table>${pg.mas}` : '<p class="meta">Sin movimientos.</p>')
+        (movs.length ? `<table class="lineas-tabla kardex-tabla"><thead><tr><th>Fecha</th><th>Movimiento</th><th>Cant.</th><th>Valor</th><th>Quedó</th></tr></thead><tbody>${pg.html}</tbody></table>${pg.mas}` : '<p class="meta">Sin movimientos.</p>')
     });
   }
   async function descargarKardex(b, a) {
     b.disabled = true;
     try {
       const hojas = [];
-      const filas = movsDe(a).reverse().map(m => ({ Fecha: fechaLocal(m.fecha, true), Movimiento: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: signoMov(m), Quedó: num(m.saldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota }));
-      hojas.push(window.Excel.deObjetos('Kárdex', `Kárdex: ${a.nombre}`, `Cada entrada y salida con lo que quedó. Hoy hay ${cantTxt(a.cantidad, a.unidad)}. Generado el ${A().hoyISO()}.`, filas));
+      const filas = movsDe(a).reverse().map(m => ({ Fecha: fechaLocal(m.fecha, true), Movimiento: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: signoMov(m), 'Costo unitario': m.costoUnit == null ? '' : num(m.costoUnit), Valor: m.valor == null ? '' : num(m.valor), Quedó: num(m.saldo), 'Valor que quedó': m.valorSaldo == null ? '' : num(m.valorSaldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota }));
+      hojas.push(window.Excel.deObjetos('Kárdex', `Kárdex: ${a.nombre}`, `Cada entrada y salida con su valor y lo que quedó. Hoy hay ${cantTxt(a.cantidad, a.unidad)}, que valen ${A().cop(num(a.cantidad) * num(a.costo))} (costo promedio ${A().cop(a.costo)}). Los movimientos viejos no traen valores. Generado el ${A().hoyISO()}.`, filas));
       await window.Excel.descargar({ archivo: `Kardex ${String(a.nombre).slice(0, 40)} ${A().hoyISO()}`, hojas });
       A().toast('Listo: Excel descargado');
     } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
@@ -1353,13 +1376,13 @@
     if (x.tipo === 'agregar') {
       const id = window.nube.idNuevo('ar'), movId = window.nube.idNuevo('mo'), ini = x.real || 0;
       return [['set', 'articulos', id, Object.assign({ cantidad: ini }, ini > 0 ? { ultimoMov: movId } : {}, x.datos)],
-        ini > 0 ? movimiento({ articuloId: id, articulo: x.datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo (desde el Excel)' }, movId) : null].filter(Boolean);
+        ini > 0 ? movimiento({ costoUnit: num(x.datos.costo), articuloId: id, articulo: x.datos.nombre, tipo: 'entrada', motivo: 'inicial', cantidad: ini, saldo: ini, nota: 'Artículo nuevo (desde el Excel)' }, movId) : null].filter(Boolean);
     }
     const a = x.a;
     if (x.real === null) return Object.keys(x.datos).length ? [['mezclar', 'articulos', a.id, x.datos]] : [];
     const dif = x.real - num(a.cantidad), movId = window.nube.idNuevo('mo');
     return [['update', 'articulos', a.id, Object.assign({}, x.datos, { cantidad: window.nube.incremento(dif), ultimoMov: movId })],
-      movimiento({ articuloId: a.id, articulo: x.datos.nombre || a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: dif, saldo: x.real, nota: 'Ajuste desde el Excel' }, movId)];
+      movimiento({ costoUnit: num(x.datos.costo != null ? x.datos.costo : a.costo), articuloId: a.id, articulo: x.datos.nombre || a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: dif, saldo: x.real, nota: 'Ajuste desde el Excel' }, movId)];
   }
   const pl = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
   async function guardarExcelExistencias() {

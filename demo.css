@@ -358,3 +358,8 @@ button.card .card-title { text-align: left; }
 .conteo-r.difiere { border-left: 4px solid var(--danger); }
 .conteo-r.difiere .cr-d { color: var(--danger); }
 @media (max-width: 420px) { .conteo-r { grid-template-columns: minmax(0, 1fr) auto auto; } .conteo-r .cr-n { grid-column: 1 / -1; } }
+
+/* Kárdex: el movimiento se parte en renglones (si no, la tabla se sale de la pantalla) y las cifras van a la derecha */
+.kardex-tabla td:first-child { white-space: nowrap; }
+.kardex-tabla td:nth-child(2), .kardex-tabla th:nth-child(2) { white-space: normal; }
+.kardex-tabla td.num, .kardex-tabla th:nth-child(n+3) { text-align: right; }

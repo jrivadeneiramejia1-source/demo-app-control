@@ -297,6 +297,7 @@ try {
   log('el traslado restó 3 en Riohacha y creó el artículo en Bogotá con 3 (mismos datos)', origen.cantidad === 7 && !!destino && destino[1].cantidad === 3 && destino[1].categoria === origen.categoria && destino[1].costo === origen.costo && destino[1].unidad === origen.unidad);
   const mSale = d1.movimientos[origen.ultimoMov], mEntra = destino && d1.movimientos[destino[1].ultimoMov];
   log('cada bodega dejó su movimiento (salida y entrada), unidos por el mismo traslado y con la nota', !!mSale && !!mEntra && mSale.tipo === 'salida' && mSale.motivo === 'traslado' && mSale.cantidad === 3 && mEntra.tipo === 'entrada' && mEntra.motivo === 'traslado' && mEntra.cantidad === 3 && !!mSale.trasladoId && mSale.trasladoId === mEntra.trasladoId && /Bogotá: Para el proyecto/.test(mSale.nota) && /desde Riohacha/.test(mEntra.nota));
+  log('el traslado lleva el mismo costo: la salida y la entrada valen lo mismo (3 por el costo del artículo) y el artículo nuevo en Bogotá nace con ese costo', !!mSale && !!mEntra && mSale.costoUnit === origen.costo && mEntra.costoUnit === origen.costo && mSale.valor === 3 * origen.costo && mEntra.valor === 3 * origen.costo && mEntra.valorSaldo === 3 * origen.costo && destino[1].costo === origen.costo);
   await t.page.click('#invContenido [data-accion="verart"][data-id="ar-004"]');
   await t.page.click('#acCampos [data-accion="trasladar"]');
   await t.page.selectOption('#acDest', 'Bogotá'); await t.page.fill('#acCant', '2'); await t.page.click('#acPrimario');
@@ -486,12 +487,39 @@ try {
   log('el pedido de Carlos queda entregado y le llega un aviso', await t.page.evaluate(i => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.solicitudes[i].estado === 'entregada' && Object.values(d.avisos).some(a => a.para === 'conductor' && /entregó/.test(a.texto)); }, solChal));
   log('cuando no alcanza, lo dice y ofrece entregar lo que hay', /No alcanza/.test(await texto(t.page, '#invContenido')) && /Entregar lo que hay \(6\)/.test(await texto(t.page, '#invContenido')));
   const hdmi0 = await art('ar-010');
+  const hdmiCosto0 = await t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos')).articulos['ar-010'].costo);
   await t.page.click('#invContenido [data-accion="recibir"][data-id="co-005"]');
   await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
   const cant5 = await t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos')).compras['co-005'].cantidad);
   const sumo = await hasta(t.page, x => JSON.parse(localStorage.getItem('__fb_datos')).articulos['ar-010'].cantidad === x, hdmi0 + cant5);
   const est5 = await t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos')).compras['co-005'].estado);
   log('recibir en bodega suma lo comprado y cierra la compra', sumo && est5 === 'recibido', `${hdmi0} + ${cant5} -> ${await art('ar-010')} (${est5})`);
+  // Kárdex con plata: costo promedio ponderado
+  const costoEsperado = Math.round((hdmi0 * hdmiCosto0 + cant5 * Math.round(152000 / cant5)) / (hdmi0 + cant5));
+  log('al recibir la compra, el costo del artículo pasa a ser el promedio (lo que había y lo que entró a $30.400 c/u)', await hasta(t.page, x => JSON.parse(localStorage.getItem('__fb_datos')).articulos['ar-010'].costo === x, costoEsperado), `${hdmiCosto0} -> ${await t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos')).articulos['ar-010'].costo)} (esperado ${costoEsperado})`);
+  log('el movimiento de la entrada guarda el costo de cada unidad, su valor y lo que valía lo que quedó', await t.page.evaluate(([n, cp, x]) => { const m = Object.values(JSON.parse(localStorage.getItem('__fb_datos')).movimientos).find(q => q.compraId === 'co-005'); return !!m && m.costoUnit === 30400 && m.valor === 152000 && m.valorSaldo === Math.round(m.saldo * x); }, [cant5, hdmiCosto0, costoEsperado]));
+  // El ejemplo del plan con números redondos: 10 a $1.000, llegan 5 a $1.300 → $1.100; sale 3 → $3.300; quedan 12 por $13.200.
+  await t.page.evaluate(() => window.nube.lote([
+    ['set', 'articulos', 'ar-kx', { nombre: 'Prueba de kárdex', categoria: 'Otro', unidad: 'unidades', cantidad: 10, minimo: 1, maximo: 50, ubicacion: 'Estante Z9', costo: 1000, proveedor: '', bodega: 'Riohacha' }],
+    ['set', 'compras', 'co-kx', { que: 'Prueba de kárdex', cantidad: 5, unidad: 'unidades', categoria: 'Otro', valorAprox: 6500, paraQue: 'Prueba', pide: 'Andrés Beltrán', pideRol: 'asistente', autoriza: 'Mauricio Giraldo', autorizaJefe: 'Mauricio Giraldo', estado: 'comprado', proveedor: 'Ferretería El Faro', valorReal: 6500, fechaPedido: '2026-01-01', fechaCompra: '2026-01-02', entregadoA: '', motivoRechazo: '', articuloId: 'ar-kx', factura: '', revisada: false, historial: [] }]]));
+  await t.page.click('#invContenido [data-accion="recibir"][data-id="co-kx"]');
+  await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
+  log('10 a $1.000 y llegan 5 a $1.300: el costo promedio queda en $1.100 y hay 15', await hasta(t.page, () => { const a = JSON.parse(localStorage.getItem('__fb_datos')).articulos['ar-kx']; return a.cantidad === 15 && a.costo === 1100; }));
+  await t.page.click('#invSecciones [data-sec="movimientos"]');
+  await t.page.click('#invContenido [data-accion="salida"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  await t.page.selectOption('#acArt', 'ar-kx'); await t.page.fill('#acCant', '3'); await t.page.selectOption('#acMotivoMov', 'dano'); await t.page.fill('#acNota', 'Se dañaron en la prueba'); await t.page.click('#acPrimario');
+  log('sale 3: el movimiento vale $3.300 y lo que queda (12) vale $13.200', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')), ms = Object.values(d.movimientos).filter(m => m.articuloId === 'ar-kx'); const s = ms.find(m => m.tipo === 'salida'), e = ms.find(m => m.motivo === 'compra'); return !!s && s.costoUnit === 1100 && s.valor === 3300 && s.saldo === 12 && s.valorSaldo === 13200 && !!e && e.costoUnit === 1300 && e.valor === 6500 && e.valorSaldo === 16500 && d.articulos['ar-kx'].costo === 1100; }));
+  await t.page.click('#invSecciones [data-sec="existencias"]');
+  await t.page.locator('#invContenido [data-accion="verart"][data-id="ar-kx"]').click(); await hasta(t.page, () => !!document.querySelector('#acCampos [data-accion="kardex"]'));
+  await t.page.click('#acCampos [data-accion="kardex"]');
+  log('el kárdex en pantalla muestra costo por unidad, valor y lo que valía lo que quedó', await hasta(t.page, () => { const x = document.getElementById('acCampos').textContent; return /Kárdex: Prueba de kárdex/.test(document.getElementById('acT').textContent) && /Hay 12 unidades, que valen \$\s?13\.200/.test(document.getElementById('acSub').textContent) && /\$\s?3\.300/.test(x) && /a \$\s?1\.100 c\/u/.test(x) && /\$\s?13\.200/.test(x) && /\$\s?16\.500/.test(x); }), await texto(t.page, '#acSub'));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '17-karde-con-plata.png') });
+  const [descKP] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#acCampos [data-accion="excelkardex"]')]);
+  if (descKP) { const ruta = path.join(CAPTURAS, 'excel-kardex-plata.xlsx'); await descKP.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del kárdex trae costo unitario, valor y valor que quedó', hs.length === 1 && ['Costo unitario', 'Valor', 'Valor que quedó'].every(c => hs[0].titulos.includes(c)), JSON.stringify(hs.map(h => h.titulos))); }
+  await t.page.keyboard.press('Escape');
+  // Se quita lo que se creó para esta prueba.
+  await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return window.nube.lote([['borrar', 'articulos', 'ar-kx'], ['borrar', 'compras', 'co-kx']].concat(Object.entries(d.movimientos).filter(([, m]) => m.articuloId === 'ar-kx').map(([id]) => ['borrar', 'movimientos', id]))); });
+  await t.page.click('#invSecciones [data-sec="hacer"]');
   await t.page.click('#invContenido [data-accion="pedir"][data-id="ar-016"]');
   await t.page.waitForSelector('#shAccion:not([hidden])'); await t.page.click('#acPrimario');
   log('pedir compra del café crea la compra por autorizar y quita la tarea', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return Object.values(d.compras).some(c => c.articuloId === 'ar-016' && c.estado === 'pedido') && !document.querySelector('#invContenido [data-accion="pedir"][data-id="ar-016"]'); }));
