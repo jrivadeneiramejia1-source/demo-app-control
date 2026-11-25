@@ -8,7 +8,7 @@ import { doc, getDoc, getDocs, collection, setDoc, updateDoc, deleteDoc, writeBa
 // Una persona de prueba por rol (del organigrama de la empresa). El rol va al principio del correo.
 const CORREOS = {
   gerente: 'gerente.oscar.munoz@example.com', jefe: 'jefe.carolina.castillo@example.com', equipos: 'equipos.fabian.barbosa@example.com', soporte: 'soporte.angel.ortiz@example.com',
-  compras: 'compras.mauricio.giraldo@example.com', asistente: 'asistente.andres.beltran@example.com', carros: 'carros.wilson.munoz@example.com', conductor: 'conductor.oscar.farfan@example.com',
+  compras: 'compras.fredy.torres@example.com', coordcompras: 'coordcompras.mauricio.giraldo@example.com', asistente: 'asistente.andres.beltran@example.com', carros: 'carros.wilson.munoz@example.com', conductor: 'conductor.oscar.farfan@example.com',
   logistica: 'logistica.elkin.bruno@example.com', profesional: 'profesional.margaret.pulido@example.com', administrativo: 'administrativo.paola.martinez@example.com',
   colaborador: 'colaborador.yuliana.murcia@example.com', financiero: 'financiero.adriana.patino@example.com', consulta: 'consulta.revisor.fiscal@example.com'
 };
@@ -61,18 +61,21 @@ await prueba('nadie pide a nombre de otro rol', () => assertFails(setDoc(doc(pru
 await prueba('quien pide no se la autoriza solo', () => assertFails(updateDoc(doc(prueba_('logistica'), 'compras', 'co-1'), { autorizaCorreo: CORREOS.logistica, estado: 'autorizado', autoriza: 'Persona Uno' })));
 await prueba('Compras no autoriza (solo compra lo autorizado)', () => assertFails(updateDoc(doc(prueba_('compras'), 'compras', 'co-1'), { autorizaCorreo: CORREOS.compras, estado: 'autorizado', autoriza: 'Luis' })));
 await prueba('Compras no compra algo que nadie autorizó', () => assertFails(updateDoc(doc(prueba_('compras'), 'compras', 'co-1'), { estado: 'comprado', proveedor: 'X', valorReal: 100000, fechaCompra: '2026-11-20', factura: '', historial: H1 })));
-await prueba('la Jefe autoriza la compra de otro', () => assertSucceeds(updateDoc(doc(prueba_('jefe'), 'compras', 'co-1'), { autorizaCorreo: CORREOS.jefe, estado: 'autorizado', autoriza: 'Ana Pérez', historial: H1 })));
+await prueba('la Coordinadora de compras autoriza la compra de otro', () => assertSucceeds(updateDoc(doc(prueba_('coordcompras'), 'compras', 'co-1'), { autorizaCorreo: CORREOS.coordcompras, estado: 'autorizado', autoriza: 'Ana Pérez', historial: H1 })));
 await prueba('Compras compra lo autorizado', () => assertSucceeds(updateDoc(doc(prueba_('compras'), 'compras', 'co-1'), { estado: 'comprado', proveedor: 'Ferretería', valorReal: 100000, fechaCompra: '2026-11-20', factura: '', historial: H2 })));
 await prueba('Compras no cambia lo autorizado (la cantidad)', async () => { await sembrar(db => setDoc(doc(db, 'compras', 'co-3'), compra({ estado: 'autorizado' })));
   await assertFails(updateDoc(doc(prueba_('compras'), 'compras', 'co-3'), { estado: 'comprado', cantidad: 99, proveedor: 'X', valorReal: 1, fechaCompra: '2026-11-20', factura: '', historial: H1 })); });
 await prueba('Bodega recibe lo comprado', () => assertSucceeds(updateDoc(doc(prueba_('asistente'), 'compras', 'co-1'), { estado: 'recibido', entregadoA: 'Sofía', historial: H3 })));
-await prueba('la Jefe (cuenta propia) no autoriza una compra que pidió ella', async () => {
-  await sembrar(db => setDoc(doc(db, 'compras', 'co-4'), compra({ pideRol: 'jefe', pide: 'Jefa' })));
-  await assertFails(updateDoc(doc(await cuenta('jefa1', 'jefe'), 'compras', 'co-4'), { autorizaCorreo: correoCuenta('jefa1'), estado: 'autorizado', autoriza: 'Jefa' })); });
-await prueba('la Jefe (cuenta propia) autoriza la compra de otro', async () => {
+await prueba('la Coordinadora (cuenta propia) no autoriza una compra que pidió ella', async () => {
+  await sembrar(db => setDoc(doc(db, 'compras', 'co-4b'), compra({ pideRol: 'coordcompras', pide: 'Coordinadora', pideCorreo: correoCuenta('coord1') })));
+  await assertFails(updateDoc(doc(await cuenta('coord1', 'coordcompras'), 'compras', 'co-4b'), { autorizaCorreo: correoCuenta('coord1'), estado: 'autorizado', autoriza: 'Coordinadora', historial: H1 })); });
+await prueba('la Jefe (cuenta propia) ya NO autoriza la compra de otro', async () => {
   await sembrar(db => setDoc(doc(db, 'compras', 'co-6'), compra()));
-  await assertSucceeds(updateDoc(doc(await cuenta('jefa3', 'jefe'), 'compras', 'co-6'), { autorizaCorreo: correoCuenta('jefa3'), estado: 'autorizado', autoriza: 'Jefa', historial: H1 })); });
-await prueba('el Gerente autoriza la compra que pidió la Jefe', () => assertSucceeds(updateDoc(doc(prueba_('gerente'), 'compras', 'co-4'), { autorizaCorreo: CORREOS.gerente, estado: 'autorizado', autoriza: 'Ricardo', historial: H1 })));
+  await assertFails(updateDoc(doc(await cuenta('jefa3', 'jefe'), 'compras', 'co-6'), { autorizaCorreo: correoCuenta('jefa3'), estado: 'autorizado', autoriza: 'Jefa', historial: H1 })); });
+await prueba('la Coordinadora (cuenta propia) autoriza la compra de otro', async () => {
+  await assertSucceeds(updateDoc(doc(await cuenta('coord3', 'coordcompras'), 'compras', 'co-6'), { autorizaCorreo: correoCuenta('coord3'), estado: 'autorizado', autoriza: 'Coordinadora', historial: H1 })); });
+await prueba('el Gerente general (de prueba) puede decidir también lo que pidió la Jefe', async () => { await sembrar(db => setDoc(doc(db, 'compras', 'co-4'), compra({ pideRol: 'jefe', pide: 'Jefa' })));
+  await assertSucceeds(updateDoc(doc(prueba_('gerente'), 'compras', 'co-4'), { autorizaCorreo: CORREOS.gerente, estado: 'autorizado', autoriza: 'Ricardo', historial: H1 })); });
 await prueba('el Gerente no cambia el valor al autorizar', async () => { await sembrar(db => setDoc(doc(db, 'compras', 'co-5'), compra({ pideRol: 'jefe', pide: 'Jefa' })));
   await assertFails(updateDoc(doc(prueba_('gerente'), 'compras', 'co-5'), { autorizaCorreo: CORREOS.gerente, estado: 'autorizado', autoriza: 'Ricardo', valorAprox: 1 })); });
 
@@ -138,35 +141,55 @@ await prueba('una cuenta con el correo sin confirmar no entra', async () => {
   await assertFails(getDoc(doc(env.authenticatedContext('sinconf', { email: 'sinconf@correo-inventado.test', email_verified: false }).firestore(), 'articulos', 'ar-9'))); });
 
 
-console.log('Compras: monto del Gerente y dos pasos (B)');
+console.log('Compras: monto del Gerente general y dos pasos (B)');
 await limpiar();
-const conCuenta = async (uid, rol) => cuenta(uid, rol);
-const jefe1 = await conCuenta('jefM', 'jefe'), ger1 = await conCuenta('gerM', 'gerente');
-await sembrar(async db => { await setDoc(doc(db, 'compras', 'g1'), compra({ valorAprox: 2000000 })); await setDoc(doc(db, 'compras', 'g2'), compra({ valorAprox: 100000 }));
-  await setDoc(doc(db, 'compras', 'g3'), compra({ valorAprox: 2000000 })); await setDoc(doc(db, 'compras', 'g4'), compra({ valorAprox: 100000, pideRol: 'jefe', pide: 'Jefa' })); });
-await prueba('una compra grande no la autoriza la Jefe sola', () => assertFails(updateDoc(doc(jefe1, 'compras', 'g1'), { autorizaCorreo: correoCuenta('jefM'), estado: 'autorizado', autoriza: 'Jefa', historial: H1 })));
-await prueba('una compra grande pasa de la Jefe al Gerente («por-gerente»)', () => assertSucceeds(updateDoc(doc(jefe1, 'compras', 'g1'), { autorizaCorreo: correoCuenta('jefM'), estado: 'por-gerente', autorizaJefe: 'Jefa', historial: H1 })));
-await prueba('una compra chica no necesita al Gerente', async () => { await assertFails(updateDoc(doc(jefe1, 'compras', 'g2'), { autorizaCorreo: correoCuenta('jefM'), estado: 'por-gerente', autorizaJefe: 'Jefa', historial: H1 }));
-  await assertSucceeds(updateDoc(doc(jefe1, 'compras', 'g2'), { autorizaCorreo: correoCuenta('jefM'), estado: 'autorizado', autoriza: 'Jefa', historial: H1 })); });
-await prueba('la Jefe sí puede rechazar una compra grande', () => assertSucceeds(updateDoc(doc(jefe1, 'compras', 'g3'), { autorizaCorreo: correoCuenta('jefM'), estado: 'rechazado', motivoRechazo: 'Muy cara', autoriza: 'Jefa', historial: H1 })));
-await prueba('el Gerente autoriza lo que le pasó la Jefe', () => assertSucceeds(updateDoc(doc(ger1, 'compras', 'g1'), { autorizaCorreo: correoCuenta('gerM'), estado: 'autorizado', autoriza: 'Gerente', historial: H2 })));
-await prueba('el Gerente no se salta a la Jefe: no autoriza una compra que sigue «pedido»', async () => { await sembrar(db => setDoc(doc(db, 'compras', 'g5'), compra({ valorAprox: 2000000 })));
-  await assertFails(updateDoc(doc(ger1, 'compras', 'g5'), { autorizaCorreo: correoCuenta('gerM'), estado: 'autorizado', autoriza: 'Gerente', historial: H1 })); });
+const conCuenta = async (uid, rol, extra) => cuenta(uid, rol, extra);
+const jefe1 = await conCuenta('jefM', 'jefe'), coord1 = await conCuenta('coordM', 'coordcompras'), ger1 = await conCuenta('gerM', 'gerente', { extras: ['general'] }), gerNo = await conCuenta('gerN', 'gerente');
+await sembrar(async db => { await setDoc(doc(db, 'compras', 'g1'), compra({ valorAprox: 6000000 })); await setDoc(doc(db, 'compras', 'g2'), compra({ valorAprox: 100000 }));
+  await setDoc(doc(db, 'compras', 'g3'), compra({ valorAprox: 6000000 })); await setDoc(doc(db, 'compras', 'g4'), compra({ valorAprox: 100000, pideRol: 'coordcompras', pide: 'Coordinadora' })); });
+await prueba('una compra de más de 5 millones no la autoriza la Coordinadora sola', () => assertFails(updateDoc(doc(coord1, 'compras', 'g1'), { autorizaCorreo: correoCuenta('coordM'), estado: 'autorizado', autoriza: 'Coordinadora', historial: H1 })));
+await prueba('una compra grande pasa de la Coordinadora al Gerente general («por-gerente»)', () => assertSucceeds(updateDoc(doc(coord1, 'compras', 'g1'), { autorizaCorreo: correoCuenta('coordM'), estado: 'por-gerente', autorizaJefe: 'Coordinadora', historial: H1 })));
+await prueba('una compra chica no necesita al Gerente', async () => { await assertFails(updateDoc(doc(coord1, 'compras', 'g2'), { autorizaCorreo: correoCuenta('coordM'), estado: 'por-gerente', autorizaJefe: 'Coordinadora', historial: H1 }));
+  await assertSucceeds(updateDoc(doc(coord1, 'compras', 'g2'), { autorizaCorreo: correoCuenta('coordM'), estado: 'autorizado', autoriza: 'Coordinadora', historial: H1 })); });
+await prueba('justo 5.000.000 todavía no necesita al Gerente (el Gerente decide solo las de MÁS de 5 millones)', async () => { await sembrar(db => setDoc(doc(db, 'compras', 'g11'), compra({ valorAprox: 5000000 })));
+  await assertFails(updateDoc(doc(coord1, 'compras', 'g11'), { autorizaCorreo: correoCuenta('coordM'), estado: 'por-gerente', autorizaJefe: 'Coordinadora', historial: H1 }));
+  await assertSucceeds(updateDoc(doc(coord1, 'compras', 'g11'), { autorizaCorreo: correoCuenta('coordM'), estado: 'autorizado', autoriza: 'Coordinadora', historial: H1 })); });
+await prueba('la Coordinadora sí puede rechazar una compra grande', () => assertSucceeds(updateDoc(doc(coord1, 'compras', 'g3'), { autorizaCorreo: correoCuenta('coordM'), estado: 'rechazado', motivoRechazo: 'Muy cara', autoriza: 'Coordinadora', historial: H1 })));
+await prueba('el Gerente general autoriza lo que le pasó la Coordinadora', () => assertSucceeds(updateDoc(doc(ger1, 'compras', 'g1'), { autorizaCorreo: correoCuenta('gerM'), estado: 'autorizado', autoriza: 'Gerente general', historial: H2 })));
+await prueba('un Gerente que no es general no autoriza ni rechaza nada (ni lo que pasó la Coordinadora, ni un pedido)', async () => {
+  await sembrar(async db => { await setDoc(doc(db, 'compras', 'g12'), compra({ estado: 'por-gerente', valorAprox: 6000000 })); await setDoc(doc(db, 'compras', 'g13'), compra({ valorAprox: 2000000 })); });
+  for (const id of ['g12', 'g13']) { await assertFails(updateDoc(doc(gerNo, 'compras', id), { autorizaCorreo: correoCuenta('gerN'), estado: 'autorizado', autoriza: 'Gerente', historial: H2 }));
+    await assertFails(updateDoc(doc(gerNo, 'compras', id), { autorizaCorreo: correoCuenta('gerN'), estado: 'rechazado', motivoRechazo: 'No', autoriza: 'Gerente', historial: H2 })); } });
+await prueba('la Jefe ya no autoriza ni rechaza compras', async () => { await sembrar(db => setDoc(doc(db, 'compras', 'g14'), compra({ valorAprox: 100000 })));
+  await assertFails(updateDoc(doc(jefe1, 'compras', 'g14'), { autorizaCorreo: correoCuenta('jefM'), estado: 'autorizado', autoriza: 'Jefa', historial: H1 }));
+  await assertFails(updateDoc(doc(jefe1, 'compras', 'g14'), { autorizaCorreo: correoCuenta('jefM'), estado: 'rechazado', motivoRechazo: 'No', autoriza: 'Jefa', historial: H1 })); });
+await prueba('el Gerente general decide cualquier pedido sin esperar a la Coordinadora (también uno grande)', async () => {
+  await sembrar(async db => { await setDoc(doc(db, 'compras', 'g15'), compra({ valorAprox: 2000000 })); await setDoc(doc(db, 'compras', 'g16'), compra({ valorAprox: 6000000 })); });
+  for (const id of ['g15', 'g16']) await assertSucceeds(updateDoc(doc(ger1, 'compras', id), { autorizaCorreo: correoCuenta('gerM'), estado: 'autorizado', autoriza: 'Gerente general', historial: H1 })); });
 await prueba('Compras no compra una que está «por-gerente»', async () => { await sembrar(db => setDoc(doc(db, 'compras', 'g6'), compra({ estado: 'por-gerente' })));
   await assertFails(updateDoc(doc(prueba_('compras'), 'compras', 'g6'), { estado: 'comprado', proveedor: 'X', valorReal: 1, fechaCompra: '2026-11-20', factura: '', historial: H1 })); });
-await prueba('la Jefe no autoriza lo que pidió ella (lo decide el Gerente)', () => assertFails(updateDoc(doc(jefe1, 'compras', 'g4'), { autorizaCorreo: correoCuenta('jefM'), estado: 'autorizado', autoriza: 'Jefa', historial: H1 })));
-await prueba('el Gerente decide lo que pidió la Jefe aunque sea barato', () => assertSucceeds(updateDoc(doc(ger1, 'compras', 'g4'), { autorizaCorreo: correoCuenta('gerM'), estado: 'autorizado', autoriza: 'Gerente', historial: H1 })));
+await prueba('lo que pide la Coordinadora lo decide siempre el Gerente general, aunque sea barato (ni ella, ni la Jefe, ni otro Gerente)', async () => {
+  await assertFails(updateDoc(doc(coord1, 'compras', 'g4'), { autorizaCorreo: correoCuenta('coordM'), estado: 'autorizado', autoriza: 'Coordinadora', historial: H1 }));
+  await assertFails(updateDoc(doc(jefe1, 'compras', 'g4'), { autorizaCorreo: correoCuenta('jefM'), estado: 'autorizado', autoriza: 'Jefa', historial: H1 }));
+  await assertFails(updateDoc(doc(gerNo, 'compras', 'g4'), { autorizaCorreo: correoCuenta('gerN'), estado: 'autorizado', autoriza: 'Gerente', historial: H1 }));
+  await assertSucceeds(updateDoc(doc(ger1, 'compras', 'g4'), { autorizaCorreo: correoCuenta('gerM'), estado: 'autorizado', autoriza: 'Gerente general', historial: H1 })); });
 await prueba('la Jefe no cambia el valor de una compra ya autorizada', () => assertFails(updateDoc(doc(jefe1, 'compras', 'g2'), { valorAprox: 1 })));
 await prueba('la Jefe no borra compras', () => assertFails(deleteDoc(doc(jefe1, 'compras', 'g2'))));
-await prueba('el Gerente puede pedir una compra, pero no nace autorizada (la decide otro Gerente)', async () => { await assertSucceeds(setDoc(doc(ger1, 'compras', 'g7'), nueva(correoCuenta('gerM'), { pide: 'Gerente', pideRol: 'gerente', estado: 'pedido' })));
-  await assertFails(setDoc(doc(ger1, 'compras', 'g8'), nueva(correoCuenta('gerM'), { pide: 'Gerente', pideRol: 'gerente', estado: 'autorizado' }))); });
-await prueba('nadie más crea una compra ya autorizada', () => assertFails(setDoc(doc(jefe1, 'compras', 'g9'), nueva(correoCuenta('jefM'), { pideRol: 'jefe', estado: 'autorizado' }))));
-await prueba('solo el Gerente cambia el monto', async () => { await assertFails(setDoc(doc(jefe1, 'ajustesApp', 'compras'), { montoGerente: 99999999 }));
-  await assertFails(setDoc(doc(prueba_('gerente'), 'ajustesApp', 'compras'), { montoGerente: 1 })); await assertSucceeds(setDoc(doc(ger1, 'ajustesApp', 'compras'), { montoGerente: 50000 }));
+await prueba('el Gerente general pide una compra y nace autorizada (con su correo); los demás Gerentes no', async () => {
+  const gen = (uid, o = {}) => nueva(correoCuenta(uid), Object.assign({ pide: 'Gerente', pideRol: 'gerente', pideUid: uid }, o));
+  await assertSucceeds(setDoc(doc(ger1, 'compras', 'g8'), gen('gerM', { estado: 'autorizado', autoriza: 'Gerente general', autorizaCorreo: correoCuenta('gerM'), historial: H2 })));
+  await assertFails(setDoc(doc(ger1, 'compras', 'g8b'), gen('gerM', { estado: 'autorizado', autoriza: 'Gerente general' })));
+  await assertFails(setDoc(doc(gerNo, 'compras', 'g8c'), gen('gerN', { estado: 'autorizado', autoriza: 'Gerente', autorizaCorreo: correoCuenta('gerN'), historial: H2 })));
+  await assertSucceeds(setDoc(doc(gerNo, 'compras', 'g7'), gen('gerN', { estado: 'pedido' }))); });
+await prueba('nadie más crea una compra ya autorizada', async () => { await assertFails(setDoc(doc(jefe1, 'compras', 'g9'), nueva(correoCuenta('jefM'), { pideRol: 'jefe', estado: 'autorizado' })));
+  await assertFails(setDoc(doc(coord1, 'compras', 'g9b'), nueva(correoCuenta('coordM'), { pideRol: 'coordcompras', estado: 'autorizado', autorizaCorreo: correoCuenta('coordM') }))); });
+await prueba('solo el Gerente general cambia el monto (ni la Jefe, ni la Coordinadora, ni otro Gerente, ni la persona de prueba)', async () => {
+  for (const [db, v] of [[jefe1, 99999999], [coord1, 1], [gerNo, 1], [prueba_('gerente'), 1]]) await assertFails(setDoc(doc(db, 'ajustesApp', 'compras'), { montoGerente: v }));
+  await assertSucceeds(setDoc(doc(ger1, 'ajustesApp', 'compras'), { montoGerente: 50000 }));
   await assertFails(setDoc(doc(ger1, 'ajustesApp', 'compras'), { montoGerente: -5 })); });
-await prueba('con el monto más bajo, una compra de 100.000 ya pasa por el Gerente', async () => { await sembrar(db => setDoc(doc(db, 'compras', 'g10'), compra({ valorAprox: 100000 })));
-  await assertFails(updateDoc(doc(jefe1, 'compras', 'g10'), { autorizaCorreo: correoCuenta('jefM'), estado: 'autorizado', autoriza: 'Jefa', historial: H1 }));
-  await assertSucceeds(updateDoc(doc(jefe1, 'compras', 'g10'), { autorizaCorreo: correoCuenta('jefM'), estado: 'por-gerente', autorizaJefe: 'Jefa', historial: H1 })); });
+await prueba('con el monto más bajo, una compra de 100.000 ya pasa por el Gerente general', async () => { await sembrar(db => setDoc(doc(db, 'compras', 'g10'), compra({ valorAprox: 100000 })));
+  await assertFails(updateDoc(doc(coord1, 'compras', 'g10'), { autorizaCorreo: correoCuenta('coordM'), estado: 'autorizado', autoriza: 'Coordinadora', historial: H1 }));
+  await assertSucceeds(updateDoc(doc(coord1, 'compras', 'g10'), { autorizaCorreo: correoCuenta('coordM'), estado: 'por-gerente', autorizaJefe: 'Coordinadora', historial: H1 })); });
 
 console.log('Invitaciones y primer ingreso (A2)');
 await limpiar();
@@ -227,9 +250,9 @@ await prueba('los niveles de las reglas coinciden con personas.js', async () => 
   }
   const rolesRegla = txt.match(/function ROLES\(\) \{ return \[([^\]]*)\]/)[1].split(',').map(x => x.replace(/[' ]/g, '')).sort().join();
   if (rolesRegla !== D.ROLES.map(r => r.rol).sort().join()) throw new Error('ROLES() de las reglas no coincide con personas.js: ' + rolesRegla);
-  // Los permisos extra fijos de las personas de prueba están en las reglas (y solo esas dos personas los tienen).
+  // Los permisos extra fijos de las personas de prueba están en las reglas (y solo esas tres personas los tienen).
   for (const p of D.PERSONAS) for (const x of p.extras) if (!txt.includes(`'${p.correo}' ? ['${x}']`)) throw new Error('falta en las reglas el permiso extra «' + x + '» de ' + p.nombre);
-  if (D.PERSONAS.filter(p => p.extras.length).length !== 2) throw new Error('las reglas solo conocen 2 personas de prueba con permisos extra'); });
+  if (D.PERSONAS.filter(p => p.extras.length).length !== 3) throw new Error('las reglas solo conocen 3 personas de prueba con permisos extra'); });
 
 
 console.log('Inventario: cada nivel lee solo lo suyo (B6)');
@@ -325,52 +348,50 @@ await prueba('la compra lleva el correo de quien la pide y la hora del servidor 
   await assertFails(setDoc(doc(db, 'compras', 'm-2'), compra({ pideRol: 'logistica' })));
   await assertFails(setDoc(doc(db, 'compras', 'm-3'), nueva('logistica', { creadoEn: hace(5) })));
   await assertFails(setDoc(doc(db, 'compras', 'm-4'), nueva('logistica', { creadoEn: '2026-11-20' }))); });
-const gerA = await cuenta('gerA', 'gerente'), gerB = await cuenta('gerB', 'gerente'), jefG = await cuenta('jefG', 'jefe');
-await prueba('lo que pide un Gerente lo decide otro Gerente, no él ni la Jefe', async () => {
+const gerA = await cuenta('gerA', 'gerente'), gerB = await cuenta('gerB', 'gerente'), genG = await cuenta('genG', 'gerente', { extras: ['general'] }), jefG = await cuenta('jefG', 'jefe'), coordG = await cuenta('coordG', 'coordcompras');
+await prueba('lo que pide un Gerente (no general) lo decide la Coordinadora: no él, ni la Jefe, ni otro Gerente que no es general', async () => {
   await assertSucceeds(setDoc(doc(gerA, 'compras', 'gg-1'), nueva(correoCuenta('gerA'), { pide: 'Gerente A', pideRol: 'gerente', pideUid: 'gerA' })));
   await assertFails(updateDoc(doc(gerA, 'compras', 'gg-1'), { autorizaCorreo: correoCuenta('gerA'), estado: 'autorizado', autoriza: 'Gerente A', historial: H1 }));
   await assertFails(updateDoc(doc(jefG, 'compras', 'gg-1'), { autorizaCorreo: correoCuenta('jefG'), estado: 'autorizado', autoriza: 'Jefa', historial: H1 }));
-  await assertSucceeds(updateDoc(doc(gerB, 'compras', 'gg-1'), { autorizaCorreo: correoCuenta('gerB'), estado: 'autorizado', autoriza: 'Gerente B', historial: H1 })); });
-await prueba('el otro Gerente también puede rechazar la compra de un Gerente', async () => {
+  await assertFails(updateDoc(doc(gerB, 'compras', 'gg-1'), { autorizaCorreo: correoCuenta('gerB'), estado: 'autorizado', autoriza: 'Gerente B', historial: H1 }));
+  await assertSucceeds(updateDoc(doc(coordG, 'compras', 'gg-1'), { autorizaCorreo: correoCuenta('coordG'), estado: 'autorizado', autoriza: 'Coordinadora', historial: H1 })); });
+await prueba('el Gerente general también puede rechazar la compra de otro Gerente', async () => {
   await assertSucceeds(setDoc(doc(gerA, 'compras', 'gg-2'), nueva(correoCuenta('gerA'), { pide: 'Gerente A', pideRol: 'gerente', pideUid: 'gerA' })));
-  await assertSucceeds(updateDoc(doc(gerB, 'compras', 'gg-2'), { autorizaCorreo: correoCuenta('gerB'), estado: 'rechazado', autoriza: 'Gerente B', motivoRechazo: 'No', historial: H1 })); });
-await prueba('la Jefe sigue decidiendo lo de los demás, y la compra de un Gerente de prueba la decide otro Gerente de prueba', async () => {
+  await assertSucceeds(updateDoc(doc(genG, 'compras', 'gg-2'), { autorizaCorreo: correoCuenta('genG'), estado: 'rechazado', autoriza: 'Gerente general', motivoRechazo: 'No', historial: H1 })); });
+await prueba('la compra de un Gerente de prueba la decide la Coordinadora de prueba; Oscar (Gerente general de prueba) no decide lo suyo, y otro Gerente que no es general tampoco', async () => {
   await sembrar(db => setDoc(doc(db, 'compras', 'gg-3'), nueva('gerente.oscar.munoz@example.com', { pide: 'Oscar', pideRol: 'gerente' })));
   await assertFails(updateDoc(doc(prueba_('gerente'), 'compras', 'gg-3'), { autorizaCorreo: CORREOS.gerente, estado: 'autorizado', autoriza: 'Oscar', historial: H1 }));
   const otro = env.authenticatedContext('uid-otro-gerente', { email: 'gerente.otra.persona@example.com', email_verified: true, firebase: { sign_in_provider: 'password' } }).firestore();
-  await assertSucceeds(updateDoc(doc(otro, 'compras', 'gg-3'), { autorizaCorreo: 'gerente.otra.persona@example.com', estado: 'autorizado', autoriza: 'Otra', historial: H1 })); });
-await prueba('el Gerente NO se salta a la Jefe antes de 2 días', async () => {
-  await sembrar(db => setDoc(doc(db, 'compras', 'rs-1'), compra({ pideRol: 'logistica', pideCorreo: CORREOS.logistica, creadoEn: hace(1) })));
-  await assertFails(updateDoc(doc(gerA, 'compras', 'rs-1'), { autorizaCorreo: correoCuenta('gerA'), estado: 'autorizado', autoriza: 'Gerente A', historial: H1 }));
-  await assertFails(updateDoc(doc(gerA, 'compras', 'rs-1'), { autorizaCorreo: correoCuenta('gerA'), estado: 'rechazado', autoriza: 'Gerente A', motivoRechazo: 'No', historial: H1 })); });
-await prueba('pasados 2 días sin respuesta de la Jefe, el Gerente autoriza o rechaza (queda autorizada directo)', async () => {
-  await sembrar(async db => { await setDoc(doc(db, 'compras', 'rs-2'), compra({ pideRol: 'logistica', pideCorreo: CORREOS.logistica, creadoEn: hace(3), valorAprox: 5000000 }));
-    await setDoc(doc(db, 'compras', 'rs-3'), compra({ pideRol: 'logistica', pideCorreo: CORREOS.logistica, creadoEn: hace(3) })); });
-  await assertFails(updateDoc(doc(gerA, 'compras', 'rs-2'), { autorizaCorreo: correoCuenta('gerA'), estado: 'por-gerente', autorizaJefe: 'Gerente A', historial: H1 }));
-  await assertSucceeds(updateDoc(doc(gerA, 'compras', 'rs-2'), { autorizaCorreo: correoCuenta('gerA'), estado: 'autorizado', autoriza: 'Gerente A', historial: H1 }));
-  await assertSucceeds(updateDoc(doc(gerA, 'compras', 'rs-3'), { autorizaCorreo: correoCuenta('gerA'), estado: 'rechazado', autoriza: 'Gerente A', motivoRechazo: 'No', historial: H1 })); });
-await prueba('una compra vieja sin fecha (datos de antes) no se salta a la Jefe', async () => {
-  await sembrar(db => setDoc(doc(db, 'compras', 'rs-4'), compra({ pideRol: 'logistica' })));
-  await assertFails(updateDoc(doc(gerA, 'compras', 'rs-4'), { autorizaCorreo: correoCuenta('gerA'), estado: 'autorizado', autoriza: 'Gerente A', historial: H1 })); });
+  await assertFails(updateDoc(doc(otro, 'compras', 'gg-3'), { autorizaCorreo: 'gerente.otra.persona@example.com', estado: 'autorizado', autoriza: 'Otra', historial: H1 }));
+  await assertSucceeds(updateDoc(doc(prueba_('coordcompras'), 'compras', 'gg-3'), { autorizaCorreo: CORREOS.coordcompras, estado: 'autorizado', autoriza: 'Coordinadora', historial: H1 })); });
+await prueba('no hay «respaldo de 2 días»: un Gerente que no es general no se salta a la Coordinadora por mucho que pasen los días; el Gerente general decide sin esperar', async () => {
+  await sembrar(async db => { await setDoc(doc(db, 'compras', 'rs-1'), compra({ pideRol: 'logistica', pideCorreo: CORREOS.logistica, creadoEn: hace(1) }));
+    await setDoc(doc(db, 'compras', 'rs-2'), compra({ pideRol: 'logistica', pideCorreo: CORREOS.logistica, creadoEn: hace(3), valorAprox: 5000000 })); });
+  await assertFails(updateDoc(doc(gerA, 'compras', 'rs-2'), { autorizaCorreo: correoCuenta('gerA'), estado: 'autorizado', autoriza: 'Gerente A', historial: H1 }));
+  await assertFails(updateDoc(doc(gerA, 'compras', 'rs-2'), { autorizaCorreo: correoCuenta('gerA'), estado: 'rechazado', autoriza: 'Gerente A', motivoRechazo: 'No', historial: H1 }));
+  await assertSucceeds(updateDoc(doc(genG, 'compras', 'rs-1'), { autorizaCorreo: correoCuenta('genG'), estado: 'autorizado', autoriza: 'Gerente general', historial: H1 })); });
 await prueba('con cuentas propias cada paso cabe en el límite de expresiones: Compras compra y Bodega recibe', async () => {
   const cmp = await cuenta('cmpL', 'compras'), bod = await cuenta('bodL', 'asistente');
   await sembrar(db => setDoc(doc(db, 'compras', 'lm-1'), compra({ estado: 'autorizado' })));
   await assertSucceeds(updateDoc(doc(cmp, 'compras', 'lm-1'), { estado: 'comprado', proveedor: 'Ferretería', valorReal: 100000, fechaCompra: '2026-11-20', factura: '', historial: H1 }));
   await assertSucceeds(updateDoc(doc(bod, 'compras', 'lm-1'), { estado: 'recibido', entregadoA: 'Persona', historial: H2 })); });
-await prueba('con cuentas propias: la Jefe revisa lo «sin autorizar» y el Gerente autoriza lo que le pasó la Jefe', async () => {
-  await sembrar(async db => { await setDoc(doc(db, 'compras', 'lm-2'), compra({ estado: 'sin-autorizar' })); await setDoc(doc(db, 'compras', 'lm-3'), compra({ estado: 'por-gerente', valorAprox: 3000000 })); });
-  await assertSucceeds(updateDoc(doc(jefG, 'compras', 'lm-2'), { revisadaPorCorreo: correoCuenta('jefG'), revisada: true, historial: H1 }));
-  await assertSucceeds(updateDoc(doc(gerA, 'compras', 'lm-3'), { autorizaCorreo: correoCuenta('gerA'), estado: 'autorizado', autoriza: 'Gerente A', historial: H1 })); });
+await prueba('con cuentas propias: la Coordinadora revisa lo «sin autorizar» (la Jefe ya no) y el Gerente general autoriza lo que le pasó la Coordinadora', async () => {
+  await sembrar(async db => { await setDoc(doc(db, 'compras', 'lm-2'), compra({ estado: 'sin-autorizar' })); await setDoc(doc(db, 'compras', 'lm-3'), compra({ estado: 'por-gerente', valorAprox: 6000000 })); await setDoc(doc(db, 'compras', 'lm-4'), compra({ estado: 'por-gerente', valorAprox: 6000000 })); });
+  await assertFails(updateDoc(doc(jefG, 'compras', 'lm-2'), { revisadaPorCorreo: correoCuenta('jefG'), revisada: true, historial: H1 }));
+  await assertSucceeds(updateDoc(doc(coordG, 'compras', 'lm-2'), { revisadaPorCorreo: correoCuenta('coordG'), revisada: true, historial: H1 }));
+  await assertFails(updateDoc(doc(gerA, 'compras', 'lm-3'), { autorizaCorreo: correoCuenta('gerA'), estado: 'autorizado', autoriza: 'Gerente A', historial: H1 }));
+  await assertSucceeds(updateDoc(doc(genG, 'compras', 'lm-3'), { autorizaCorreo: correoCuenta('genG'), estado: 'autorizado', autoriza: 'Gerente general', historial: H1 }));
+  await assertFails(updateDoc(doc(coordG, 'compras', 'lm-4'), { autorizaCorreo: correoCuenta('coordG'), estado: 'autorizado', autoriza: 'Coordinadora', historial: H1 })); });
 
 console.log('Revisión de seguridad, paso 4: el historial de las compras solo crece');
 await limpiar();
-const lineaH = { fecha: '2026-11-20T12:00:00Z', texto: 'Paso nuevo', por: 'Alguien' }, jefH = await cuenta('jefH', 'jefe');
+const lineaH = { fecha: '2026-11-20T12:00:00Z', texto: 'Paso nuevo', por: 'Alguien' }, coordH = await cuenta('coordH', 'coordcompras');
 const cambiada = [Object.assign({}, H1[0], { texto: 'Lo borré y puse otra cosa' }), lineaH];
 const pasos4 = [
-  ['decidir (la Jefe autoriza)', () => jefH, { estado: 'pedido' }, { estado: 'autorizado', autoriza: 'Jefa', autorizaCorreo: correoCuenta('jefH') }],
+  ['decidir (la Coordinadora autoriza)', () => coordH, { estado: 'pedido' }, { estado: 'autorizado', autoriza: 'Coordinadora', autorizaCorreo: correoCuenta('coordH') }],
   ['comprar (Compras)', () => prueba_('compras'), { estado: 'autorizado' }, { estado: 'comprado', proveedor: 'X', valorReal: 1, fechaCompra: '2026-11-20', factura: '' }],
   ['recibir (Bodega)', () => prueba_('asistente'), { estado: 'comprado' }, { estado: 'recibido', entregadoA: 'Persona' }],
-  ['marcar revisada (la Jefe)', () => jefH, { estado: 'sin-autorizar' }, { revisada: true, revisadaPorCorreo: correoCuenta('jefH') }]
+  ['marcar revisada (la Coordinadora)', () => coordH, { estado: 'sin-autorizar' }, { revisada: true, revisadaPorCorreo: correoCuenta('coordH') }]
 ];
 for (const [nombre, quien, semilla, cambio] of pasos4) {
   await prueba('historial, ' + nombre + ': vaciarlo, no tocarlo, cambiar una línea vieja o agregar dos, falla; agregar una línea sí', async () => {
@@ -545,21 +566,21 @@ await prueba('un Conductor no devuelve el viaje de otro (ni deja los carros pend
 
 console.log('Revisión de seguridad, paso 11: nombre que no se falsifica, extras por rol y cotizaciones que son fotos');
 await limpiar();
-const jefD = await cuenta('jefD', 'jefe'), gerD = await cuenta('gerD', 'gerente');
+const jefD = await cuenta('coordD', 'coordcompras'), gerD = await cuenta('gerD', 'gerente', { extras: ['general'] });
 await prueba('quien decide una compra deja SU correo: sin él, o con el de otra persona, no se acepta', async () => {
   await sembrar(db => setDoc(doc(db, 'compras', 'n-1'), compra({ historial: H1, pideRol: 'logistica' })));
   await assertFails(updateDoc(doc(jefD, 'compras', 'n-1'), { estado: 'autorizado', autoriza: 'Gerente Oscar', historial: H2 }));
   await assertFails(updateDoc(doc(jefD, 'compras', 'n-1'), { estado: 'autorizado', autoriza: 'Gerente Oscar', autorizaCorreo: correoCuenta('gerD'), historial: H2 }));
-  await assertSucceeds(updateDoc(doc(jefD, 'compras', 'n-1'), { estado: 'autorizado', autoriza: 'Carolina', autorizaCorreo: correoCuenta('jefD'), historial: H2 })); });
-await prueba('el Gerente de la segunda firma no cambia el nombre de la Jefe que ya autorizó', async () => {
+  await assertSucceeds(updateDoc(doc(jefD, 'compras', 'n-1'), { estado: 'autorizado', autoriza: 'Coordinadora', autorizaCorreo: correoCuenta('coordD'), historial: H2 })); });
+await prueba('el Gerente general de la segunda firma no cambia el nombre de la Coordinadora que ya autorizó', async () => {
   await sembrar(db => setDoc(doc(db, 'compras', 'n-2'), compra({ estado: 'por-gerente', autorizaJefe: 'Carolina', valorAprox: 3000000, historial: H1 })));
   await assertFails(updateDoc(doc(gerD, 'compras', 'n-2'), { estado: 'autorizado', autoriza: 'Gerente', autorizaJefe: 'Otro Nombre', autorizaCorreo: correoCuenta('gerD'), historial: H2 }));
   await assertSucceeds(updateDoc(doc(gerD, 'compras', 'n-2'), { estado: 'autorizado', autoriza: 'Gerente', autorizaCorreo: correoCuenta('gerD'), historial: H2 })); });
-await prueba('marcar revisada una compra sin autorizar también deja el correo de la Jefe', async () => {
+await prueba('marcar revisada una compra sin autorizar también deja el correo de quien la revisa', async () => {
   await sembrar(db => setDoc(doc(db, 'compras', 'n-3'), compra({ estado: 'sin-autorizar', historial: H1 })));
   await assertFails(updateDoc(doc(jefD, 'compras', 'n-3'), { revisada: true, historial: H2 }));
   await assertFails(updateDoc(doc(jefD, 'compras', 'n-3'), { revisada: true, revisadaPorCorreo: 'otra@correo-inventado.test', historial: H2 }));
-  await assertSucceeds(updateDoc(doc(jefD, 'compras', 'n-3'), { revisada: true, revisadaPorCorreo: correoCuenta('jefD'), historial: H2 })); });
+  await assertSucceeds(updateDoc(doc(jefD, 'compras', 'n-3'), { revisada: true, revisadaPorCorreo: correoCuenta('coordD'), historial: H2 })); });
 await prueba('el permiso extra «compra» solo vale en Bodega (un Conductor con nivel de bodega y ese extra no registra compras)', async () => {
   const falso = await cuenta('conE', 'conductor', { permisos: { inventario: 'bodega' }, extras: ['compra'] }), bueno = await cuenta('bodE', 'asistente', { extras: ['compra'] });
   const sa = uid => nueva(correoCuenta(uid), { estado: 'sin-autorizar', pideRol: 'x', revisada: false, pideUid: uid });
@@ -577,6 +598,16 @@ await prueba('las cotizaciones son fotos JPEG (no texto cualquiera ni otro tipo 
   await assertFails(setDoc(doc(db, 'compras', 'ct-3'), nueva('logistica', { cotizaciones: [FOTO, 'javascript:alert(1)'] })));
   await assertFails(setDoc(doc(db, 'compras', 'ct-4'), nueva('logistica', { cotizaciones: ['data:text/html;base64,PGI+'] })));
   await assertFails(setDoc(doc(db, 'compras', 'ct-5'), nueva('logistica', { cotizaciones: [FOTO + 'A'.repeat(200000)] }))); });
+
+await prueba('la Jefe no marca «Gerente general» a nadie, pero sí puede dar el nivel «coordina» (Coordinadora de compras) a una cuenta', async () => {
+  const jefX = await cuenta('jefX', 'jefe'); await cuenta('tgtX', 'colaborador');
+  await assertFails(updateDoc(doc(jefX, 'usuarios', 'tgtX'), { extras: ['general'] }));
+  await assertSucceeds(updateDoc(doc(jefX, 'usuarios', 'tgtX'), { permisos: { inventario: 'coordina' } })); });
+await prueba('una cuenta con nivel «coordina» autoriza compras igual que la Coordinadora, y un Gerente con «general» puesto en la consola decide lo grande', async () => {
+  const c = await cuenta('cooX', 'colaborador', { permisos: { inventario: 'coordina' } }), g = await cuenta('genX', 'gerente', { extras: ['general'] });
+  await sembrar(async db => { await setDoc(doc(db, 'compras', 'cx-1'), compra({ valorAprox: 9000000 })); await setDoc(doc(db, 'compras', 'cx-2'), compra({ estado: 'por-gerente', valorAprox: 9000000 })); });
+  await assertSucceeds(updateDoc(doc(c, 'compras', 'cx-1'), { autorizaCorreo: correoCuenta('cooX'), estado: 'por-gerente', autorizaJefe: 'Coordinadora', historial: H1 }));
+  await assertSucceeds(updateDoc(doc(g, 'compras', 'cx-2'), { autorizaCorreo: correoCuenta('genX'), estado: 'autorizado', autoriza: 'Gerente general', historial: H1 })); });
 
 console.log('Paso 12: el límite de 1000 expresiones con CUENTAS PROPIAS (no solo personas de prueba)');
 await limpiar();

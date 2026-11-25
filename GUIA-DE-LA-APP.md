@@ -154,11 +154,11 @@ La Jefe es la única que puede **hacer casi todo**. En cada módulo tiene el niv
 | **Personas y permisos** | Solo ella lo ve (y solo con cuenta propia). Ver 4.4. |
 
 **Lo único que NO puede hacer la Jefe:**
-- Autorizar una compra que **ella misma** pidió (la decide un Gerente).
+- **Autorizar compras** (ya no es de la Jefe: las autoriza la Coordinadora de compras y, las de más de 5 millones, el Gerente general).
 - Tocar a **otra Jefe** o a **un Gerente** (cambiar su rol, pausarlo, cambiarle permisos). Eso solo se hace desde la consola de Firebase.
 - Cambiarse permisos a sí misma.
 - Crear códigos de Gerente o Jefe (se crean a mano en Firebase).
-- Cambiar el «monto del Gerente» (solo lo cambia el Gerente).
+- Cambiar el «monto del Gerente» (solo lo cambia el Gerente general).
 - Reiniciar los datos de prueba (solo la Jefe **de prueba** puede; la real no).
 
 ### 4.4 La pantalla «Personas y permisos»
@@ -240,21 +240,22 @@ Cómo entra el Gerente:
 4. Confirma el correo (si entró con clave).
 5. Entra como Gerente; el código se borra solo.
 
-### 5.3 Qué puede hacer el Gerente
+### 5.3 Qué puede hacer el Gerente (y el Gerente general)
 | Módulo | Qué hace |
 |---|---|
-| **Inventario** | Ve el **resumen a detalle** y **todas las compras** (qué, cuánto vale cada cosa, a quién, para qué, cotizaciones). **Autoriza compras** (ver abajo). Puede **pedir** compras. Cambia el **monto del Gerente**. No ve cada movimiento de bodega, solo el resumen. |
+| **Inventario** | Ve el **resumen a detalle** y **todas las compras** (qué, cuánto vale cada cosa, a quién, para qué, cotizaciones). **Autoriza compras solo si es el Gerente general** (ver abajo); los demás Gerentes solo ven. Puede **pedir** compras (la del Gerente general nace autorizada). Cambia el **monto del Gerente** (solo el Gerente general). No ve cada movimiento de bodega, solo el resumen. |
 | **Equipos** | Solo ver (Resumen, Equipos, Actas, Personas). |
 | **Vehículos** | Solo ver (Resumen, Reportes, Carros, Novedades). |
 | **Reuniones** | Solo ver (Resumen, Próximas, Realizadas y canceladas). |
 
-**Qué compras autoriza el Gerente:**
-1. Las que **pide la Jefe** (cualquier valor): las decide el Gerente.
-2. Las que la Jefe ya aprobó y **valen el monto del Gerente o más** (por defecto **1.000.000**): quedan en estado «Falta el Gerente».
-3. Las que **pide otro Gerente** (nadie autoriza lo suyo).
-4. **Respaldo:** si la Jefe **no responde en 2 días**, el Gerente puede autorizar o rechazar lo que pidió otra persona (queda autorizada directo).
+**Quién autoriza las compras ahora:**
+1. La **Coordinadora de compras** (Mauricio Giraldo en la demo) autoriza las compras de **5.000.000 o menos**, y revisa las hechas sin autorización. La Jefe **ya no** autoriza.
+2. Las de **más de 5.000.000**: la Coordinadora las pasa y quedan en «Falta el Gerente general»; las autoriza el **Gerente general** (Oscar Muñoz).
+3. Lo que **pide la Coordinadora** lo decide siempre el Gerente general. Lo que **pide el Gerente general nace autorizado**.
+4. El Gerente general también puede decidir **cualquier pedido** sin esperar a la Coordinadora (acceso total). Los demás Gerentes (Santiago Valencia, Alejandro Giraldo) solo ven los resúmenes y el detalle de cada cosa.
+5. El permiso «Gerente general» **no lo marca la Jefe**: se pone a mano en la consola de Firebase (en `usuarios/<uid>`, el campo `extras` con `["general"]`). Ya no existe el «respaldo de 2 días».
 
-**El monto del Gerente:** solo el Gerente (con cuenta propia) lo cambia, con el botón **«Cambiar el monto»** que sale en su **Resumen** de Inventario (tarjeta «Compras que decides tú»). La persona de prueba no puede. Así la Jefe no puede subirlo para saltárselo.
+**El monto del Gerente (5.000.000 por defecto, «más de»):** solo el Gerente general (con cuenta propia) lo cambia, con el botón **«Cambiar el monto»** que sale en su **Resumen** de Inventario (tarjeta «Compras que decides tú»). La persona de prueba no puede. Así la Jefe no puede subirlo para saltárselo.
 
 **Lo que NO puede hacer el Gerente:**
 - Ver «Personas y permisos» (ni manejar códigos ni personas).

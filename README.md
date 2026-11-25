@@ -35,6 +35,9 @@ Alternativa sin Excel: la Jefe puede crear un **código por rol** (`LOG-7KQ4-M2X
 - **Los códigos de Jefe y de Gerente se crean a mano** (el primero y todos los demás) en Firebase: Firestore Database > Datos > Iniciar colección `codigosDireccion`, documento con ID `JEF-XXXX-XXXX` y campos `rol` = `jefe`, `activo` = `true` (booleano), `por` = `consola`, `en` = la fecha. Con ese código se registra la primera Jefe.
 - **A un Gerente o a otra Jefe no se les cambia nada desde la app** (ni rol, ni pausa, ni permisos): solo desde la consola de Firebase. Así una Jefe no puede sacar a otra.
 
+### Las 3 bodegas
+La bodega son siempre **3: Riohacha, Guamal y Bogotá** (la app, el Excel y las reglas de Firebase lo exigen; ninguna otra). Cada artículo vive en **una** bodega y no cambia de bodega con una edición; para moverlo se hace un **traslado** (botón «Trasladar» en el detalle del artículo): sale de una bodega y entra a la otra, cada una con su movimiento, en una sola escritura. Si en la bodega de destino ya hay ese artículo (mismo nombre) se le suma; si no, se crea ahí con los mismos datos. El mismo nombre puede estar en las 3 bodegas (una vez en cada una). En Inventario, la parte se llama **Bodega** y trae un filtro por bodega; el Resumen suma el valor de cada una.
+
 ### Los Excel de la app
 Todos los Excel que baja la app salen con el mismo formato: **título en negrilla arriba**, una línea que dice qué es, **columnas en negrilla con color**, cada dato en su cuadro, columnas del ancho justo, la fila de títulos fija al bajar y filtros. Los hay en Inventario (resumen y kárdex de cada artículo), Vehículos, Equipos (equipos y actas, sin cédulas ni firmas), Reuniones (reuniones y tareas) y la **plantilla de personas**.
 
@@ -50,8 +53,9 @@ Las 46 personas de la demo son las del organigrama (versión 18, febrero de 2023
 
 | Rol en la app | Quiénes | Equipos | Inventario | Vehículos | Reuniones |
 |---|---|---|---|---|---|
-| Gerente | Oscar Muñoz, Santiago Valencia, Alejandro Giraldo (Proyectos) | Solo ver | Resumen a detalle; autoriza lo que pide la Jefe, las compras grandes, lo que pide otro Gerente y, si la Jefe no responde en 2 días, las demás | Solo ver | Solo ver |
-| Jefe | Carolina Castillo (Líder de Abastecimiento) | Todo | Panorama; autoriza compras y maneja personas | Todo | Todo |
+| Gerente | Oscar Muñoz, Santiago Valencia, Alejandro Giraldo (Proyectos) | Solo ver | Resumen a detalle, sin autorizar. **Solo el Gerente general (Oscar, permiso extra «general»)** autoriza las compras de más de 5 millones y las que pide la Coordinadora; lo que él pide nace autorizado | Solo ver | Solo ver |
+| Coordinador de compras (nuevo) | Mauricio Giraldo (Coord. Compras) | No | **Autoriza las compras** (hasta 5 millones; las de más pasan al Gerente general) y revisa las hechas sin autorización. No compra | No | No |
+| Jefe | Carolina Castillo (Líder de Abastecimiento) | Todo | Panorama y personas; **ya no autoriza compras** | Todo | Todo |
 | Encargado de equipos | Fabián Barbosa (Auxiliar TI) | Mantenimiento y entregas | Pide | No | No |
 | Soporte | Ángel Ortiz (Asistente TI; permiso extra: revisa actas) | Recibe y revisa | Pide | No | No |
 | Compras | Mauricio Giraldo (Coord. Compras), Fredy Torres | No | Hace las compras | No | Informa |
@@ -108,12 +112,13 @@ Colecciones de primer nivel: `reuniones` y `necesidades` (una tarea por document
 
 ## Permisos (los hace cumplir Firebase, no solo la pantalla)
 Las reglas (`firestore.rules`) no preguntan «¿qué rol tiene?» sino «¿qué **nivel** tiene en este módulo?» (el de su rol, o el que le puso la Jefe). Cada nivel solo lee lo que le toca: sin acceso no lee nada del módulo, y quien solo pide material no ve los movimientos de la bodega y, con cuenta propia, solo ve **sus** pedidos y compras.
-- **Compras**: alguien pide → la Jefe autoriza → Compras la compra → Bodega la recibe. Nadie autoriza su propio pedido.
-  - Si la compra vale el **monto del Gerente** (por defecto 1.000.000; lo cambia solo el Gerente con su cuenta, así la Jefe no lo puede subir) **o más**, después de la Jefe la autoriza el Gerente (estado «Falta el Gerente»). Si la pidió la Jefe, la decide siempre el Gerente. Si la pide un Gerente, **la autoriza otro Gerente** (nadie se autoriza solo). **Respaldo:** si la Jefe no responde en 2 días, el Gerente puede autorizar o rechazar lo que pidió otra persona (queda autorizada directo). Cada compra guarda el correo de quien la pidió y la hora del servidor, así no se pueden inventar.
+- **Compras**: alguien pide → la **Coordinadora de compras** autoriza → Compras la compra → Bodega la recibe. Nadie autoriza su propio pedido. La Jefe ya **no** autoriza.
+  - Si la compra vale **más del monto del Gerente** (por defecto **5.000.000**; lo cambia solo el Gerente general con su cuenta, así la Jefe no lo puede subir), después de la Coordinadora la autoriza el **Gerente general** (estado «Falta el Gerente general»). Lo que pide la Coordinadora lo decide siempre el Gerente general. **Lo que pide el Gerente general nace autorizado** (nadie lo autoriza). El Gerente general también puede decidir cualquier pedido sin esperar (acceso total). Los demás Gerentes y la Jefe **no autorizan**. Cada compra guarda el correo de quien la pidió y la hora del servidor, así no se pueden inventar.
+  - **Gerente general:** es un permiso extra («general») que **no marca la Jefe**: se pone a mano en la consola de Firebase (`usuarios/<uid>`, campo `extras` = `["general"]`), igual que los códigos de Gerente. En la demo, Oscar Muñoz lo trae fijo.
   - Antes de decidir se ve todo: cada artículo con su precio, el total, a quién se compra, para qué, las cotizaciones (hasta 3 fotos), lo que hay en bodega y el último precio pagado.
-  - Si pagan más del 10 % de lo autorizado, o llega menos de lo comprado, la Jefe recibe el aviso (y el Gerente si él la había autorizado).
+  - Si pagan más del 10 % de lo autorizado, o llega menos de lo comprado, la Coordinadora recibe el aviso (y el Gerente general si él la había autorizado).
 - Cualquiera con nivel de pedir pide material y compras a su nombre. Compras registra la compra sin tocar lo autorizado. Las compras y los movimientos no se borran ni se editan (el rastro de lo gastado).
-- La bodega recibe, entrega, registra entradas, salidas y conteos; la cantidad nunca queda negativa. La Jefe puede hacer cualquier paso (menos autorizar lo suyo).
+- La bodega recibe, entrega, registra entradas, salidas y conteos; la cantidad nunca queda negativa. La Jefe puede hacer cualquier paso **menos autorizar compras**.
 - Cada quien marca como leídos solo sus avisos.
 
 ## Pasar a uso real (pasos en la consola de Firebase)

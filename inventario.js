@@ -28,6 +28,7 @@
     jefe: [['panorama', 'Panorama']].concat(SECCIONES),
     bodega: SECCIONES,
     compra: sec('hacer', 'existencias', 'compras', 'solicitudes', 'movimientos', 'resumen'),
+    coordina: sec('hacer', 'compras', 'existencias', 'solicitudes', 'movimientos', 'resumen'),
     pide: [['hacer', 'Lo mío']].concat(sec('existencias', 'solicitudes', 'compras')),
     ver: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'resumen'),
     finanzas: sec('existencias', 'movimientos', 'solicitudes', 'compras', 'resumen'),
@@ -70,32 +71,33 @@
   const persona = () => A().S.persona;
   // En la demo con personas de prueba se nombra a la persona (Andrés B.); con cuentas propias, el rol (Bodega), porque puede haber varias.
   // Con varias personas en un mismo rol (por ejemplo, 3 Gerentes) se dice el rol; si hay una sola, su nombre.
-  const nombreRol = rol => { const ps = window.DEMO.PERSONAS.filter(x => x.rol === rol), r = window.DEMO.rolDe(rol); return persona() && persona().prueba && ps.length === 1 ? ps[0].corto : (r ? r.rolTxt : rol); };
+  const nombreRol = rol => { rol = ROL_DE[rol] || rol; const ps = window.DEMO.PERSONAS.filter(x => x.rol === rol), r = window.DEMO.rolDe(rol); return persona() && persona().prueba && ps.length === 1 ? ps[0].corto : (r ? r.rolTxt : rol); };
   const perm = () => A().permiso('inventario');
   const esJefe = () => perm() === 'jefe';
   const esGerente = () => perm() === 'gerente';
   const esBodega = () => perm() === 'bodega' || esJefe();       // la Jefe también puede mover la bodega
   const secciones = () => SECCIONES_NIVEL[perm()] || SECCIONES_NIVEL.ver;
-  // Las compras pasan por la Jefe y, si valen el monto del Gerente o más (o las pidió la Jefe), por el Gerente. Nadie autoriza lo suyo.
-  const autorizadorDe = c => (c.estado === 'por-gerente' || c.pideRol === 'jefe' || c.pideRol === 'gerente' ? 'gerente' : 'jefe');
+  // Las compras las autoriza la Coordinadora de compras (ya no la Jefe) y, si valen MÁS del monto del Gerente, después el Gerente general.
+  // Lo que pide la Coordinadora lo decide el Gerente general; lo que pide el Gerente general nace autorizado. Nadie autoriza lo suyo.
+  const esCoordinador = () => perm() === 'coordina';
+  const esGerenteGeneral = () => esGerente() && A().tieneExtra('general');
+  const ROL_DE = { coordina: 'coordcompras', gerente: 'gerente', jefe: 'jefe', compras: 'compras', asistente: 'asistente' };   // papel -> rol (para nombrarlo y avisarle)
+  const autorizadorDe = c => (c.estado === 'por-gerente' || c.pideRol === 'coordcompras' ? 'gerente' : 'coordina');
   const esPorAutorizar = c => c.estado === 'pedido' || c.estado === 'por-gerente';
   // Nadie decide lo suyo (se compara el correo que dejó la compra al crearse; las de antes, sin correo, por el nombre).
   const esMiaLaCompra = c => (c.pideCorreo ? c.pideCorreo === persona().correo : c.pide === persona().nombre);
-  // Si la Jefe no responde en 2 días, el Gerente puede autorizar o rechazar lo que pidió otra persona (lo mismo que exigen las reglas).
-  const hora = f => (f && typeof f.toMillis === 'function' ? f.toMillis() : Date.parse(f));
-  const respaldoVencido = c => c.estado === 'pedido' && !['jefe', 'gerente'].includes(c.pideRol) && Number.isFinite(hora(c.creadoEn)) && Date.now() > hora(c.creadoEn) + 2 * 86400000;
-  const puedoDecidir = c => esPorAutorizar(c) && !esMiaLaCompra(c) && (puedoHacer(autorizadorDe(c)) || (esGerente() && respaldoVencido(c)));
+  const puedoDecidir = c => esPorAutorizar(c) && !esMiaLaCompra(c) && puedoHacer(autorizadorDe(c));
   // Qué papel hace la persona en el flujo, según su NIVEL (no su rol): así sirve también cuando la Jefe le sube o le baja el nivel.
-  const miFuncion = () => (esJefe() ? 'jefe' : esGerente() ? 'gerente' : perm() === 'bodega' ? 'asistente' : perm() === 'compra' ? 'compras' : '');
+  const miFuncion = () => (esJefe() ? 'jefe' : esGerenteGeneral() ? 'gerente' : esGerente() ? '' : perm() === 'bodega' ? 'asistente' : perm() === 'compra' ? 'compras' : perm() === 'coordina' ? 'coordina' : '');
   // Bodega con el permiso extra «compra» también hace y registra compras (como Compras).
   const hagoCompras = () => perm() === 'compra' || (perm() === 'bodega' && A().tieneExtra('compra'));
-  // Quién puede hacer una tarea: la persona con ese papel, o la Jefe (que puede hacer todo menos lo del Gerente).
-  const puedoHacer = rol => miFuncion() === rol || (rol === 'compras' && hagoCompras()) || (esJefe() && rol !== 'gerente');
+  // Quién puede hacer una tarea: la persona con ese papel; el Gerente general también hace lo de la Coordinadora (acceso total); la Jefe hace todo menos autorizar (ni lo del Gerente ni lo de la Coordinadora).
+  const puedoHacer = rol => miFuncion() === rol || (rol === 'compras' && hagoCompras()) || (rol === 'coordina' && esGerenteGeneral()) || (esJefe() && rol !== 'gerente' && rol !== 'coordina');
   const esMia = t => miFuncion() === t.rol || (t.rol === 'compras' && hagoCompras());
   const veTodo = () => perm() !== 'pide';                                       // quien solo pide ve solo lo suyo
   const veMovs = () => veTodo() && !esGerente();                                // el Gerente ve el resumen, no cada movimiento
-  const puedoPedirMaterial = () => ['pide', 'finanzas', 'compra', 'bodega', 'jefe'].includes(perm());
-  const puedoPedirCompra = () => ['pide', 'finanzas', 'compra', 'bodega', 'gerente', 'jefe'].includes(perm());
+  const puedoPedirMaterial = () => ['pide', 'finanzas', 'coordina', 'compra', 'bodega', 'jefe'].includes(perm());
+  const puedoPedirCompra = () => ['pide', 'finanzas', 'coordina', 'compra', 'bodega', 'gerente', 'jefe'].includes(perm());
   // Marcas que exigen las reglas al pedir: la cuenta, su correo y la hora del servidor (no se pueden inventar).
   const misMarcas = () => ({ pideUid: window.nube.uid(), pideCorreo: window.nube.correo(), creadoEn: window.nube.ahoraServidor() });
   const ahora = () => new Date().toISOString();
@@ -117,11 +119,10 @@
       const a = c.articuloId ? artPorId(c.articuloId) : null;
       if (esPorAutorizar(c)) {
         out.push({ tipo: 'autorizar', rol: autorizadorDe(c), urg: a && estadoArt(a) === 'agotado' ? 0 : 2, compra: c, art: a });
-        if (respaldoVencido(c)) out.push({ tipo: 'autorizar', rol: 'gerente', urg: 1, compra: c, art: a, respaldo: true });
       }
       else if (c.estado === 'autorizado') out.push({ tipo: 'comprar', rol: 'compras', urg: 3, compra: c, art: a });
       else if (c.estado === 'comprado') out.push({ tipo: 'recibir', rol: 'asistente', urg: 3, compra: c, art: a });
-      else if (c.estado === 'sin-autorizar' && !c.revisada) out.push({ tipo: 'revisar', rol: 'jefe', urg: 4, compra: c, art: a });
+      else if (c.estado === 'sin-autorizar' && !c.revisada) out.push({ tipo: 'revisar', rol: 'coordina', urg: 4, compra: c, art: a });
     });
     return out.sort((x, y) => x.urg - y.urg);
   }
@@ -156,8 +157,8 @@
     if (!secciones().some(x => x[0] === seccion)) seccion = secciones()[0][0];
     $('btnPedirMaterial').hidden = !puedoPedirMaterial(); $('btnPedirCompra').hidden = !puedoPedirCompra();
     $('btnPedirMaterial').parentElement.hidden = $('btnPedirMaterial').hidden && $('btnPedirCompra').hidden;
-    // Quien hace las compras «hace» una compra (la Jefe la autoriza antes); los demás la piden. El Gerente la hace y nace autorizada.
-    $('btnPedirCompraTxt').textContent = hagoCompras() || esGerente() ? 'Hacer una compra' : 'Pedir una compra';
+    // Quien hace las compras «hace» una compra (la Coordinadora la autoriza antes); los demás la piden. El Gerente general la hace y nace autorizada.
+    $('btnPedirCompraTxt').textContent = hagoCompras() || esGerenteGeneral() ? 'Hacer una compra' : 'Pedir una compra';
     const arts = articulos();
     App.tablero('inventario', [
       { k: 'v-ago', n: arts.filter(a => estadoArt(a) === 'agotado').length, lbl: 'Agotados', icono: 'aviso', tono: 'peligro', filtro: 'agotado' },
@@ -192,8 +193,8 @@
       // La Jefe ve todo agrupado por quién tiene que hacerlo, y puede hacer cualquier paso ella misma.
       const grupos = {};
       lista.forEach(t => { (grupos[t.rol] = grupos[t.rol] || []).push(t); });
-      const orden = ['jefe', 'compras', 'asistente', 'gerente'];
-      if (Object.keys(grupos).some(r => r !== 'jefe' && r !== 'gerente')) h += '<p class="meta">Como Jefe puedes hacer cualquier paso aunque le toque a otra persona.</p>';
+      const orden = ['jefe', 'coordina', 'compras', 'asistente', 'gerente'];
+      if (Object.keys(grupos).some(r => r !== 'jefe' && r !== 'gerente' && r !== 'coordina')) h += '<p class="meta">Como Jefe puedes hacer cualquier paso aunque le toque a otra persona, menos autorizar compras (eso es de la Coordinadora de compras y del Gerente general).</p>';
       h += Object.keys(grupos).sort((a, b) => orden.indexOf(a) - orden.indexOf(b)).map(rol =>
         `<div class="section-label">${rol === 'jefe' ? 'Te toca a ti' : 'Le toca a ' + esH(nombreRol(rol))} (${grupos[rol].length})${esH(filtroTxt)}</div>
          <div class="list">${grupos[rol].map(tarjeta).join('')}</div>`).join('');
@@ -236,10 +237,8 @@
       titulo = `${c.estado === 'por-gerente' ? 'Autorizar (segundo paso)' : 'Autorizar compra'}: ${a ? a.nombre : c.que}`;
       detalle.push(cantTxt(c.cantidad, c.unidad), 'aprox. ' + cop(c.valorAprox), 'pidió ' + c.pide, c.paraQue);
       if (a && estadoArt(a) !== 'bien') extra = pill(estadoArt(a) === 'agotado' ? 'En bodega: agotado' : `En bodega: quedan ${cantTxt(a.cantidad, a.unidad)}`, EST_ART[estadoArt(a)][1]);
-      if (c.pideRol === 'jefe') extra += pill('La pidió la Jefe: la autoriza el Gerente', 's-pend', 'info');
-      if (c.pideRol === 'gerente') extra += pill('La pidió un Gerente: la autoriza otro Gerente', 's-pend', 'info');
-      if (t.respaldo) extra += pill('La Jefe no ha respondido en 2 días: puedes autorizarla tú', 's-pend', 'info');
-      if (c.estado === 'por-gerente') extra += pill(`La Jefe ya la autorizó${c.autorizaJefe ? ' (' + c.autorizaJefe + ')' : ''}: falta el Gerente`, 's-pend', 'info');
+      if (c.pideRol === 'coordcompras') extra += pill('La pidió la Coordinadora de compras: la autoriza el Gerente general', 's-pend', 'info');
+      if (c.estado === 'por-gerente') extra += pill(`La Coordinadora ya la autorizó${c.autorizaJefe ? ' (' + c.autorizaJefe + ')' : ''}: falta el Gerente general`, 's-pend', 'info');
       botones = boton('autorizar', 'Autorizar', 'check', ` data-id="${esH(c.id)}"`, 'primary small') + boton('rechazar', 'Rechazar', '', ` data-id="${esH(c.id)}"`, 'ghost small');
     } else if (t.tipo === 'comprar') {
       icono = 'carrito'; tono = 'listo';
@@ -413,21 +412,21 @@
     const costoDe = m => num(m.cantidad) * num((artPorId(m.articuloId) || {}).costo);
     const catDe = m => (artPorId(m.articuloId) || {}).categoria;
     let h = '';
-    if (esGerente()) {
-      // Lo único que el Gerente tiene que hacer: autorizar las compras que pide la Jefe.
+    if (esGerenteGeneral()) {
+      // Lo que le toca al Gerente general: las compras de más del monto (ya pasadas por la Coordinadora) y las que pide la Coordinadora.
       const mias = tareas().filter(esMia);
       h += `<div class="section-label">Te toca a ti (${mias.length})</div>`;
-      h += mias.length ? `<div class="list">${mias.map(tarjeta).join('')}</div>` : '<p class="meta">Nada por autorizar. Las compras que pida la Jefe te llegan aquí y al teléfono.</p>';
-    }
-    if (esGerente()) {
-      h += `<div class="card"><b>Compras que decides tú</b><span class="meta">Las que pide la Jefe, y las que valen ${esH(cop(App.montoGerente()))} o más (la Jefe las autoriza antes y te las pasa).</span>
-        ${persona().real ? `<div class="row">${boton('monto', 'Cambiar el monto', 'lapiz', '', 'small')}</div>` : '<span class="meta">El monto lo cambia el Gerente con su cuenta propia (la persona de prueba no puede).</span>'}</div>`;
+      h += mias.length ? `<div class="list">${mias.map(tarjeta).join('')}</div>` : '<p class="meta">Nada por autorizar. Las compras de más de ' + esH(cop(App.montoGerente())) + ' y las que pida la Coordinadora te llegan aquí y al teléfono.</p>';
+      h += `<div class="card"><b>Compras que decides tú</b><span class="meta">Las de más de ${esH(cop(App.montoGerente()))} (la Coordinadora las autoriza antes y te las pasa) y las que pide la Coordinadora. Lo que pides tú nace autorizado. También puedes decidir cualquier pedido sin esperar.</span>
+        ${persona().real ? `<div class="row">${boton('monto', 'Cambiar el monto', 'lapiz', '', 'small')}</div>` : '<span class="meta">El monto lo cambia el Gerente general con su cuenta propia (la persona de prueba no puede).</span>'}</div>`;
+    } else if (esGerente()) {
+      h += `<div class="card"><b>Solo ves</b><span class="meta">Las compras las autoriza la Coordinadora de compras y, las de más de ${esH(cop(App.montoGerente()))}, el Gerente general. Tú ves los resúmenes y el detalle de cada cosa.</span></div>`;
     }
     h += barraBotones(perm() !== 'pide' ? [boton('excel', 'Descargar Excel', 'excel', '', 'primary')] : []);
     // Cómo van las compras: cada paso con quién lo tiene.
     const etapa = (estado, lbl, quien) => { const n = d.compras.filter(c => c.estado === estado).length; return `<div class="etapa${n ? ' con' : ''}"><span class="rm-n">${n}</span><b>${esH(lbl)}</b><span class="meta">${esH(quien)}</span></div>`; };
     h += `<div class="section-label">Cómo van las compras</div><div class="card etapas">
-      ${etapa('pedido', 'Por autorizar', 'Jefe o Gerente')}${etapa('por-gerente', 'Falta el Gerente', 'Gerente')}${etapa('autorizado', 'Falta comprar', nombreRol('compras'))}${etapa('comprado', 'Falta recibir', nombreRol('asistente'))}
+      ${etapa('pedido', 'Por autorizar', 'Coordinadora de compras')}${etapa('por-gerente', 'Falta el Gerente general', 'Gerente general')}${etapa('autorizado', 'Falta comprar', nombreRol('compras'))}${etapa('comprado', 'Falta recibir', nombreRol('asistente'))}
     </div>`;
     h += `<div class="resumen-grid">
       <div class="card"><span class="meta">Valor de lo que hay en bodega</span><span class="rm-n valor">${esH(cop(valorBodega))}</span><span class="meta">${articulos().length} artículos</span><span class="meta">${esH(BODEGAS.map(b => `${b}: ${cop(articulos().filter(a => bodegaDe(a) === b).reduce((x, a) => x + num(a.cantidad) * num(a.costo), 0))}`).join(' · '))}</span></div>
@@ -449,17 +448,17 @@
     const item = (tono, icono, titulo, detalle, datos) => `<button type="button" class="card tarea st-${tono}"${datos}><div class="tarea-cab"><span class="ico t-${tono}" aria-hidden="true">${window.ico(icono)}</span><div class="tarea-t"><b>${esH(titulo)}</b><span class="meta">${esH(detalle)}</span></div></div></button>`;
     const suma = l => l.reduce((x, c) => x + num(c.valorAprox), 0);
     const ago = articulos().filter(a => estadoArt(a) === 'agotado'), baj = articulos().filter(a => estadoArt(a) === 'bajo');
-    const pedJefe = d.compras.filter(c => c.estado === 'pedido' && autorizadorDe(c) === 'jefe'), esperaG = d.compras.filter(c => (c.estado === 'por-gerente') || (c.estado === 'pedido' && autorizadorDe(c) === 'gerente'));
+    const pedJefe = d.compras.filter(c => c.estado === 'pedido' && autorizadorDe(c) === 'coordina'), esperaG = d.compras.filter(c => (c.estado === 'por-gerente') || (c.estado === 'pedido' && autorizadorDe(c) === 'gerente'));
     const falta = d.compras.filter(c => c.estado === 'autorizado'), llegar = d.compras.filter(c => c.estado === 'comprado');
     const sinAut = d.compras.filter(c => c.estado === 'sin-autorizar' && !c.revisada), demas = d.compras.filter(c => sobrecosto(c));
     const viejos = d.solicitudes.filter(s => s.estado === 'pendiente' && Date.now() - Date.parse(s.fecha) > 2 * 86400000);
     const nom = l => l.slice(0, 3).map(x => x.nombre || x.que || x.articulo).join(', ') + (l.length > 3 ? '…' : '');
     const u = [];
     if (ago.length) u.push(item('peligro', 'aviso', `${ago.length} ${ago.length === 1 ? 'artículo agotado' : 'artículos agotados'}`, nom(ago), ir('existencias', '', '', 'agotado')));
-    if (pedJefe.length) u.push(item('org', 'carrito', `${pedJefe.length} ${pedJefe.length === 1 ? 'compra espera tu decisión' : 'compras esperan tu decisión'}`, `${cop(suma(pedJefe))} en total`, ir('hacer')));
+    if (pedJefe.length) u.push(item('org', 'carrito', `${pedJefe.length} ${pedJefe.length === 1 ? 'compra espera a la Coordinadora de compras' : 'compras esperan a la Coordinadora de compras'}`, `${cop(suma(pedJefe))} en total`, ir('compras', 'compras', 'curso')));
     if (sinAut.length) u.push(item('peligro', 'aviso', `${sinAut.length} ${sinAut.length === 1 ? 'compra hecha sin autorización' : 'compras hechas sin autorización'}`, `${cop(sinAut.reduce((x, c) => x + num(c.valorReal || c.valorAprox), 0))}: habla con quien compró y márcala revisada`, ir('compras', 'compras', 'sin')));
     if (demas.length) u.push(item('peligro', 'aviso', `${demas.length} ${demas.length === 1 ? 'compra pagada con más de lo autorizado' : 'compras pagadas con más de lo autorizado'}`, demas.slice(0, 3).map(c => `${c.que} (+${sobrecosto(c).pct} %)`).join(', '), ir('compras', 'compras', 'todas')));
-    if (esperaG.length) u.push(item('org', 'persona', `${esperaG.length} ${esperaG.length === 1 ? 'compra espera al Gerente' : 'compras esperan al Gerente'}`, `${cop(suma(esperaG))} en total`, ir('compras', 'compras', 'curso')));
+    if (esperaG.length) u.push(item('org', 'persona', `${esperaG.length} ${esperaG.length === 1 ? 'compra espera al Gerente general' : 'compras esperan al Gerente general'}`, `${cop(suma(esperaG))} en total`, ir('compras', 'compras', 'curso')));
     if (viejos.length) u.push(item('org', 'entrega', `${viejos.length} ${viejos.length === 1 ? 'pedido de material espera' : 'pedidos de material esperan'} hace más de 2 días`, nom(viejos), ir('solicitudes', 'solicitudes', 'pendiente')));
     if (baj.length) u.push(item('org', 'caja', `${baj.length} ${baj.length === 1 ? 'artículo bajo del mínimo' : 'artículos bajos del mínimo'}`, nom(baj), ir('existencias', '', '', 'bajo')));
     if (falta.length) u.push(item('listo', 'carrito', `${falta.length} ${falta.length === 1 ? 'compra falta comprarla' : 'compras faltan por comprar'}`, `${cop(suma(falta))} autorizados`, ir('compras', 'compras', 'curso')));
@@ -483,12 +482,12 @@
     h += `<div class="section-label">Compras del mes por categoría</div><div class="card">${barras(agrupar(comprasMes, c => c.categoria, c => num(c.valorReal || c.valorAprox)), cop)}</div>`;
     return h;
   }
-  /** El Gerente fija desde cuánto autoriza él (además de lo que pide la Jefe). Solo con cuenta propia: las reglas no dejan a la persona de prueba. */
+  /** El Gerente general fija desde cuánto autoriza él (además de lo que pide la Coordinadora). Solo con cuenta propia: las reglas no dejan a la persona de prueba. */
   function cambiarMonto() {
     abrirAccion({
-      titulo: 'Desde cuánto autorizas tú', sub: `Hoy: ${A().cop(A().montoGerente())}. Las compras de ese valor o más pasan por la Jefe y después por ti. Lo que pide la Jefe lo decides siempre.`,
+      titulo: 'Desde cuánto autorizas tú', sub: `Hoy: ${A().cop(A().montoGerente())}. Las compras de MÁS de ese valor pasan por la Coordinadora y después por ti. Lo que pide la Coordinadora lo decides siempre.`,
       campos: campoNum('acMonto', 'Monto (pesos)', A().montoGerente(), 0, 1000000000, 'Sin puntos ni comas. Con 0, decides todas las compras.'),
-      primario: 'Guardar el monto', icono: 'check', listo: 'Listo: monto guardado. Vale desde la próxima compra que autorice la Jefe.',
+      primario: 'Guardar el monto', icono: 'check', listo: 'Listo: monto guardado. Vale desde la próxima compra que autorice la Coordinadora.',
       ops: () => {
         const n = entero('acMonto');
         if (!(n >= 0 && n <= 1000000000)) return fallar('Escribe un monto entero en pesos, sin puntos ni comas.', 'acMonto');
@@ -566,13 +565,13 @@
   function pedirCompra(artId, cantSug) {
     const a = artId ? artPorId(artId) : null;
     const sug = cantSug || (a ? Math.max(1, num(a.maximo) - num(a.cantidad)) : 1);
-    const elGerente = esGerente(), aut = autorizadorDe({ pideRol: persona().rol, estado: 'pedido' }), monto = A().montoGerente();
+    const general = esGerenteGeneral(), aut = autorizadorDe({ pideRol: persona().rol, estado: 'pedido' }), monto = A().montoGerente(), quienAut = aut === 'gerente' ? 'el Gerente general' : nombreRol(aut);
     cotizaciones = []; extrasN = 0;
     abrirAccion({
       titulo: hagoCompras() ? 'Hacer una compra' : 'Pedir una compra',
-      sub: elGerente ? 'Como Gerente no te autorizas tú: la autoriza otro Gerente (le llega el aviso).'
-        : hagoCompras() ? `Escribe qué vas a comprar. Antes de comprar, ${nombreRol(aut)} la autoriza (le llega el aviso)${aut === 'jefe' ? `; si vale ${A().cop(monto)} o más, después la autoriza el Gerente` : ''}.`
-        : `Escribe qué se va a comprar. Le llega el aviso a ${nombreRol(aut)} para que la autorice${aut === 'jefe' ? `; si vale ${A().cop(monto)} o más, después la autoriza el Gerente` : ''}.`,
+      sub: general ? `Como Gerente general no necesitas que nadie la autorice: queda autorizada y le llega el aviso a ${nombreRol('compras')} para comprarla.`
+        : hagoCompras() ? `Escribe qué vas a comprar. Antes de comprar, ${quienAut} la autoriza (le llega el aviso)${aut === 'coordina' ? `; si vale más de ${A().cop(monto)}, después la autoriza el Gerente general` : ''}.`
+        : `Escribe qué se va a comprar. Le llega el aviso a ${quienAut} para que la autorice${aut === 'coordina' ? `; si vale más de ${A().cop(monto)}, después la autoriza el Gerente general` : ''}.`,
       campos: campoSel('acArt', '¿Es para la bodega?', opsArt('No va a bodega'), a ? a.id : '') +
         campoTxt('acQue', 'Qué se va a comprar', a ? a.nombre : '', 'Ej: botas de seguridad talla 40', 100) +
         `<div class="fields cols">${campoNum('acCant', 'Cantidad', sug, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), a ? a.unidad : 'unidades')}</div>` +
@@ -583,7 +582,7 @@
         campoSel('acProy', 'Proyecto', PROYECTOS.map(p => [p, p]), PROYECTOS[0]) +
         `<div class="field"><span class="lbl">Cotizaciones (opcional, hasta 3 fotos)</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="acCotTxt">Adjuntar fotos de cotizaciones</span><input id="acCot" class="archivo-oculto" type="file" accept="image/*" multiple></label><div id="acCotVer" class="cot-mini"></div></div>`,
       primario: hagoCompras() ? 'Enviar para autorizar' : 'Pedir la compra', icono: 'enviar',
-      listo: elGerente ? 'Listo: compra pedida. Le llegó el aviso a los otros Gerentes para autorizarla.' : hagoCompras() ? `Listo: le llegó el aviso a ${nombreRol(aut)}. Cuando la autorice, haces la compra y la registras.` : `Listo: compra pedida. Le llegó el aviso a ${nombreRol(aut)} para autorizarla.`,
+      listo: general ? `Listo: compra autorizada. Le llegó el aviso a ${nombreRol('compras')} para comprarla.` : hagoCompras() ? `Listo: le llegó el aviso a ${quienAut}. Cuando la autorice, haces la compra y la registras.` : `Listo: compra pedida. Le llegó el aviso a ${quienAut} para autorizarla.`,
       ops: () => {
         const art = artPorId(valor('acArt')), n = entero('acCant'), v = entero('acValor');
         if (!valor('acQue')) return fallar('Escribe qué se va a comprar.', 'acQue');
@@ -606,11 +605,13 @@
         const proyecto = valor('acProy'), resumenTxt = unico ? valor('acQue') : `${valor('acQue')} y ${lineas.length - 1} más`;
         const doc = Object.assign({ que: resumenTxt, cantidad: unico ? n : lineas.reduce((x, l) => x + l.cantidad, 0), unidad: unico ? valor('acUni') : 'artículos', categoria: valor('acCat'), valorAprox: total,
           paraQue: valor('acPara') + (proyecto ? ` (${proyecto})` : ''), proyecto, proveedorSug: valor('acProvSug'), lineas, cotizaciones: cotizaciones.slice(),
-          pide: persona().nombre, pideRol: persona().rol, autoriza: '', autorizaJefe: '', estado: 'pedido', proveedor: '', valorReal: 0, fechaPedido: A().hoyISO(), fechaCompra: '', entregadoA: '', motivoRechazo: '',
+          pide: persona().nombre, pideRol: persona().rol, autoriza: general ? persona().nombre : '', autorizaJefe: '', estado: general ? 'autorizado' : 'pedido', proveedor: '', valorReal: 0, fechaPedido: A().hoyISO(), fechaCompra: '', entregadoA: '', motivoRechazo: '',
           articuloId: unico && art ? art.id : '', factura: '', revisada: false }, misMarcas());
         doc.historial = [{ fecha: ahora(), texto: 'Pidió la compra', por: persona().nombre }];
+        if (general) { doc.autorizaCorreo = window.nube.correo(); doc.historial.push({ fecha: ahora(), texto: 'Autorizó la compra (Gerente general: lo que pide no necesita autorización)', por: persona().nombre }); }
         return [['set', 'compras', window.nube.idNuevo('co'), doc],
-          aviso(aut, 'Compra por autorizar', `${persona().nombre} pide comprar ${resumenTxt} por ${A().cop(total)}.`, elGerente)];
+          general ? aviso('compras', 'Compra autorizada: hay que comprar', `${persona().nombre} autorizó comprar ${resumenTxt} por ${A().cop(total)}.`)
+            : aviso(ROL_DE[aut], 'Compra por autorizar', `${persona().nombre} pide comprar ${resumenTxt} por ${A().cop(total)}.`)];
       }
     });
     // Al escoger un artículo de bodega se llenan solos el nombre, la unidad, la categoría y el valor.
@@ -662,33 +663,33 @@
       <tfoot><tr><td colspan="3"><b>Total aprox.</b></td><td><b>${esH(cop(c.valorAprox))}</b></td></tr></tfoot></table>
       <dl class="datos"><dt>Pidió</dt><dd>${esH(c.pide)}${c.fechaPedido ? ' el ' + esH(App.fechaCorta(c.fechaPedido)) : ''}</dd><dt>Para qué</dt><dd>${esH(c.paraQue)}</dd>
         ${c.proveedorSug ? `<dt>A quién se le compra</dt><dd>${esH(c.proveedorSug)}</dd>` : ''}
-        ${conMonto ? `<dt>Monto del Gerente</dt><dd>${esH(cop(App.montoGerente()))}: desde ahí la compra también la autoriza el Gerente</dd>` : ''}</dl>
+        ${conMonto ? `<dt>Monto del Gerente</dt><dd>${esH(cop(App.montoGerente()))}: si la compra vale más de eso, también la autoriza el Gerente general</dd>` : ''}</dl>
       ${cots.length ? `<div class="field"><span class="lbl">Cotizaciones (${cots.length})</span><div class="cot-mini">${cots.map((x, i) => `<img src="${esH(x)}" alt="Cotización ${i + 1} de ${esH(c.que)}">`).join('')}</div></div>` : ''}`;
   }
 
   function autorizar(c) {
     const App = A(), monto = App.montoGerente(), segundo = c.estado === 'por-gerente';
-    // La Jefe pasa al Gerente lo que vale el monto o más (salvo lo que pidió ella: eso siempre lo decide el Gerente).
-    const pasaAlGerente = !segundo && esJefe() && !['jefe', 'gerente'].includes(c.pideRol) && num(c.valorAprox) >= monto;
+    // La Coordinadora pasa al Gerente general lo que vale MÁS del monto (lo que pidió ella siempre lo decide el Gerente general, y él decide directo).
+    const pasaAlGerente = !segundo && esCoordinador() && num(c.valorAprox) > monto;
     abrirAccion({
-      titulo: segundo ? 'Autorizar compra (segundo paso)' : 'Autorizar compra', sub: `${c.que}: aprox. ${App.cop(c.valorAprox)}.${segundo ? ` La Jefe ya la autorizó${c.autorizaJefe ? ' (' + c.autorizaJefe + ')' : ''}.` : ''}`,
-      campos: detalleCompra(c, true) + (pasaAlGerente ? `<div class="aviso warn"><span>Vale ${esH(App.cop(monto))} o más: al autorizarla pasa al Gerente, que la autoriza después. Aún no se puede comprar.</span></div>` : ''),
-      primario: pasaAlGerente ? 'Autorizar y pasar al Gerente' : 'Autorizar', icono: 'check', secundario: 'Rechazar',
-      listo: pasaAlGerente ? 'Listo: autorizada. Le llegó el aviso al Gerente para el segundo paso.' : `Listo: compra autorizada. Le llegó el aviso a ${nombreRol('compras')} para comprarla.`,
+      titulo: segundo ? 'Autorizar compra (segundo paso)' : 'Autorizar compra', sub: `${c.que}: aprox. ${App.cop(c.valorAprox)}.${segundo ? ` La Coordinadora ya la autorizó${c.autorizaJefe ? ' (' + c.autorizaJefe + ')' : ''}.` : ''}`,
+      campos: detalleCompra(c, true) + (pasaAlGerente ? `<div class="aviso warn"><span>Vale más de ${esH(App.cop(monto))}: al autorizarla pasa al Gerente general, que la autoriza después. Aún no se puede comprar.</span></div>` : ''),
+      primario: pasaAlGerente ? 'Autorizar y pasar al Gerente general' : 'Autorizar', icono: 'check', secundario: 'Rechazar',
+      listo: pasaAlGerente ? 'Listo: autorizada. Le llegó el aviso al Gerente general para el segundo paso.' : `Listo: compra autorizada. Le llegó el aviso a ${nombreRol('compras')} para comprarla.`,
       ops: () => {
         if (esMiaLaCompra(c)) return fallar('No puedes autorizar una compra que pediste tú.');
-        if (!puedoDecidir(c)) return fallar(c.pideRol === 'gerente' ? 'Esta compra la autoriza otro Gerente.' : `Esta compra la autoriza ${nombreRol(autorizadorDe(c))}.`);
-        const porRespaldo = esGerente() && respaldoVencido(c);
+        if (!puedoDecidir(c)) return fallar(`Esta compra la autoriza ${nombreRol(autorizadorDe(c))}.`);
         if (pasaAlGerente) {
-          return [['mezclar', 'compras', c.id, { estado: 'por-gerente', autorizaJefe: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, `Autorizó y la pasó al Gerente (vale ${App.cop(c.valorAprox)}, desde ${App.cop(monto)} decide él)`) }],
+          return [['mezclar', 'compras', c.id, { estado: 'por-gerente', autorizaJefe: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, `Autorizó y la pasó al Gerente general (vale ${App.cop(c.valorAprox)}, más de ${App.cop(monto)} decide él)`) }],
             aviso('gerente', 'Compra por autorizar (segundo paso)', `${persona().nombre} autorizó ${c.que} por ${App.cop(c.valorAprox)} y la pasa a tu decisión.`)];
         }
-        const campos = { estado: 'autorizado', autoriza: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, porRespaldo ? 'El Gerente autorizó la compra (la Jefe no respondió en 2 días)' : segundo ? 'El Gerente autorizó la compra' : c.pideRol === 'gerente' ? 'Otro Gerente autorizó la compra' : 'Autorizó la compra') };
-        if (esJefe() && !segundo) campos.autorizaJefe = persona().nombre;
+        const campos = { estado: 'autorizado', autoriza: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, segundo ? 'El Gerente general autorizó la compra' : esGerenteGeneral() ? 'El Gerente general autorizó la compra' : 'Autorizó la compra') };
+        if (esCoordinador() && !segundo) campos.autorizaJefe = persona().nombre;
+        const avisaCoord = (segundo || esGerenteGeneral()) && c.pideRol !== 'coordcompras';
         return [['mezclar', 'compras', c.id, campos],
           aviso('compras', 'Compra autorizada: hay que comprar', `${persona().nombre} autorizó comprar ${cantTxt(c.cantidad, c.unidad)} de ${c.que}.`),
-          c.pideRol !== 'compras' ? aviso(c.pideRol, 'Te autorizaron la compra', `${persona().nombre} autorizó tu compra de ${c.que}.`, c.pideRol === 'gerente') : null,
-          (segundo && c.autorizaJefe) || porRespaldo ? aviso('jefe', porRespaldo ? 'El Gerente autorizó una compra que esperaba tu respuesta' : 'El Gerente autorizó la compra', `${persona().nombre} autorizó ${c.que}.`) : null];
+          c.pideRol !== 'compras' ? aviso(c.pideRol, 'Te autorizaron la compra', `${persona().nombre} autorizó tu compra de ${c.que}.`, ['gerente', 'coordcompras'].includes(c.pideRol)) : null,
+          avisaCoord ? aviso('coordcompras', 'El Gerente general autorizó la compra', `${persona().nombre} autorizó ${c.que}.`) : null];
       },
       alSecundario: () => rechazar(c)
     });
@@ -701,10 +702,10 @@
       ops: () => {
         if (!valor('acMotivo')) return fallar('Escribe el motivo.', 'acMotivo');
         if (esMiaLaCompra(c)) return fallar('No puedes decidir sobre una compra que pediste tú.');
-        if (!puedoDecidir(c)) return fallar(c.pideRol === 'gerente' ? 'Esta compra la decide otro Gerente.' : `Esta compra la decide ${nombreRol(autorizadorDe(c))}.`);
+        if (!puedoDecidir(c)) return fallar(`Esta compra la decide ${nombreRol(autorizadorDe(c))}.`);
         return [['mezclar', 'compras', c.id, { estado: 'rechazado', motivoRechazo: valor('acMotivo'), autoriza: persona().nombre, autorizaCorreo: window.nube.correo(), historial: paso(c, `Rechazó la compra: ${valor('acMotivo')}`) }],
-          aviso(c.pideRol, 'Rechazaron tu compra', `${c.que}: ${valor('acMotivo')}.`, c.pideRol === 'gerente'),
-          c.estado === 'por-gerente' && c.autorizaJefe ? aviso('jefe', 'El Gerente rechazó la compra', `${c.que}: ${valor('acMotivo')}.`) : null];
+          aviso(c.pideRol, 'Rechazaron tu compra', `${c.que}: ${valor('acMotivo')}.`, ['gerente', 'coordcompras'].includes(c.pideRol)),
+          c.estado === 'por-gerente' && c.autorizaJefe ? aviso('coordcompras', 'El Gerente general rechazó la compra', `${c.que}: ${valor('acMotivo')}.`) : null];
       }
     });
   }
@@ -735,7 +736,7 @@
     fotoFactura = '';
     abrirAccion({
       titulo: sinAutorizacion ? 'Registrar compra hecha sin autorización' : 'Registrar compra',
-      sub: sinAutorizacion ? 'Para que quede el registro: la Jefe recibe el aviso y la compra se ve en rojo en el resumen.' : `${c.que}: ${cantTxt(c.cantidad, c.unidad)}, autorizada por ${c.autoriza || 'la Jefe'}.`,
+      sub: sinAutorizacion ? 'Para que quede el registro: la Coordinadora de compras recibe el aviso y la compra se ve en rojo en el resumen.' : `${c.que}: ${cantTxt(c.cantidad, c.unidad)}, autorizada por ${c.autoriza || 'la Coordinadora'}.`,
       campos: (sinAutorizacion ? campoTxt('acQue', 'Qué se compró', '', 'Ej: garrafones de agua', 100) + `<div class="fields cols">${campoNum('acCant', 'Cantidad', 1, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), 'unidades')}</div>` + campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), 'Otro') + campoTxt('acPara', 'Para qué', '', 'Ej: para la reunión de hoy', 140) + campoTxt('acQuien', 'Quién compró', '', 'Nombre', 60) : '') +
         campoTxt('acProv', 'Proveedor', (a && a.proveedor) || (c && c.proveedor) || '', 'Dónde se compró') +
         campoNum('acValor', 'Valor pagado (pesos)', c ? c.valorAprox : '', 0, null, c ? `Autorizado: aprox. ${A().cop(c.valorAprox)}.` : '') +
@@ -753,15 +754,15 @@
           return [['set', 'compras', window.nube.idNuevo('co'), { que: valor('acQue'), cantidad: entero('acCant'), unidad: valor('acUni'), categoria: valor('acCat'), valorAprox: v, paraQue: valor('acPara') || 'Sin dato',
             pide: valor('acQuien'), pideRol: persona().rol, autoriza: '', estado: 'sin-autorizar', proveedor: valor('acProv'), valorReal: v, fechaPedido: A().hoyISO(), fechaCompra: A().hoyISO(), entregadoA: '', motivoRechazo: '', articuloId: '',
             factura: fotoFactura, revisada: false, historial: [{ fecha: ahora(), texto: `Registró una compra de ${valor('acQuien')} hecha sin autorización en ${valor('acProv')}`, por: persona().nombre }], ...misMarcas() }],
-            aviso('jefe', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} en ${valor('acProv')} (${A().cop(v)}) sin autorización.`),
+            aviso('coordcompras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} en ${valor('acProv')} (${A().cop(v)}) sin autorización.`),
             aviso('compras', 'Compra sin autorización', `${valor('acQuien')} compró ${valor('acQue')} (${A().cop(v)}) sin autorización.`)];
         }
-        // Más del 10 % sobre lo autorizado: queda dicho en el historial y le avisa a la Jefe (y al Gerente si él la había autorizado).
+        // Más del 10 % sobre lo autorizado: queda dicho en el historial y le avisa a la Coordinadora (y al Gerente general si él la había autorizado).
         const sobre = num(c.valorAprox) > 0 && v > num(c.valorAprox) * 1.1, pct = Math.round((v / Math.max(1, num(c.valorAprox)) - 1) * 100);
         return [['mezclar', 'compras', c.id, { estado: 'comprado', proveedor: valor('acProv'), valorReal: v, fechaCompra: A().hoyISO(), factura: fotoFactura || c.factura || '', historial: paso(c, `Compró en ${valor('acProv')} por ${A().cop(v)}${sobre ? ` (${pct} % más de lo autorizado)` : ''}`) }],
           aviso('asistente', 'Compra en camino: hay que recibirla', `${persona().nombre} compró ${cantTxt(c.cantidad, c.unidad)} de ${c.que} en ${valor('acProv')}. ${a ? 'Recíbela en bodega cuando llegue.' : `Cuando llegue, entrégala a ${c.pide}.`}`),
           c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Ya se compró', `Se compró ${c.que} en ${valor('acProv')}.`) : null,
-          sobre ? aviso('jefe', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null,
+          sobre ? aviso('coordcompras', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null,
           sobre && c.estado === 'autorizado' && c.autorizaJefe && c.autoriza !== c.autorizaJefe ? aviso('gerente', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null];
       }
     });
@@ -802,7 +803,7 @@
         const nota = [valor('acNota'), faltan.length ? 'Llegó menos: ' + faltan.join('; ') : ''].filter(Boolean).join('. ');
         return [['mezclar', 'compras', c.id, { estado: 'recibido', entregadoA: hayFuera ? valor('acQuien') : '', historial: paso(c, `Recibida${nota ? '. ' + nota : ''}`) }]].concat(ops,
           [c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya llegó.`) : null],
-          faltan.length ? [aviso('jefe', 'Llegó menos de lo comprado', `${c.que}. ${faltan.join('; ')}.`)] : []);
+          faltan.length ? [aviso('coordcompras', 'Llegó menos de lo comprado', `${c.que}. ${faltan.join('; ')}.`)] : []);
       }
     });
   }
@@ -827,7 +828,7 @@
           ['mezclar', 'compras', c.id, { estado: 'recibido', historial: paso(c, `Recibido en bodega: ${cantTxt(n, a.unidad)}${nota ? '. ' + nota : ''}`) }],
           ...mover(a, n, { articuloId: a.id, articulo: a.nombre, tipo: 'entrada', motivo: 'compra', cantidad: n, saldo: hay + n, persona: c.proveedor || '', nota, compraId: c.id }),
           c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya está en bodega.`) : null,
-          n < num(c.cantidad) ? aviso('jefe', 'Llegó menos de lo comprado', `${c.que}: llegaron ${n} de ${num(c.cantidad)}.`) : null
+          n < num(c.cantidad) ? aviso('coordcompras', 'Llegó menos de lo comprado', `${c.que}: llegaron ${n} de ${num(c.cantidad)}.`) : null
         ];
       }
     });
@@ -847,7 +848,7 @@
     if (puedoDecidir(c)) botones.push(boton('autorizar', 'Autorizar', 'check', ` data-id="${esH(c.id)}"`, 'primary small'), boton('rechazar', 'Rechazar', '', ` data-id="${esH(c.id)}"`, 'ghost small'));
     if (c.estado === 'autorizado' && puedoHacer('compras')) botones.push(boton('comprar', 'Registrar compra', 'carrito', ` data-id="${esH(c.id)}"`, 'primary small'));
     if (c.estado === 'comprado' && puedoHacer('asistente')) botones.push(boton('recibir', lineasDe(c).length > 1 ? 'Recibir la compra' : c.articuloId ? 'Recibir en bodega' : 'Marcar como recibida', 'caja', ` data-id="${esH(c.id)}"`, 'primary small'));
-    if (c.estado === 'sin-autorizar' && !c.revisada && esJefe()) botones.push(boton('revisada', 'Marcar como revisada', 'check', ` data-id="${esH(c.id)}"`, 'small'));
+    if (c.estado === 'sin-autorizar' && !c.revisada && (esCoordinador() || esGerenteGeneral())) botones.push(boton('revisada', 'Marcar como revisada', 'check', ` data-id="${esH(c.id)}"`, 'small'));
     const hist = historial(c).sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)));
     abrirAccion({
       titulo: c.que, sub: `${lineasDe(c).length > 1 ? lineasDe(c).length + ' artículos' : cantTxt(c.cantidad, c.unidad)} · ${c.categoria}`,
@@ -855,7 +856,7 @@
         ${detalleCompra(c, esPorAutorizar(c))}
         <dl class="datos">
           ${num(c.valorReal) ? `<dt>Pagado</dt><dd>${esH(App.cop(c.valorReal))}${sobre ? ' (' + esH(String(sobre.pct)) + ' % más)' : ''}</dd>` : ''}
-          ${c.autorizaJefe ? `<dt>Autorizó la Jefe</dt><dd>${esH(c.autorizaJefe)}</dd>` : ''}
+          ${c.autorizaJefe ? `<dt>Primero autorizó</dt><dd>${esH(c.autorizaJefe)}</dd>` : ''}
           ${c.autoriza ? `<dt>${esPorAutorizar(c) ? 'Autoriza' : 'Decidió'}</dt><dd>${esH(c.autoriza)}</dd>` : ''}
           ${c.proveedor ? `<dt>Proveedor</dt><dd>${esH(c.proveedor)}${c.fechaCompra ? ', ' + esH(App.fechaCorta(c.fechaCompra)) : ''}</dd>` : ''}
           ${c.motivoRechazo ? `<dt>Motivo</dt><dd>${esH(c.motivoRechazo)}</dd>` : ''}

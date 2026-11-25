@@ -4,9 +4,11 @@ rules_version = '2';
 // (su perfil en usuarios/<uid> dice el rol y si el acceso está activo). Sin eso, nadie puede leer ni escribir nada.
 // El rol de una cuenta propia lo pone el código: la persona no lo puede escoger ni cambiar.
 // Cada persona solo puede hacer lo que le toca (lo cumple Firebase, no solo la pantalla):
-//   Gerente: ve todo; autoriza o rechaza las compras que pide la Jefe y las que valen el monto que él fija (ajustesApp/compras)
-//   o más, después de la Jefe; si él pide una compra, nace autorizada. No maneja personas ni códigos.
-//   Jefe: carga y reinicia los datos de prueba, autoriza las compras (las grandes pasan después al Gerente), maneja personas,
+//   Gerente: ve todo a detalle, sin autorizar. Solo el Gerente general (permiso extra «general», que se marca a mano en la consola)
+//   autoriza las compras de más del monto que él fija (ajustesApp/compras) y las que pide la Coordinadora, y lo que él pide nace
+//   autorizado. Coordinador de compras: autoriza las demás compras (las de más del monto pasan después al Gerente general).
+//   Ninguno maneja personas ni códigos.
+//   Jefe: carga y reinicia los datos de prueba (ya NO autoriza compras), maneja personas,
 //   niveles e invitaciones (solo con cuenta propia; nunca invita ni toca a otra Jefe ni a un Gerente: esos se crean con un código
 //   que se pone a mano en la consola de Firebase) y puede hacer cualquier paso (menos autorizarse a sí misma).
 //   Nivel por módulo: lo que dice el rol, salvo que la Jefe le haya puesto otro a esa persona (usuarios/<uid>.permisos).
@@ -25,10 +27,10 @@ service cloud.firestore {
     // Personas de prueba: su correo es «rol.nombre.apellido@example.com» (inventado) y el rol es lo primero. Así no hace falta una
     // lista larga (que gasta el límite de expresiones de las reglas). Cualquiera con la clave pública entra con ellas: por eso la Jefe
     // las puede apagar (ajustesApp/seguridad). Debe coincidir con personas.js (lo comprueba pruebas/reglas.mjs).
-    function ROLES() { return ['gerente', 'jefe', 'equipos', 'soporte', 'compras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional', 'administrativo', 'colaborador', 'financiero', 'consulta']; }
+    function ROLES() { return ['gerente', 'jefe', 'equipos', 'soporte', 'compras', 'coordcompras', 'asistente', 'carros', 'conductor', 'logistica', 'profesional', 'administrativo', 'colaborador', 'financiero', 'consulta']; }
     function correoDePrueba() {
       return request.auth.token.email is string
-        && request.auth.token.email.matches('^(gerente|jefe|equipos|soporte|compras|asistente|carros|conductor|logistica|profesional|administrativo|colaborador|financiero|consulta)[.][a-z.]+@example[.]com$');
+        && request.auth.token.email.matches('^(gerente|jefe|equipos|soporte|compras|coordcompras|asistente|carros|conductor|logistica|profesional|administrativo|colaborador|financiero|consulta)[.][a-z.]+@example[.]com$');
     }
     // Interruptor: la Jefe (cuenta propia) puede apagar las personas de prueba (ajustesApp/seguridad.personasPrueba = false)
     // cuando la app pase a uso real, porque su clave es pública.
@@ -86,6 +88,7 @@ service cloud.firestore {
         : r == 'equipos' ? { 'equipos': 'encargado', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'no' }
         : r == 'soporte' ? { 'equipos': 'soporte', 'inventario': 'pide', 'vehiculos': 'no', 'reuniones': 'no' }
         : r == 'compras' ? { 'equipos': 'no', 'inventario': 'compra', 'vehiculos': 'no', 'reuniones': 'informa' }
+        : r == 'coordcompras' ? { 'equipos': 'no', 'inventario': 'coordina', 'vehiculos': 'no', 'reuniones': 'no' }
         : r == 'asistente' ? { 'equipos': 'no', 'inventario': 'bodega', 'vehiculos': 'autoriza', 'reuniones': 'informa' }
         : r == 'carros' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'autoriza', 'reuniones': 'informa' }
         : r == 'conductor' ? { 'equipos': 'no', 'inventario': 'pide', 'vehiculos': 'reporta', 'reuniones': 'asiste' }
@@ -103,21 +106,27 @@ service cloud.firestore {
     }
     function esJefe() { return esDemo() && rol() == 'jefe'; }
     function esGerente() { return esDemo() && rol() == 'gerente'; }
+    // Gerente general: el único Gerente que autoriza compras y cambia el monto. Lo que él pide nace autorizado. Los demás Gerentes ven, no autorizan.
+    function esGerenteGeneral() { return esGerente() && tieneExtra('general'); }
+    // Coordinador de compras: autoriza las compras (hasta el monto del Gerente) y revisa las hechas sin autorización. No las hace.
+    function esCoordinador() { return esDemo() && nivel('inventario') == 'coordina'; }
     // Permisos extra que el Gerente o la Jefe le marcan a una cuenta propia (y los fijos de las personas de prueba).
     function extras() { return esCuenta() ? perfil().get('extras', []) : esPrueba() ? extrasPrueba() : []; }
-    // Permisos extra de dos personas de prueba (deben coincidir con personas.js): Ángel (Soporte) revisa las actas y Solanyi es encargada de reuniones.
+    // Permisos extra de tres personas de prueba (deben coincidir con personas.js): Ángel (Soporte) revisa las actas, Solanyi es encargada de reuniones y Oscar es el Gerente general.
     function extrasPrueba() {
-      return request.auth.token.email == 'soporte.angel.ortiz@example.com' ? ['actas'] : request.auth.token.email == 'administrativo.solanyi.surquira@example.com' ? ['encargada'] : [];
+      return request.auth.token.email == 'soporte.angel.ortiz@example.com' ? ['actas'] : request.auth.token.email == 'administrativo.solanyi.surquira@example.com' ? ['encargada']
+        : request.auth.token.email == 'gerente.oscar.munoz@example.com' ? ['general'] : [];
     }
-    // Cada permiso extra solo vale para su rol (igual que personas.js): «compra» en Bodega, «actas» en Soporte y «encargada» en Administrativo.
-    function tieneExtra(x) { return x in extras() && rol() == (x == 'compra' ? 'asistente' : x == 'actas' ? 'soporte' : 'administrativo'); }
+    // Cada permiso extra solo vale para su rol (igual que personas.js): «compra» en Bodega, «actas» en Soporte, «encargada» en Administrativo y «general» en Gerente.
+    // «general» (el Gerente general) NO lo puede marcar la Jefe (solo se pone a mano en la consola de Firebase: ver «usuarios» más abajo).
+    function tieneExtra(x) { return x in extras() && rol() == (x == 'compra' ? 'asistente' : x == 'actas' ? 'soporte' : x == 'general' ? 'gerente' : 'administrativo'); }
     // Compras, la Jefe, o la persona de Bodega con el permiso extra «compra».
     function esCompras() {
       let n = nivel('inventario');
       return esDemo() && (n in ['compra', 'jefe'] || (n == 'bodega' && tieneExtra('compra')));
     }
     // Puede pedir material y compras a su nombre (con «solo ver» o «sin acceso» no).
-    function puedePedir() { return esDemo() && nivel('inventario') in ['pide', 'finanzas', 'compra', 'bodega', 'gerente', 'jefe']; }
+    function puedePedir() { return esDemo() && nivel('inventario') in ['pide', 'finanzas', 'coordina', 'compra', 'bodega', 'gerente', 'jefe']; }
     function veInventario() { return esDemo() && nivel('inventario') != 'no'; }
     // Quien solo pide material (nivel «pide») no ve los movimientos de la bodega, y en una cuenta real solo ve SUS pedidos y compras
     // (los que llevan su pideUid). Las personas de prueba (demo) ven todo.
@@ -393,22 +402,21 @@ service cloud.firestore {
     }
 
     // Compras. Pasos: pedido -> autorizado (o rechazado) -> comprado -> recibido.
-    //   Quién autoriza: lo que pide la Jefe lo decide siempre el Gerente. Lo que pide cualquier otra persona lo autoriza la Jefe;
-    //   si vale el monto del Gerente (ajustesApp/compras.montoGerente, por defecto 1.000.000) o más, queda «por-gerente»
-    //   y el Gerente lo autoriza después. Lo que pide un Gerente lo decide OTRO Gerente (nadie decide lo suyo).
-    //   Respaldo: si la Jefe no responde en 2 días, el Gerente puede autorizar o rechazar lo que pidió otra persona.
+    //   Quién autoriza: lo autoriza la Coordinadora de compras (ya no la Jefe). Si vale MÁS del monto del Gerente
+    //   (ajustesApp/compras.montoGerente, por defecto 5.000.000), queda «por-gerente» y lo autoriza después el Gerente general.
+    //   Lo que pide la Coordinadora lo decide siempre el Gerente general. Lo que pide el Gerente general nace autorizado.
+    //   El Gerente general también puede decidir cualquier pedido (acceso total), menos uno suyo. Los demás Gerentes y la Jefe NO autorizan.
     //   Cada compra guarda el correo de quien la pidió y la hora del servidor (pideCorreo, creadoEn): no se pueden inventar.
     //   Cada paso revisa primero el estado (lo barato) para no pasarse del límite de expresiones de las reglas.
     function rutaMonto() { return /databases/$(database)/documents/ajustesApp/compras; }
-    function montoGerente() { return exists(rutaMonto()) ? get(rutaMonto()).data.get('montoGerente', 1000000) : 1000000; }
+    function montoGerente() { return exists(rutaMonto()) ? get(rutaMonto()).data.get('montoGerente', 5000000) : 5000000; }
     // Quien decide deja su correo (el del token): el nombre que escribe no se puede usar para hacerse pasar por otra persona.
     function decideCampos() { return soloCambia(['estado', 'autoriza', 'autorizaCorreo', 'autorizaJefe', 'motivoRechazo', 'historial']) && nuevo().autorizaCorreo == request.auth.token.email && historialSigue(); }
-    // Quién decide un pedido que todavía no tiene respuesta (antes().estado == 'pedido').
+    // Quién decide un pedido que todavía no tiene respuesta (antes().estado == 'pedido'). Nadie decide lo suyo.
     function decidePedido() {
-      return antes().get('pideRol', '') == 'jefe' ? esGerente() && nuevo().estado in ['autorizado', 'rechazado']
-        : antes().get('pideRol', '') == 'gerente' ? esGerente() && antes().get('pideCorreo', '') != request.auth.token.email && nuevo().estado in ['autorizado', 'rechazado']
-        : (esJefe() && (nuevo().estado == 'rechazado' || nuevo().estado == (antes().valorAprox >= montoGerente() ? 'por-gerente' : 'autorizado')))
-          || (esGerente() && nuevo().estado in ['autorizado', 'rechazado'] && request.time > antes().get('creadoEn', request.time) + duration.value(2, 'd'));
+      return antes().get('pideRol', '') == 'coordcompras' ? esGerenteGeneral() && antes().get('pideCorreo', '') != request.auth.token.email && nuevo().estado in ['autorizado', 'rechazado']
+        : (esCoordinador() && antes().get('pideCorreo', '') != request.auth.token.email && (nuevo().estado == 'rechazado' || nuevo().estado == (antes().valorAprox > montoGerente() ? 'por-gerente' : 'autorizado')))
+          || (esGerenteGeneral() && antes().get('pideCorreo', '') != request.auth.token.email && nuevo().estado in ['autorizado', 'rechazado']);
     }
     match /compras/{id} {
       allow read: if veLoSuyo();
@@ -416,30 +424,32 @@ service cloud.firestore {
       // compras hechas sin autorización (nacen sin revisar). La Jefe de prueba crea cualquier compra porque carga y reinicia los datos de ejemplo.
       allow create: if (esJefe() && esPrueba())
         || (nuevo().estado == 'pedido' && nuevo().pideRol == rol() && puedePedir() && pedidoOk())
-        || (nuevo().estado == 'sin-autorizar' && nuevo().revisada == false && esCompras() && pedidoOk());
+        || (nuevo().estado == 'sin-autorizar' && nuevo().revisada == false && esCompras() && pedidoOk())
+        // El Gerente general pide una compra y nace autorizada (nadie autoriza lo suyo ni lo de él).
+        || (nuevo().estado == 'autorizado' && nuevo().pideRol == 'gerente' && esGerenteGeneral() && puedePedir() && pedidoOk() && nuevo().autorizaCorreo == request.auth.token.email);
       allow update:
         // La Jefe de prueba puede todo (reinicia los datos de ejemplo).
         if (esPrueba() && rol() == 'jefe')
         // Decidir un pedido (rechazar, autorizar o pasarlo al Gerente según quién lo pidió y el monto).
         || (antes().estado == 'pedido' && nuevo().estado in ['autorizado', 'por-gerente', 'rechazado'] && decideCampos() && decidePedido())
-        // El Gerente decide lo que la Jefe le pasó por el monto.
-        || (antes().estado == 'por-gerente' && nuevo().estado in ['autorizado', 'rechazado'] && decideCampos() && nuevo().get('autorizaJefe', '') == antes().get('autorizaJefe', '') && esGerente())
+        // El Gerente general decide lo que la Coordinadora le pasó por el monto.
+        || (antes().estado == 'por-gerente' && nuevo().estado in ['autorizado', 'rechazado'] && decideCampos() && nuevo().get('autorizaJefe', '') == antes().get('autorizaJefe', '') && esGerenteGeneral())
         // Comprar (autorizada -> comprada): Compras, sin tocar lo autorizado.
         || (antes().estado == 'autorizado' && nuevo().estado == 'comprado' && soloCambia(['estado', 'proveedor', 'valorReal', 'fechaCompra', 'factura', 'historial']) && historialSigue() && esCompras())
         // Recibir (comprada -> recibida): la bodega.
         || (antes().estado == 'comprado' && nuevo().estado == 'recibido' && soloCambia(['estado', 'entregadoA', 'historial']) && historialSigue() && esBodega())
-        // La Jefe marca como revisada una compra hecha sin autorización.
-        || (antes().estado == 'sin-autorizar' && antes().revisada == false && nuevo().revisada == true && soloCambia(['revisada', 'revisadaPorCorreo', 'historial']) && nuevo().revisadaPorCorreo == request.auth.token.email && historialSigue() && esJefe());
+        // La Coordinadora (o el Gerente general) marca como revisada una compra hecha sin autorización.
+        || (antes().estado == 'sin-autorizar' && antes().revisada == false && nuevo().revisada == true && soloCambia(['revisada', 'revisadaPorCorreo', 'historial']) && nuevo().revisadaPorCorreo == request.auth.token.email && historialSigue() && (esCoordinador() || esGerenteGeneral()));
       // Las compras no se borran (son el rastro de lo que se gastó); solo la Jefe de prueba, al reiniciar los datos de ejemplo.
       allow delete: if esPrueba() && rol() == 'jefe';
     }
 
     // Ajustes de la app (distintos de «ajustes», que solo se escriben a mano en la consola).
-    //   compras.montoGerente: desde ese valor, el Gerente también autoriza. Solo lo cambia el Gerente (cuenta propia), así la Jefe no puede subirlo.
+    //   compras.montoGerente: por encima de ese valor, el Gerente general también autoriza. Solo lo cambia el Gerente general (cuenta propia), así la Jefe no puede subirlo.
     //   seguridad.personasPrueba: la Jefe (cuenta propia) lo pone en false para apagar las personas de prueba (clave pública).
     match /ajustesApp/{id} {
       allow read: if esDemo();
-      allow write: if (id == 'compras' && esCuentaDe(['gerente']) && nuevo().keys().hasOnly(['montoGerente'])
+      allow write: if (id == 'compras' && esCuentaDe(['gerente']) && tieneExtra('general') && nuevo().keys().hasOnly(['montoGerente'])
           && nuevo().montoGerente is int && nuevo().montoGerente >= 0 && nuevo().montoGerente <= 1000000000)
         || (id == 'seguridad' && esCuentaDe(['jefe']) && nuevo().keys().hasOnly(['personasPrueba']) && nuevo().personasPrueba is bool);
     }
@@ -466,7 +476,7 @@ service cloud.firestore {
     function permisosOk(p) {
       return p is map && p.keys().hasOnly(['equipos', 'inventario', 'vehiculos', 'reuniones'])
         && p.get('equipos', 'ver') in ['no', 'ver', 'encargado', 'soporte']
-        && p.get('inventario', 'ver') in ['no', 'ver', 'finanzas', 'pide', 'compra', 'bodega']
+        && p.get('inventario', 'ver') in ['no', 'ver', 'coordina', 'finanzas', 'pide', 'compra', 'bodega']
         && p.get('vehiculos', 'ver') in ['no', 'ver', 'reporta', 'autoriza']
         && p.get('reuniones', 'ver') in ['no', 'ver'];
     }

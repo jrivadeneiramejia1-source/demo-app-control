@@ -42,7 +42,7 @@
   };
   const NIVEL_ALIAS = {
     '': '', 'como su rol': '', 'sin acceso': 'no', no: 'no', ninguno: 'no', 'solo ver': 'ver', ver: 'ver', encargado: 'encargado', soporte: 'soporte',
-    pide: 'pide', 'pide material': 'pide', finanzas: 'finanzas', 've compras y facturas': 'finanzas', compra: 'compra', compras: 'compra', 'hace las compras': 'compra', bodega: 'bodega', 'encargada de bodega': 'bodega', reporta: 'reporta', autoriza: 'autoriza'
+    pide: 'pide', 'pide material': 'pide', finanzas: 'finanzas', 've compras y facturas': 'finanzas', compra: 'compra', compras: 'compra', 'hace las compras': 'compra', bodega: 'bodega', 'encargada de bodega': 'bodega', reporta: 'reporta', autoriza: 'autoriza', coordina: 'coordina', 'coordina compras': 'coordina', 'coordinador de compras': 'coordina', 'coordinadora de compras': 'coordina'
   };
   const EXTRA_ALIAS = { compra: 'compra', compras: 'compra', actas: 'actas', encargada: 'encargada', 'encargada de reuniones': 'encargada' };
   const COLUMNA = { nombre: 'nombre', nombres: 'nombre', 'nombre completo': 'nombre', correo: 'correo', email: 'correo', 'e-mail': 'correo', 'correo electronico': 'correo', rol: 'rol', cargo: 'rol',
@@ -131,7 +131,7 @@
     return entender(filas);
   }
   // Texto de cada nivel como lo entiende el lector del Excel (y como sale en las listas desplegables).
-  const NIVEL_TXT = { no: 'Sin acceso', ver: 'Solo ver', encargado: 'Encargado', soporte: 'Soporte', pide: 'Pide material', finanzas: 'Finanzas', compra: 'Hace las compras', bodega: 'Encargada de bodega', reporta: 'Reporta', autoriza: 'Autoriza' };
+  const NIVEL_TXT = { no: 'Sin acceso', ver: 'Solo ver', encargado: 'Encargado', soporte: 'Soporte', pide: 'Pide material', finanzas: 'Finanzas', coordina: 'Coordina compras', compra: 'Hace las compras', bodega: 'Encargada de bodega', reporta: 'Reporta', autoriza: 'Autoriza' };
   const MODULOS = [['equipos', 'Equipos'], ['inventario', 'Inventario'], ['vehiculos', 'Vehículos'], ['reuniones', 'Reuniones']];
   const nivelTxt = (p, m) => { const v = (p || {})[m]; return v ? (NIVEL_TXT[v] || '') : ''; };
   const extrasTxt = (rol, lista) => window.DEMO.extrasDe(rol, lista).join(', ');
@@ -152,7 +152,7 @@
       filas.push({ estilo: 'ejemplo', celdas: ['Persona Ejemplo Dos', 'persona.dos@example.com', 'Compras', '', '', 'Sin acceso', '', '', 'Ejemplo (se ignora)'] });
       const nivelesDe = m => ['Sin acceso'].concat(D.NIVELES[m].map(x => NIVEL_TXT[x[0]]).filter(Boolean));
       // Hoja oculta con las opciones de los menús desplegables (sus datos empiezan en la fila 5: título, explicación, respiro y títulos).
-      const cols = [roles.map(r => r.rolTxt)].concat(MODULOS.map(([m]) => nivelesDe(m)), [D.EXTRAS.map(e => e.id)]);
+      const cols = [roles.map(r => r.rolTxt)].concat(MODULOS.map(([m]) => nivelesDe(m)), [D.EXTRAS.filter(e => !e.roles.includes('gerente')).map(e => e.id)]);
       const listas = { nombre: 'Listas', titulo: 'Listas de opciones (no tocar)', subtitulo: 'Estas opciones alimentan los menús desplegables de la hoja Personas.', oculta: true,
         columnas: [{ t: 'Rol', ancho: 24 }].concat(MODULOS.map(([, n]) => ({ t: n, ancho: 24 })), [{ t: 'Permisos extra', ancho: 24 }]), filas: [] };
       for (let k = 0; k < Math.max(...cols.map(c => c.length)); k++) listas.filas.push(cols.map(c => c[k] || ''));
@@ -166,7 +166,7 @@
       const ayuda = { nombre: 'Ayuda', titulo: 'Cómo llenar la plantilla', subtitulo: 'Roles, niveles y permisos extra que sirven. Si dejas un nivel vacío, la persona hace lo que dice su rol.',
         columnas: [{ t: 'Qué', ancho: 28 }, { t: 'Opciones o explicación', ancho: 90 }],
         filas: [['Rol', roles.map(r => r.rolTxt).join(', ')], ['Equipos', nivelesDe('equipos').join(', ')], ['Inventario', nivelesDe('inventario').join(', ')], ['Vehículos', nivelesDe('vehiculos').join(', ')],
-          ['Reuniones', nivelesDe('reuniones').join(', ')], ['Permisos extra', D.EXTRAS.map(e => `${e.id}: ${e.txt} (solo para ${e.roles.join(', ')})`).join(' · ')],
+          ['Reuniones', nivelesDe('reuniones').join(', ')], ['Permisos extra', D.EXTRAS.filter(e => !e.roles.includes('gerente')).map(e => `${e.id}: ${e.txt} (solo para ${e.roles.join(', ')})`).join(' · ')],
           ['Estado', 'Lo llena la app (Ya registrada, Invitada, Ejemplo). En las filas nuevas déjalo vacío.'], ['Correo', 'El mismo con el que la persona va a entrar (con Google o con su clave).'],
           ['Cargos del organigrama', 'En la columna Rol también puedes escribir el cargo (por ejemplo «Contador» o «Recepcionista»): la app lo traduce al rol.']] };
       const hojaRoles = { nombre: 'Roles', titulo: 'Roles de la app', subtitulo: 'Para qué sirve cada uno.', columnas: [{ t: 'Rol', ancho: 24 }, { t: 'Quién es', ancho: 44 }, { t: 'Inventario', ancho: 40 }],
