@@ -200,6 +200,7 @@
     const App = A(), q = buscar.trim().toLowerCase();
     const vis = equipos().filter(e => (!['asignado', 'bodega', 'recibido'].includes(f) || e.estado === f) && (!q || [e.serial, e.asignadoA, e.marca, e.modelo, e.tipo, e.proyecto].join(' ').toLowerCase().includes(q)));
     let h = `<input class="search" id="qEq" type="search" placeholder="Buscar serial, persona o modelo" autocomplete="off" aria-label="Buscar equipo" value="${esH(buscar)}">`;
+    h += window.ExcelBD.html(cfgEquipos());
     h += `<div class="count" aria-live="polite">${vis.length} de ${D().equipos.length} equipos</div>`;
     if (!vis.length) return h + UI.vacio('equipos', 'No hay equipos con ese filtro', '');
     return h + `<div class="list">${vis.map(e => {
@@ -647,6 +648,39 @@
   $('btnEntregar').addEventListener('click', () => { if (esEncargado()) entrega(''); });
   $('btnDevolver').addEventListener('click', () => { if (esEncargado()) devolucion(''); });
   $('btnNuevoEq').addEventListener('click', () => { if (esEncargado()) nuevo(); });
+
+  /* ---------- base de datos en Excel (excel-bd.js): agregar equipos y cambiar fechas y observaciones ---------- */
+  const cfgEquipos = () => ({
+    clave: 'equipos', hoja: 'Equipos', titulo: 'Base de datos: equipos', sub: 'Una fila por equipo', archivo: 'Base de datos Equipos',
+    acciones: ['Agregar', 'Cambiar', 'Eliminar'], puedeSubir: esEncargado, puedeEliminar: esJefe,
+    columnas: [
+      { t: 'Serial', k: 'serial', clave: true, obligatoria: true, fija: true, unico: true, mayus: true, max: 30, ancho: 18 },
+      { t: 'Tipo', k: 'tipo', obligatoria: true, fija: true, lista: TIPOS_EQ, ancho: 24 },
+      { t: 'Marca', k: 'marca', obligatoria: true, fija: true, max: 40, ancho: 18 },
+      { t: 'Modelo', k: 'modelo', fija: true, max: 60, ancho: 22 },
+      { t: 'Estado', k: 'estado', gris: true, ancho: 16 }, { t: 'Asignado a', k: 'asignadoA', gris: true, ancho: 24 }, { t: 'Proyecto', k: 'proyecto', gris: true, ancho: 22 },
+      { t: 'Último mantenimiento', k: 'ultimoMtto', tipo: 'fecha' }, { t: 'Último backup', k: 'ultimoBackup', tipo: 'fecha' },
+      { t: 'Observaciones', k: 'obs', max: 160, ancho: 40 }],
+    filas: () => equipos().map(e => ({ id: e.id, v: { serial: e.serial, tipo: e.tipo, marca: e.marca, modelo: e.modelo || '', estado: (EST[e.estado] || [e.estado])[0], asignadoA: e.asignadoA || '', proyecto: e.proyecto || '', ultimoMtto: e.ultimoMtto || '', ultimoBackup: e.ultimoBackup || '', obs: e.obs || '' } })),
+    ejemplo: { serial: 'DEMO-0099', tipo: 'Portátil', marca: 'Lenovo', modelo: 'ThinkPad E14', obs: 'Equipo de ejemplo' },
+    ayuda: [['Equipo nuevo', 'Queda en bodega, listo para entregar. Obligatorios: Serial (letras, números y guiones), Tipo y Marca.'],
+      ['Qué se puede cambiar', 'Solo la fecha del último mantenimiento, la del último backup y las observaciones (queda una línea en su historial). El serial, el tipo, la marca y el modelo no cambian en un equipo ya registrado. Entregar o recibir equipos se hace con el acta, en la app.'],
+      ['Eliminar', 'Solo la Jefe, y solo un equipo que no esté asignado, sin actas ni tareas pendientes.']],
+    revisar: (x, { nuevo }) => { if (nuevo && !/^[A-Z0-9-]{4,30}$/.test(String(x.v.serial))) x.errores.push('Serial: usa letras, números y guiones (de 4 a 30).'); },
+    bloqueaEliminar: id => {
+      const e = eqPorId(id);
+      if (!e) return 'Ese equipo ya no existe.';
+      if (e.estado === 'asignado') return 'Está asignado a una persona: recíbelo primero.';
+      if (hojasDe(id).length) return 'Tiene actas de entrega: se guardan como rastro y no se puede eliminar.';
+      if (D().tareasEq.some(t => t.equipoId === id && t.estado === 'pendiente')) return 'Tiene tareas de mantenimiento o backup pendientes.';
+      return null;
+    },
+    opsAgregar: x => [['set', 'equipos', window.nube.idNuevo('eq'), { serial: x.v.serial, tipo: x.v.tipo, marca: x.v.marca, modelo: x.v.modelo, estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', ultimoMtto: x.v.ultimoMtto, ultimoBackup: x.v.ultimoBackup, obs: x.v.obs,
+      pendientes: { mtto: false, backup: false }, historial: [{ fecha: hoy(), tipo: 'registro', persona: persona().nombre, nota: 'Equipo registrado en bodega (desde el Excel)', por: persona().nombre }] }]],
+    opsCambiar: x => { const e = eqPorId(x.id); return e ? [['mezclar', 'equipos', e.id, Object.assign({}, x.datos, { historial: conPaso(e, { tipo: 'revision', persona: persona().nombre, nota: 'Datos cambiados desde el Excel' }) })]] : []; },
+    opsEliminar: x => [['borrar', 'equipos', x.id]]
+  });
+  window.ExcelBD.conectar($('eqContenido'), { equipos: cfgEquipos }, () => pintar());
 
   window.Equipos = Object.freeze({ pintar, resumen });
 })();

@@ -215,7 +215,8 @@ try {
   log('el artículo nuevo quedó con 7, precio 9500 y su movimiento de cantidad inicial', !!pilas && pilas[1].cantidad === 7 && pilas[1].costo === 9500 && pilas[1].categoria === 'Eléctricos' && despBd.movimientos[pilas[1].ultimoMov].motivo === 'inicial' && despBd.movimientos[pilas[1].ultimoMov].articuloId === pilas[0]);
   log('se eliminó Papel higiénico y no se borró ningún movimiento (solo se sumaron el ajuste y la cantidad inicial)', !despBd.articulos['ar-015'] && Object.keys(despBd.movimientos).length === Object.keys(antesBd.movimientos).length + 2);
   log('las filas con problema no guardaron nada (sigue 1 sola «Botas de seguridad talla 40» en Riohacha y otra nueva en Guamal, no hay «Cable raro»)', Object.values(despBd.articulos).filter(a => a.nombre === 'Botas de seguridad talla 40' && a.bodega === 'Riohacha').length === 1 && Object.values(despBd.articulos).filter(a => a.nombre === 'Botas de seguridad talla 40' && a.bodega === 'Guamal').length === 1 && !Object.values(despBd.articulos).some(a => /Cable raro|Mal máximo|^=/.test(a.nombre)));
-  // Volver a subir el mismo Excel no repite nada.
+  // Volver a subir el mismo Excel no repite nada. (Se espera un momento a que lleguen los datos nuevos: si la lista se repinta justo mientras se escoge el archivo, el archivo se pierde.)
+  await esp(900);
   await t.page.setInputFiles('#invArchivo', rutaBd);
   log('al subir el mismo Excel otra vez no hay nada nuevo que guardar (el artículo nuevo no se duplica)', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return /nada para guardar/.test(x) && !!document.querySelector('#invContenido [data-accion="exguardar"][disabled]'); }), (await texto(t.page, '#invContenido')).slice(0, 300));
   await t.page.click('#invContenido [data-accion="exdescartar"]');
@@ -1166,6 +1167,158 @@ try {
   log('el Gerente ve Resumen, Próximas y Realizadas, sin correos ni botones', await hasta(t.page, () => [...document.querySelectorAll('#reuSecciones [data-sec]')].map(b => b.dataset.sec).join(',') === 'resumen,proximas,pasadas' && /Tareas pendientes por persona/.test(document.getElementById('reuContenido').textContent) && !document.querySelector('#reuContenido [data-accion="correo"], #reuContenido [data-accion="autorizar"]')));
   await t.page.screenshot({ path: path.join(CAPTURAS, '11-reuniones-gerente.png'), fullPage: true });
   log('vuelve a Ana (Jefe)', await cambiar(t.page, 'jefe'));
+
+  console.log('6a. Bases de datos en Excel de Equipos, Carros, Reuniones y Compras');
+  await cambiar(t.page, 'jefe');
+  const xlsxHoja = (hoja, filas, ruta) => t.page.evaluate(async ([h, f]) => { const X = await window.Inventario.cargarXlsx(), l = X.utils.book_new(); X.utils.book_append_sheet(l, X.utils.json_to_sheet(f), h); return X.write(l, { type: 'base64', bookType: 'xlsx' }); }, [hoja, filas]).then(b => fs.writeFileSync(ruta, Buffer.from(b, 'base64')));
+  const dBD = () => t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos')));
+  const texto6 = sel => texto(t.page, sel);
+  const bajarBD = async (cont, nombreRe, rutaSalida) => { const [d] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click(`${cont} [data-xbd="bajar"]`)]); if (d) await d.saveAs(rutaSalida); return d; };
+  const subirBD = async (cont, clave, ruta) => { await t.page.setInputFiles(`${cont} input[data-xbd-archivo="${clave}"]`, ruta); };
+  const guardarBD = async cont => { await t.page.click(`${cont} [data-xbd="guardar"]`); };
+
+  // ---------- Equipos ----------
+  await t.page.click('.tab[data-vista="equipos"]'); await t.page.click('#eqSecciones [data-sec="equipos"]');
+  log('Equipos trae «Descargar base de datos» y «Subir Excel»', await hasta(t.page, () => !!document.querySelector('#eqContenido [data-xbd="bajar"]') && !!document.querySelector('#eqContenido input[data-xbd-archivo="equipos"]')));
+  const rutaBdEq = path.join(CAPTURAS, 'bd-equipos.xlsx'), dEq = await bajarBD('#eqContenido', /Equipos/, rutaBdEq);
+  log('se baja «Base de datos Equipos …xlsx»', !!dEq && /^Base de datos Equipos .*\.xlsx$/.test(dEq.suggestedFilename()), dEq && dEq.suggestedFilename());
+  if (dEq) {
+    const hs = await excelInfo(rutaBdEq), e = hs.find(h => h.nombre === 'Equipos');
+    log('trae las hojas Equipos, Ayuda y una de listas oculta, con formato y las columnas esperadas', ['Equipos', 'Ayuda', 'Listas'].every(n => hs.some(h => h.nombre === n)) && hs.find(h => h.nombre === 'Listas').oculta && bienFormado(e) && e.titulos.join() === 'ID,Acción,Serial,Tipo,Marca,Modelo,Estado,Asignado a,Proyecto,Último mantenimiento,Último backup,Observaciones', JSON.stringify(e.titulos));
+    log('trae los 12 equipos con su código, una fila de ejemplo y filas vacías', e.filas.filter(f => /^eq-\d+$/.test(f[0])).length === 12 && e.filas.filter(f => /^Ejemplo/.test(f[1])).length === 1 && e.filas.filter(f => f.slice(0, 12).every(x => x === '')).length >= 15);
+  }
+  const rutaEq = path.join(CAPTURAS, 'bd-equipos-cambiada.xlsx');
+  await xlsxHoja('Equipos', [
+    { Serial: 'demo-0099', Tipo: 'Portátil', Marca: 'Lenovo', Modelo: 'ThinkPad E14', Observaciones: 'Nuevo desde el Excel' },
+    { ID: 'eq-004', 'Último backup': '2026-11-20', Observaciones: 'Se copiaron las fotos' },
+    { ID: 'eq-002', Acción: 'Eliminar' },
+    { Serial: 'DEMO-0001', Tipo: 'Portátil', Marca: 'X' },
+    { Serial: 'DEMO-0098', Tipo: 'Nave espacial', Marca: 'X' },
+    { ID: 'eq-006', Marca: 'Otra marca' },
+    { Serial: 'ab', Tipo: 'Portátil', Marca: 'Y' }
+  ], rutaEq);
+  await subirBD('#eqContenido', 'equipos', rutaEq);
+  log('al subir muestra: 1 para agregar, 1 para cambiar y 5 con problema', await hasta(t.page, () => { const x = document.getElementById('eqContenido').textContent; return /1 para agregar · 1 para cambiar/.test(x) && /5 con problema/.test(x); }), (await texto6('#eqContenido')).slice(0, 500));
+  log('marca el equipo asignado que no se elimina, el serial repetido, el tipo que no está, el dato fijo y el serial mal escrito', await t.page.evaluate(() => { const x = document.getElementById('eqContenido').textContent; return /Está asignado a una persona/.test(x) && /ya hay uno con «DEMO-0001»/.test(x) && /Tipo: «Nave espacial» no está en la lista/.test(x) && /Marca: el Excel no cambia este dato/.test(x) && /Serial: usa letras, números y guiones/.test(x); }));
+  const antesEq = await dBD();
+  log('mientras se ve la vista previa no se guarda nada', Object.keys(antesEq.equipos).length === 12);
+  await guardarBD('#eqContenido');
+  log('guarda 1 agregado y 1 cambiado', await hasta(t.page, () => /1 agregado, 1 cambiado/.test(document.body.textContent) && !document.querySelector('#eqContenido [data-xbd="guardar"]')));
+  const dEq1 = await dBD(), nuevoEq = Object.entries(dEq1.equipos).find(([, e]) => e.serial === 'DEMO-0099');
+  log('el equipo nuevo queda en bodega, con el serial en mayúsculas y su línea de historial', !!nuevoEq && nuevoEq[1].estado === 'bodega' && nuevoEq[1].marca === 'Lenovo' && nuevoEq[1].obs === 'Nuevo desde el Excel' && nuevoEq[1].historial.length === 1 && nuevoEq[1].pendientes.mtto === false);
+  log('el equipo que cambió guarda la fecha y la observación, suma una línea al historial y no cambia lo demás', dEq1.equipos['eq-004'].ultimoBackup === '2026-11-20' && dEq1.equipos['eq-004'].obs === 'Se copiaron las fotos' && dEq1.equipos['eq-004'].historial.length === antesEq.equipos['eq-004'].historial.length + 1 && dEq1.equipos['eq-004'].estado === antesEq.equipos['eq-004'].estado && dEq1.equipos['eq-004'].asignadoA === antesEq.equipos['eq-004'].asignadoA && !!dEq1.equipos['eq-002']);
+  await esp(900);
+  await subirBD('#eqContenido', 'equipos', rutaEq);
+  log('subir el mismo Excel otra vez no repite nada (ni el equipo nuevo)', await hasta(t.page, () => /nada para guardar/.test(document.getElementById('eqContenido').textContent) && !!document.querySelector('#eqContenido [data-xbd="guardar"][disabled]')), (await texto6('#eqContenido')).slice(0, 400));
+  await t.page.click('#eqContenido [data-xbd="descartar"]');
+  const rutaEq2 = path.join(CAPTURAS, 'bd-equipos-eliminar.xlsx');
+  await xlsxHoja('Equipos', [{ ID: nuevoEq[0], Acción: 'Eliminar', Serial: 'DEMO-0099' }], rutaEq2);
+  await esp(900);
+  await subirBD('#eqContenido', 'equipos', rutaEq2);
+  log('«Eliminar» muestra 1 para eliminar', await hasta(t.page, () => /1 para eliminar/.test(document.getElementById('eqContenido').textContent)));
+  await guardarBD('#eqContenido'); await t.page.click('#cfSi');
+  log('el equipo se elimina (solo la Jefe) y los 12 de siempre siguen', await hasta(t.page, () => Object.keys(JSON.parse(localStorage.getItem('__fb_datos')).equipos).length === 12 && !Object.values(JSON.parse(localStorage.getItem('__fb_datos')).equipos).some(e => e.serial === 'DEMO-0099')));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '13-excel-equipos-bd.png'), fullPage: true });
+
+  // ---------- Carros ----------
+  await t.page.click('.tab[data-vista="vehiculos"]'); await t.page.click('#vehSecciones [data-sec="carros"]');
+  log('Carros trae «Descargar base de datos» y «Subir Excel» (solo la Jefe)', await hasta(t.page, () => !!document.querySelector('#vehContenido [data-xbd="bajar"]') && !!document.querySelector('#vehContenido input[data-xbd-archivo="vehiculos"]')));
+  const rutaBdVe = path.join(CAPTURAS, 'bd-carros.xlsx'), dVe = await bajarBD('#vehContenido', /Carros/, rutaBdVe);
+  log('se baja «Base de datos Carros …xlsx» con los 4 carros, su formato y fecha como texto', !!dVe && /^Base de datos Carros .*\.xlsx$/.test(dVe.suggestedFilename()) && await (async () => { const hs = await excelInfo(rutaBdVe), e = hs.find(h => h.nombre === 'Carros'); return !!e && bienFormado(e) && e.titulos.join() === 'ID,Acción,Placa,Marca,Modelo,Año,Color,Kilometraje,SOAT vence,Técnico-mecánica vence,Conductor,Estado' && e.filas.filter(f => /^ve-/.test(f[0])).length === 4; })());
+  const rutaVe = path.join(CAPTURAS, 'bd-carros-cambiada.xlsx');
+  await xlsxHoja('Carros', [
+    { Placa: 'xyz 789', Marca: 'Toyota', Modelo: 'Hilux', Año: 2024, Color: 'Blanco', Kilometraje: 0, 'SOAT vence': '2027-06-30', 'Técnico-mecánica vence': 46568 },
+    { ID: 've-jkl012', Kilometraje: 21500, Color: 'Plata brillante' },
+    { ID: 've-def456', Kilometraje: 100 },
+    { ID: 've-abc123', Acción: 'Eliminar' },
+    { ID: 've-ghi789', Acción: 'Eliminar' },
+    { Placa: 'ABC 123', Marca: 'X', Modelo: 'Y', Año: 2020, Kilometraje: 1, 'SOAT vence': '2027-01-01', 'Técnico-mecánica vence': '2027-01-01' },
+    { Placa: 'QWE 456', Marca: 'X', Modelo: 'Y', Año: 1800, Kilometraje: 1, 'SOAT vence': 'mañana', 'Técnico-mecánica vence': '2027-01-01' }
+  ], rutaVe);
+  await subirBD('#vehContenido', 'vehiculos', rutaVe);
+  log('al subir muestra: 1 para agregar, 1 para cambiar y 5 con problema', await hasta(t.page, () => { const x = document.getElementById('vehContenido').textContent; return /1 para agregar · 1 para cambiar/.test(x) && /5 con problema/.test(x); }), (await texto6('#vehContenido')).slice(0, 500));
+  log('marca el kilometraje que baja, el carro en uso, el que tiene novedades, la placa repetida y el año y la fecha mal', await t.page.evaluate(() => { const x = document.getElementById('vehContenido').textContent; return /no puede bajar/.test(x) && /Está en uso/.test(x) && /Tiene salidas, llegadas o novedades/.test(x) && /Placa: ya hay uno con «ABC 123»/.test(x) && /Año: debe ser 1990 o más/.test(x) && /SOAT vence: «?.*no es una fecha/.test(x); }));
+  await guardarBD('#vehContenido');
+  log('guarda el carro nuevo y el cambio', await hasta(t.page, () => /1 agregado, 1 cambiado/.test(document.body.textContent)));
+  const dVe1 = await dBD(), nuevoVe = dVe1.vehiculos['ve-xyz789'];
+  log('el carro nuevo queda «disponible», con la placa en mayúsculas y las fechas (también la que venía como fecha de Excel)', !!nuevoVe && nuevoVe.placa === 'XYZ 789' && nuevoVe.estado === 'disponible' && nuevoVe.soat === '2027-06-30' && nuevoVe.tecno === '2027-06-30' && nuevoVe.anio === 2024 && nuevoVe.historial.length === 1);
+  log('el carro que cambió guarda el kilometraje y el color con una línea de historial', dVe1.vehiculos['ve-jkl012'].km === 21500 && dVe1.vehiculos['ve-jkl012'].color === 'Plata brillante' && dVe1.vehiculos['ve-jkl012'].historial.length === 1 && dVe1.vehiculos['ve-def456'].km === 62800 && !!dVe1.vehiculos['ve-abc123']);
+  const rutaVe2 = path.join(CAPTURAS, 'bd-carros-eliminar.xlsx');
+  await xlsxHoja('Carros', [{ ID: 've-xyz789', Acción: 'Eliminar', Placa: 'XYZ 789' }], rutaVe2);
+  await esp(900);
+  await subirBD('#vehContenido', 'vehiculos', rutaVe2);
+  await hasta(t.page, () => /1 para eliminar/.test(document.getElementById('vehContenido').textContent));
+  await guardarBD('#vehContenido'); await t.page.click('#cfSi');
+  log('el carro nuevo, sin movimientos, sí se elimina', await hasta(t.page, () => !JSON.parse(localStorage.getItem('__fb_datos')).vehiculos['ve-xyz789'] && Object.keys(JSON.parse(localStorage.getItem('__fb_datos')).vehiculos).length === 4));
+
+  // ---------- Reuniones ----------
+  await t.page.click('.tab[data-vista="reuniones"]'); await t.page.click('#reuSecciones [data-sec="proximas"]');
+  log('Reuniones trae «Descargar base de datos» y «Subir Excel» (solo la Jefe)', await hasta(t.page, () => !!document.querySelector('#reuContenido [data-xbd="bajar"]') && !!document.querySelector('#reuContenido input[data-xbd-archivo="reuniones"]')));
+  const rutaBdRe = path.join(CAPTURAS, 'bd-reuniones.xlsx'), dRe = await bajarBD('#reuContenido', /Reuniones/, rutaBdRe);
+  log('se baja «Base de datos Reuniones …xlsx» con las reuniones que ya están y lo que trae cada una', !!dRe && /^Base de datos Reuniones .*\.xlsx$/.test(dRe.suggestedFilename()) && await (async () => { const hs = await excelInfo(rutaBdRe), e = hs.find(h => h.nombre === 'Reuniones'); return !!e && bienFormado(e) && e.titulos.join() === 'ID,Acción,Comunidad,Fecha,Hora,Lugar,Personas esperadas,Camionetas,Refrigerio,Almuerzo,Estado' && e.filas.filter(f => /^re-/.test(f[0])).length >= 4; })());
+  const activa = Object.values((await dBD()).reuniones).find(r => ['programada', 'reprogramada'].includes(r.estado)).comunidad;
+  const rutaRe = path.join(CAPTURAS, 'bd-reuniones-nuevas.xlsx');
+  await xlsxHoja('Reuniones', [
+    { Comunidad: 'Comunidad Excel Uno', Fecha: '2030-02-10', Hora: '09:30', Lugar: 'Casa comunal', 'Personas esperadas': 25, Camionetas: 1, Refrigerio: 'Sí', Almuerzo: 'No' },
+    { Comunidad: 'Comunidad Excel Dos', Fecha: '10/03/2030', Hora: '14:00' },
+    { Comunidad: 'Comunidad Pasada', Fecha: '2020-01-01', Hora: '09:00' },
+    { Comunidad: 'Comunidad Excel Tres', Fecha: '2030-04-01', Hora: '08:00' },
+    { Comunidad: 'comunidad excel tres', Fecha: '2030-04-02', Hora: '08:00' },
+    { Comunidad: activa, Fecha: '2030-05-01', Hora: '08:00' },
+    { Comunidad: 'Comunidad Hora Mala', Fecha: '2030-06-01', Hora: 'tarde' }
+  ], rutaRe);
+  const re0 = await dBD(), nRe0 = Object.keys(re0.reuniones).length, nNe0 = Object.keys(re0.necesidades).length;
+  await subirBD('#reuContenido', 'reuniones', rutaRe);
+  log('al subir muestra: 2 para agregar y 5 con problema (fecha pasada, comunidad repetida en el Excel o ya activa, hora mala)', await hasta(t.page, () => { const x = document.getElementById('reuContenido').textContent; return /2 para agregar/.test(x) && /5 con problema/.test(x) && /Fecha: ya pasó/.test(x) && /repetida en el Excel/.test(x) && /Ya hay una reunión activa con esa comunidad/.test(x) && /Hora: no es una hora/.test(x) && /faltan las personas/.test(x); }), (await texto6('#reuContenido')).slice(0, 600));
+  await guardarBD('#reuContenido');
+  log('guarda las 2 reuniones nuevas', await hasta(t.page, () => /2 agregados/.test(document.body.textContent)));
+  const re1 = await dBD(), uno = Object.entries(re1.reuniones).find(([, r]) => r.comunidad === 'Comunidad Excel Uno'), dos = Object.entries(re1.reuniones).find(([, r]) => r.comunidad === 'Comunidad Excel Dos');
+  const tareasDe = id => Object.values(re1.necesidades).filter(n => n.reunionId === id).map(n => n.tipo).sort().join();
+  log('la reunión completa queda programada con su reparto: comida, carros, logística, asistencia de los profesionales y acta', !!uno && uno[1].estado === 'programada' && uno[1].fecha === '2030-02-10' && uno[1].lugar === 'Casa comunal' && uno[1].asistentes === 25 && uno[1].faltan.length === 0 && /refrigerios/.test(tareasDe(uno[0])) && !/almuerzo/.test(tareasDe(uno[0])) && /carros/.test(tareasDe(uno[0])) && /logistica/.test(tareasDe(uno[0])) && /asistencia/.test(tareasDe(uno[0])) && /acta/.test(tareasDe(uno[0])), uno && tareasDe(uno[0]));
+  log('la que no trae lugar ni personas queda con «faltan» y solo con logística, asistencia y acta (fecha escrita día/mes/año)', !!dos && dos[1].fecha === '2030-03-10' && dos[1].faltan.join() === 'lugar,personas' && !/refrigerios|almuerzo|carros/.test(tareasDe(dos[0])) && /acta/.test(tareasDe(dos[0])));
+  log('cada reunión nueva avisa a los roles (comida a Compras, carros a Transporte, bodega, logística, profesionales y administrativo)', ['compras', 'carros', 'asistente', 'logistica', 'profesional', 'administrativo'].every(r => Object.values(re1.avisos).some(a => a.para === r && /Comunidad Excel Uno/.test(a.texto))) && Object.keys(re1.reuniones).length === nRe0 + 2 && Object.keys(re1.necesidades).length > nNe0);
+  await esp(900);
+  await subirBD('#reuContenido', 'reuniones', rutaRe);
+  log('subir el mismo Excel otra vez no las repite: ahora salen como «ya hay una reunión activa»', await hasta(t.page, () => { const x = document.getElementById('reuContenido').textContent; return /Ya hay una reunión activa con esa comunidad/.test(x) && !/2 para agregar/.test(x); }));
+  await t.page.click('#reuContenido [data-xbd="descartar"]');
+
+  // ---------- Compras ----------
+  await t.page.click('.tab[data-vista="inventario"]'); await t.page.click('#invSecciones [data-sec="compras"]');
+  log('Compras trae «Descargar base de datos» y «Subir Excel»', await hasta(t.page, () => !!document.querySelector('#invContenido [data-xbd="bajar"]') && !!document.querySelector('#invContenido input[data-xbd-archivo="compras"]')));
+  const rutaBdCo = path.join(CAPTURAS, 'bd-compras.xlsx'), dCo = await bajarBD('#invContenido', /Compras/, rutaBdCo);
+  log('se baja «Base de datos Compras …xlsx» con las compras que ya están (en gris) y las listas de unidad, categoría y proyecto', !!dCo && /^Base de datos Compras .*\.xlsx$/.test(dCo.suggestedFilename()) && await (async () => { const hs = await excelInfo(rutaBdCo), e = hs.find(h => h.nombre === 'Compras'); return !!e && bienFormado(e) && e.filas.filter(f => /^co-/.test(f[0])).length === 9 && e.titulos.slice(0, 9).join() === 'ID,Acción,Qué,Cantidad,Unidad,Categoría,Valor total,Para qué,Proyecto'; })());
+  const rutaCo = path.join(CAPTURAS, 'bd-compras-nuevas.xlsx');
+  await xlsxHoja('Compras', [
+    { Qué: 'Resmas de papel oficio', Cantidad: 5, Unidad: 'resmas', Categoría: 'Papelería', 'Valor total': '$140.000', 'Para qué': 'Para imprimir las listas', Proyecto: 'Oficina', 'Proveedor sugerido': 'Papelería Central' },
+    { Qué: 'Cable de red de 10 m', Cantidad: 3, Unidad: 'unidades', Categoría: 'Cómputo', 'Valor total': 45000, 'Para qué': 'Para la oficina nueva' },
+    { Qué: 'Algo sin valor', Cantidad: 1, Unidad: 'unidades', Categoría: 'Otro', 'Valor total': 0, 'Para qué': 'X' },
+    { Qué: 'Unidad rara', Cantidad: 1, Unidad: 'galaxias', Categoría: 'Otro', 'Valor total': 1000, 'Para qué': 'X' },
+    { Qué: 'Sin para qué', Cantidad: 1, Unidad: 'unidades', Categoría: 'Otro', 'Valor total': 1000 },
+    { ID: 'co-001', Qué: 'Cambiar una que ya está', Cantidad: 99 }
+  ], rutaCo);
+  const co0 = await dBD(), nCo0 = Object.keys(co0.compras).length;
+  await subirBD('#invContenido', 'compras', rutaCo);
+  log('al subir muestra: 2 para agregar, 3 con problema y 1 que ya estaba (no se toca)', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return /2 para agregar/.test(x) && /3 con problema/.test(x) && /1 ya estaba en la app \(no se tocan; para cambiarlos usa la app\)/.test(x) && /Valor total: debe ser 1 o más/.test(x) && /«galaxias» no está en la lista/.test(x) && /Falta Para qué/.test(x); }), (await texto6('#invContenido')).slice(0, 600));
+  await guardarBD('#invContenido');
+  log('guarda las 2 compras', await hasta(t.page, () => /2 agregados/.test(document.body.textContent)));
+  const co1 = await dBD(), nuevasCo = Object.values(co1.compras).filter(c => /desde el Excel/.test((c.historial[0] || {}).texto || ''));
+  log('las compras nuevas quedan «pedido» (la Jefe no se autoriza), con su rol, correo, hora, una línea y el valor en pesos', nuevasCo.length === 2 && nuevasCo.every(c => c.estado === 'pedido' && c.pideRol === 'jefe' && !!c.pideUid && !!c.pideCorreo && !!c.creadoEn && c.lineas.length === 1 && c.autoriza === '') && nuevasCo.find(c => /oficio/.test(c.que)).valorAprox === 140000 && nuevasCo.find(c => /oficio/.test(c.que)).proyecto === 'Oficina' && nuevasCo.find(c => /Cable/.test(c.que)).proyecto === 'Proyecto Costa Norte' && Object.keys(co1.compras).length === nCo0 + 2);
+  log('la Coordinadora de compras recibe un solo aviso por las 2 compras', Object.values(co1.avisos).filter(a => a.para === 'coordcompras' && /2 compras desde un Excel/.test(a.texto)).length === 1);
+  await cambiar(t.page, 'gerente');
+  await t.page.click('.tab[data-vista="inventario"]'); await t.page.click('#invSecciones [data-sec="compras"]');
+  const rutaCo2 = path.join(CAPTURAS, 'bd-compras-gerente.xlsx');
+  await xlsxHoja('Compras', [{ Qué: 'Cafetera industrial', Cantidad: 1, Unidad: 'unidades', Categoría: 'Cafetería', 'Valor total': 900000, 'Para qué': 'Para la sala de juntas' }], rutaCo2);
+  await subirBD('#invContenido', 'compras', rutaCo2);
+  await hasta(t.page, () => /1 para agregar/.test(document.getElementById('invContenido').textContent));
+  await guardarBD('#invContenido');
+  log('lo que sube el Gerente general desde el Excel nace «autorizado» y avisa a Compras', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')), c = Object.values(d.compras).find(x => x.que === 'Cafetera industrial'); return !!c && c.estado === 'autorizado' && c.autoriza === 'Oscar Muñoz' && c.autorizaCorreo === 'gerente.oscar.munoz@example.com' && c.historial.length === 2 && Object.values(d.avisos).some(a => a.para === 'compras' && /1 compra desde un Excel/.test(a.texto)); }));
+  await cambiar(t.page, 'conductor');
+  await t.page.click('.tab[data-vista="inventario"]'); await t.page.click('#invSecciones [data-sec="compras"]');
+  log('quien solo pide compras también ve los botones de Excel de Compras, pero no los de Bodega', await hasta(t.page, () => !!document.querySelector('#invContenido [data-xbd="bajar"]') && !document.querySelector('#invContenido [data-accion="bdexcel"]')));
+  await cambiar(t.page, 'consulta');
+  await t.page.click('.tab[data-vista="vehiculos"]'); await t.page.click('#vehSecciones [data-sec="carros"]');
+  log('quien solo consulta no ve ninguna subida de Excel (ni en Carros)', await hasta(t.page, () => !document.querySelector('#vehContenido [data-xbd]')));
+  await cambiar(t.page, 'jefe');
 
   console.log('6. Seguridad y errores');
   await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); d.compras['co-002'].que = '<img src=x onerror="window.__hackeado=1">Prueba'; d.articulos['ar-011'].nombre = '<img src=x onerror="window.__hackeado=2">Mouse'; d.solicitudes[Object.keys(d.solicitudes)[0]].paraQue = '<script>window.__hackeado=3</script>'; d.compras['co-xss'] = { que: 'Compra con texto malo', cantidad: 3, unidad: 'artículos', categoria: 'Otro', valorAprox: 6000, paraQue: '<b onmouseover="window.__hackeado=6">x</b>', pide: 'Carolina Castillo', pideRol: 'jefe', autoriza: 'Oscar Muñoz', autorizaJefe: '', estado: 'comprado', proveedor: '<svg onload="window.__hackeado=7">', valorReal: 6000, fechaPedido: '2026-11-01', fechaCompra: '2026-11-02', entregadoA: '', motivoRechazo: '', articuloId: '', factura: '', revisada: false, historial: [],

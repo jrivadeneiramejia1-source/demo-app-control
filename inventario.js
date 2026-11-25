@@ -376,6 +376,7 @@
     const cuenta = g => todas.filter(c => grupo(c) === g).length;
     const vis = todas.filter(c => (sub.compras === 'todas' || grupo(c) === sub.compras) && (!q || texto(c.que, c.proveedor, c.pide, c.categoria, c.paraQue).includes(q)));
     let h = barraBotones(puedoHacer('compras') ? [boton('sinaut', 'Registrar compra hecha sin autorización', 'aviso')] : []);
+    h += window.ExcelBD.html(cfgCompras());
     h += subChips('compras', [['curso', 'En curso', cuenta('curso')], ['recibidas', 'Recibidas', cuenta('recibidas')], ['rechazadas', 'Rechazadas', cuenta('rechazadas')], ['sin', 'Sin autorizar', cuenta('sin')], ['todas', 'Todas', todas.length]]);
     return h + (vis.length ? `<div class="list">${vis.map(tarjetaCompra).join('')}</div>` : UI.vacio('carrito', 'No hay compras aquí', `Cambia el filtro o toca «${hagoCompras() ? 'Hacer' : 'Pedir'} una compra».`));
   }
@@ -1337,6 +1338,39 @@
     }).join('')}</div>`;
     return h + `<div class="row acciones-inv"><button class="btn primary" type="button" data-accion="exguardar"${buenas.length && !aplicandoEx ? '' : ' disabled'}>${window.ico('check')}Guardar ${pl(buenas.length, 'cambio', 'cambios')}</button><button class="btn ghost" type="button" data-accion="exdescartar">Descartar</button></div>`;
   }
+
+  /* ---------- base de datos en Excel de las compras (excel-bd.js): agregar muchas a la vez; lo que ya está solo se mira ---------- */
+  const cfgCompras = () => ({
+    clave: 'compras', hoja: 'Compras', titulo: 'Base de datos: compras', sub: 'Una fila por compra', archivo: 'Base de datos Compras',
+    acciones: ['Agregar'], puedeSubir: puedoPedirCompra,
+    columnas: [
+      { t: 'Qué', k: 'que', clave: true, obligatoria: true, max: 100, ancho: 34 }, { t: 'Cantidad', k: 'cantidad', tipo: 'entero', min: 1, max: 99999, obligatoria: true },
+      { t: 'Unidad', k: 'unidad', lista: UNIDADES, obligatoria: true }, { t: 'Categoría', k: 'categoria', lista: CATEGORIAS, obligatoria: true },
+      { t: 'Valor total', k: 'valor', tipo: 'dinero', min: 1, obligatoria: true }, { t: 'Para qué', k: 'paraQue', obligatoria: true, max: 140, ancho: 36 },
+      { t: 'Proyecto', k: 'proyecto', lista: PROYECTOS, defecto: PROYECTOS[0] }, { t: 'Proveedor sugerido', k: 'provSug', max: 80, ancho: 24 },
+      { t: 'Estado', k: 'estado', gris: true, ancho: 16 }, { t: 'Pidió', k: 'pide', gris: true, ancho: 22 }, { t: 'Fecha del pedido', k: 'fecha', gris: true }, { t: 'Valor pagado', k: 'pagado', tipo: 'dinero', gris: true }],
+    filas: () => D().compras.filter(c => veTodo() || c.pide === persona().nombre).sort((a, b) => String(b.fechaPedido || b.fechaCompra).localeCompare(String(a.fechaPedido || a.fechaCompra)))
+      .map(c => ({ id: c.id, v: { que: c.que, cantidad: num(c.cantidad), unidad: c.unidad, categoria: c.categoria, valor: num(c.valorAprox), paraQue: c.paraQue, proyecto: c.proyecto || '', provSug: c.proveedorSug || '', estado: (EST_CO[c.estado] || [c.estado])[0], pide: c.pide, fecha: c.fechaPedido || c.fechaCompra || '', pagado: num(c.valorReal) } })),
+    ejemplo: { que: 'Resmas de papel carta', cantidad: 5, unidad: 'resmas', categoria: 'Papelería', valor: 140000, paraQue: 'Para imprimir listas de asistencia', proyecto: PROYECTOS[0], provSug: 'Papelería Central' },
+    ayuda: [['Compra nueva', 'Cada fila nueva pide una compra de UN artículo: queda «Por autorizar» y le llega el aviso a quien la autoriza (si eres el Gerente general queda autorizada). Obligatorios: Qué, Cantidad, Unidad, Categoría, Valor total y Para qué. Para varios artículos en una compra, o con fotos de cotizaciones, usa «Pedir una compra» en la app.'],
+      ['Compras que ya están', 'Aquí solo se miran: no se cambian ni se eliminan desde el Excel (son el rastro de lo que se gastó).']],
+    opsAgregar: x => {
+      const g = esGerenteGeneral(), v = x.v;
+      const doc = Object.assign({ que: v.que, cantidad: v.cantidad, unidad: v.unidad, categoria: v.categoria, valorAprox: v.valor, paraQue: v.paraQue + (v.proyecto ? ` (${v.proyecto})` : ''), proyecto: v.proyecto, proveedorSug: v.provSug,
+        lineas: [{ que: v.que, cantidad: v.cantidad, unidad: v.unidad, valor: v.valor, articuloId: '' }], cotizaciones: [], pide: persona().nombre, pideRol: persona().rol, autoriza: g ? persona().nombre : '', autorizaJefe: '', estado: g ? 'autorizado' : 'pedido',
+        proveedor: '', valorReal: 0, fechaPedido: A().hoyISO(), fechaCompra: '', entregadoA: '', motivoRechazo: '', articuloId: '', factura: '', revisada: false }, misMarcas());
+      doc.historial = [{ fecha: ahora(), texto: 'Pidió la compra (desde el Excel)', por: persona().nombre }];
+      if (g) { doc.autorizaCorreo = window.nube.correo(); doc.historial.push({ fecha: ahora(), texto: 'Autorizó la compra (Gerente general: lo que pide no necesita autorización)', por: persona().nombre }); }
+      return [['set', 'compras', window.nube.idNuevo('co'), doc]];
+    },
+    alGuardar: buenas => {
+      pushPendientes = [];
+      return [esGerenteGeneral() ? aviso('compras', 'Compras autorizadas: hay que comprar', `${persona().nombre} autorizó ${buenas.length} ${buenas.length === 1 ? 'compra' : 'compras'} desde un Excel.`)
+        : aviso(ROL_DE[autorizadorDe({ pideRol: persona().rol, estado: 'pedido' })], 'Compras por autorizar', `${persona().nombre} pidió ${buenas.length} ${buenas.length === 1 ? 'compra' : 'compras'} desde un Excel.`)];
+    },
+    despues: () => notificar(pushPendientes.slice())
+  });
+  window.ExcelBD.conectar($('invContenido'), { compras: cfgCompras }, () => pintar());
 
   /* ---------- eventos ---------- */
   $('invSecciones').addEventListener('click', e => {

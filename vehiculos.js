@@ -176,8 +176,9 @@
     if (f === 'disponible') vs = vs.filter(v => v.estado === 'disponible');
     if (f === 'uso') vs = vs.filter(v => v.estado === 'en-uso');
     if (f === 'docs') vs = vs.filter(v => docsMal(v).length);
-    if (!vs.length) return UI.vacio('carro', 'No hay carros con ese filtro', '');
-    return `<div class="list">${vs.map(v => {
+    const bd = window.ExcelBD.html(cfgVehiculos());
+    if (!vs.length) return bd + UI.vacio('carro', 'No hay carros con ese filtro', '');
+    return bd + `<div class="list">${vs.map(v => {
       const st = EST[v.estado] || ['Sin estado', 'none', 'pend'], pend = novDe(v.id).filter(n => !n.revisada).length;
       return `<button type="button" class="card st-${pend ? 'org' : st[2]}" data-accion="ver" data-id="${esH(v.id)}">
         <span class="card-head"><span class="card-title"><span class="placa">${esH(v.placa)}</span></span>${App.pill(st[0], st[1])}</span>
@@ -522,6 +523,40 @@
   $('veCampos').addEventListener('click', e => { if (e.target.closest('[data-accion]')) alTocar(e); });
   $('veCampos').addEventListener('change', alEscogerFoto);
   $('veForm').addEventListener('submit', e => { e.preventDefault(); guardar(); });
+
+  /* ---------- base de datos en Excel (excel-bd.js): solo la Jefe agrega, cambia y elimina carros ---------- */
+  const cfgVehiculos = () => ({
+    clave: 'vehiculos', hoja: 'Carros', titulo: 'Base de datos: carros', sub: 'Una fila por carro', archivo: 'Base de datos Carros',
+    acciones: ['Agregar', 'Cambiar', 'Eliminar'], puedeSubir: esJefe, puedeEliminar: esJefe,
+    columnas: [
+      { t: 'Placa', k: 'placa', clave: true, obligatoria: true, fija: true, unico: true, mayus: true, max: 10, ancho: 12 },
+      { t: 'Marca', k: 'marca', obligatoria: true, max: 30, ancho: 16 }, { t: 'Modelo', k: 'modelo', obligatoria: true, max: 40, ancho: 18 },
+      { t: 'Año', k: 'anio', tipo: 'entero', min: 1990, max: 2100, obligatoria: true }, { t: 'Color', k: 'color', max: 20, ancho: 14 },
+      { t: 'Kilometraje', k: 'km', tipo: 'entero', min: 0, obligatoria: true },
+      { t: 'SOAT vence', k: 'soat', tipo: 'fecha', obligatoria: true }, { t: 'Técnico-mecánica vence', k: 'tecno', tipo: 'fecha', obligatoria: true },
+      { t: 'Conductor', k: 'conductor', gris: true, ancho: 22 }, { t: 'Estado', k: 'estado', gris: true, ancho: 14 }],
+    filas: () => D().vehiculos.slice().sort((a, b) => String(a.placa).localeCompare(String(b.placa))).map(v => ({ id: v.id, v: { placa: v.placa, marca: v.marca, modelo: v.modelo, anio: v.anio, color: v.color || '', km: num(v.km), soat: v.soat || '', tecno: v.tecno || '', conductor: v.conductor || '', estado: (EST[v.estado] || [v.estado])[0] } })),
+    ejemplo: { placa: 'XYZ 789', marca: 'Toyota', modelo: 'Hilux', anio: 2024, color: 'Blanco', km: 0, soat: '2027-06-30', tecno: '2027-06-30' },
+    ayuda: [['Carro nuevo', 'Queda «Disponible». Obligatorios: Placa, Marca, Modelo, Año, Kilometraje y las fechas en que vencen el SOAT y la técnico-mecánica.'],
+      ['Qué se puede cambiar', 'Marca, modelo, año, color, kilometraje (nunca hacia atrás) y las fechas de los documentos. La placa no cambia. El conductor y el estado se mueven con las salidas y llegadas, en la app.'],
+      ['Eliminar', 'Solo si el carro no está en uso y no tiene salidas, llegadas ni novedades registradas.']],
+    revisar: (x, { nuevo, ex }) => {
+      if (nuevo && !/^[A-Z0-9][A-Z0-9 -]{3,8}[A-Z0-9]$/.test(String(x.v.placa))) x.errores.push('Placa: letras y números, por ejemplo «ABC 123».');
+      if (!nuevo && ex && x.v.km < num(ex.v.km)) x.errores.push(`Kilometraje: no puede bajar (hoy tiene ${num(ex.v.km)}).`);
+    },
+    bloqueaEliminar: id => {
+      const v = D().vehiculos.find(z => z.id === id);
+      if (!v) return 'Ese carro ya no existe.';
+      if (v.estado === 'en-uso') return 'Está en uso: espera a que llegue.';
+      if (D().entregas.some(e => e.vehiculoId === id) || D().novedades.some(n => n.vehiculoId === id)) return 'Tiene salidas, llegadas o novedades registradas: se guardan como rastro.';
+      return null;
+    },
+    opsAgregar: x => [['set', 'vehiculos', 've-' + String(x.v.placa).toLowerCase().replace(/[^a-z0-9]/g, ''), { placa: x.v.placa, marca: x.v.marca, modelo: x.v.modelo, anio: x.v.anio, color: x.v.color, conductor: '', km: x.v.km, soat: x.v.soat, tecno: x.v.tecno, estado: 'disponible',
+      historial: [{ fecha: ahora(), texto: 'Se registró desde el Excel', por: persona().nombre }] }]],
+    opsCambiar: x => { const v = D().vehiculos.find(z => z.id === x.id); return v ? [['mezclar', 'vehiculos', v.id, Object.assign({}, x.datos, { historial: (Array.isArray(v.historial) ? v.historial : []).concat([{ fecha: ahora(), texto: 'Datos cambiados desde el Excel', por: persona().nombre }]) })]] : []; },
+    opsEliminar: x => [['borrar', 'vehiculos', x.id]]
+  });
+  window.ExcelBD.conectar($('vehContenido'), { vehiculos: cfgVehiculos }, () => pintar());
 
   window.Vehiculos = Object.freeze({ pintar, resumen, libresPara });
 })();

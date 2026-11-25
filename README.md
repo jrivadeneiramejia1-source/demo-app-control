@@ -35,6 +35,19 @@ Alternativa sin Excel: la Jefe puede crear un **código por rol** (`LOG-7KQ4-M2X
 - **Los códigos de Jefe y de Gerente se crean a mano** (el primero y todos los demás) en Firebase: Firestore Database > Datos > Iniciar colección `codigosDireccion`, documento con ID `JEF-XXXX-XXXX` y campos `rol` = `jefe`, `activo` = `true` (booleano), `por` = `consola`, `en` = la fecha. Con ese código se registra la primera Jefe.
 - **A un Gerente o a otra Jefe no se les cambia nada desde la app** (ni rol, ni pausa, ni permisos): solo desde la consola de Firebase. Así una Jefe no puede sacar a otra.
 
+### Base de datos en Excel en cada ventana (`excel-bd.js`)
+Lo mismo que Bodega, con un módulo común: **Descargar base de datos** (una fila por cosa con su código, listas desplegables, solo enteros, fechas y una hoja de Ayuda) y **Subir Excel** (vista previa de lo que agregaría, cambiaría o eliminaría, con lo que está mal marcado; nada se guarda hasta tocar «Guardar»; subir el mismo archivo otra vez no repite nada). Qué permite cada ventana (siempre dentro de lo que dejan las reglas de Firebase):
+
+| Ventana | Quién | Agregar | Cambiar | Eliminar |
+|---|---|---|---|---|
+| **Bodega** | Bodega y Jefe | Sí (en una de las 3 bodegas) | Datos y cantidad (con conteo y su movimiento) | Solo la Jefe, sin compras ni pedidos en curso |
+| **Equipos** | Encargado y Jefe | Sí (queda en bodega) | Fecha del último mantenimiento y backup, observaciones (con línea de historial) | Solo la Jefe: no asignado, sin actas ni tareas |
+| **Carros** | Solo la Jefe | Sí (queda «Disponible») | Marca, modelo, año, color, kilometraje (nunca hacia atrás) y fechas de SOAT y técnico-mecánica | Solo la Jefe: no en uso y sin salidas ni novedades |
+| **Reuniones** | Solo la Jefe | Sí: cada fila crea la reunión **y reparte las tareas y avisos** como al confirmar un correo | No (cambiar fecha, lugar o cancelar se hace en la app, para avisar a quien toca) | No |
+| **Compras** | Quien puede pedir compras | Sí: cada fila pide una compra de un artículo (queda «Por autorizar»; la del Gerente general nace autorizada) | No (son el rastro de lo gastado) | No |
+
+Lo que ya está se baja para verlo (en gris donde no se cambia). No es sincronización en vivo: para eso la app final necesitaría algo como Google Sheets (con claves, solo en la copia privada). Pedidos de material y Movimientos siguen con su Excel de lectura de siempre.
+
 ### Las 3 bodegas
 La bodega son siempre **3: Riohacha, Guamal y Bogotá** (la app, el Excel y las reglas de Firebase lo exigen; ninguna otra). Cada artículo vive en **una** bodega y no cambia de bodega con una edición; para moverlo se hace un **traslado** (botón «Trasladar» en el detalle del artículo): sale de una bodega y entra a la otra, cada una con su movimiento, en una sola escritura. Si en la bodega de destino ya hay ese artículo (mismo nombre) se le suma; si no, se crea ahí con los mismos datos. El mismo nombre puede estar en las 3 bodegas (una vez en cada una). En Inventario, la parte se llama **Bodega** y trae un filtro por bodega; el Resumen suma el valor de cada una.
 

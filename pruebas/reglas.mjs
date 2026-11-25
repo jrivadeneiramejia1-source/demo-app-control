@@ -609,6 +609,40 @@ await prueba('una cuenta con nivel «coordina» autoriza compras igual que la Co
   await assertSucceeds(updateDoc(doc(c, 'compras', 'cx-1'), { autorizaCorreo: correoCuenta('cooX'), estado: 'por-gerente', autorizaJefe: 'Coordinadora', historial: H1 }));
   await assertSucceeds(updateDoc(doc(g, 'compras', 'cx-2'), { autorizaCorreo: correoCuenta('genX'), estado: 'autorizado', autoriza: 'Gerente general', historial: H1 })); });
 
+console.log('Excel de Equipos, Carros, Reuniones y Compras: lo que sube el Excel cumple las reglas');
+await limpiar();
+const histE = n => Array.from({ length: n }, (_, i) => ({ fecha: '2026-11-20', tipo: 'registro', persona: 'X', nota: 'Paso ' + i, por: 'X' }));
+await prueba('Equipos: el Encargado agrega un equipo en bodega y cambia fechas y observaciones con una línea de historial; solo la Jefe elimina', async () => {
+  const enc = await cuenta('encX', 'equipos'), jefe = await cuenta('jefEq', 'jefe');
+  const nuevoEq = { serial: 'DEMO-0099', tipo: 'Portátil', marca: 'Lenovo', modelo: 'E14', estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', ultimoMtto: '', ultimoBackup: '', obs: '', pendientes: { mtto: false, backup: false }, historial: histE(1) };
+  await assertSucceeds(setDoc(doc(enc, 'equipos', 'eq-nuevo1'), nuevoEq));
+  await assertFails(setDoc(doc(enc, 'equipos', 'eq-nuevo2'), Object.assign({}, nuevoEq, { estado: 'asignado' })));
+  await assertSucceeds(setDoc(doc(enc, 'equipos', 'eq-nuevo1'), { obs: 'Se copiaron las fotos', ultimoBackup: '2026-11-20', historial: histE(2) }, { merge: true }));
+  await assertFails(setDoc(doc(enc, 'equipos', 'eq-nuevo1'), { marca: 'Otra', historial: histE(3) }, { merge: true }));
+  await assertFails(deleteDoc(doc(enc, 'equipos', 'eq-nuevo1')));
+  await assertSucceeds(deleteDoc(doc(jefe, 'equipos', 'eq-nuevo1'))); });
+await prueba('Carros: solo la Jefe agrega, cambia y elimina carros desde el Excel (Transporte no crea ni borra)', async () => {
+  const jefe = await cuenta('jefVe', 'jefe'), tra = await cuenta('traVe', 'carros');
+  const ve = { placa: 'XYZ 789', marca: 'Toyota', modelo: 'Hilux', anio: 2024, color: 'Blanco', conductor: '', km: 0, soat: '2027-06-30', tecno: '2027-06-30', estado: 'disponible', historial: [{ fecha: '2026-11-20', texto: 'Se registró desde el Excel', por: 'X' }] };
+  await assertFails(setDoc(doc(tra, 'vehiculos', 've-xyz789'), ve));
+  await assertSucceeds(setDoc(doc(jefe, 'vehiculos', 've-xyz789'), ve));
+  await assertSucceeds(setDoc(doc(jefe, 'vehiculos', 've-xyz789'), { km: 500, color: 'Gris', historial: ve.historial.concat(ve.historial) }, { merge: true }));
+  await assertFails(deleteDoc(doc(tra, 'vehiculos', 've-xyz789')));
+  await assertSucceeds(deleteDoc(doc(jefe, 'vehiculos', 've-xyz789'))); });
+await prueba('Reuniones: la Jefe (cuenta propia) agrega varias reuniones con sus tareas y avisos en un solo lote; nadie más', async () => {
+  const jefe = await cuenta('jefRe', 'jefe'), adm = await cuenta('admRe', 'administrativo');
+  const aviso = (para, n) => ({ para, titulo: 'Reunión nueva ' + n, texto: 'X', en: '2026-11-20T10:00:00Z', modulo: 'reuniones', leido: {}, deUid: 'jefRe' });
+  const nec = (rid, tipo, rol) => ({ reunionId: rid, comunidad: 'C', fechaReunion: '2030-02-10', tipo, detalle: 'X', cantidad: 0, responsableRol: rol, estado: 'pendiente', por: '', en: '', motivo: '', conductor: '', items: [], acta: null, informes: [] });
+  const reu = c => ({ comunidad: c, fecha: '2030-02-10', hora: '09:30', lugar: '', asistentes: 0, jefe: 'Jefa', estado: 'programada', faltan: ['lugar', 'personas'], proyecto: 'P', correo: '', correos: [], origen: 'excel', historial: histE(2) });
+  await assertSucceeds(lote(jefe, b => { for (let i = 0; i < 6; i++) { const rid = 're-x' + i; b.set(doc(jefe, 'reuniones', rid), reu('Comunidad ' + i));
+    b.set(doc(jefe, 'necesidades', 'ne-x' + i + 'a'), nec(rid, 'logistica', 'logistica')); b.set(doc(jefe, 'necesidades', 'ne-x' + i + 'b'), nec(rid, 'asistencia', 'profesional')); b.set(doc(jefe, 'necesidades', 'ne-x' + i + 'c'), nec(rid, 'acta', 'administrativo'));
+    b.set(doc(jefe, 'avisos', 'av-x' + i + 'a'), aviso('logistica', i)); b.set(doc(jefe, 'avisos', 'av-x' + i + 'b'), aviso('coordcompras', i)); } }));
+  await assertFails(setDoc(doc(adm, 'reuniones', 're-no'), reu('No'))); });
+await prueba('Compras: un lote de 100 compras nuevas de una cuenta propia (con el correo, la hora y una sola línea cada una) cabe en el límite de las reglas; nacen «pedido»', async () => {
+  const db = await cuenta('colX', 'colaborador');
+  await assertSucceeds(lote(db, b => { for (let i = 0; i < 100; i++) b.set(doc(db, 'compras', 'cx-' + i), nueva(correoCuenta('colX'), { pide: 'Persona', pideRol: 'colaborador', pideUid: 'colX', valorAprox: 1000, lineas: [{ que: 'X', cantidad: 1, unidad: 'unidades', valor: 1000, articuloId: '' }], cotizaciones: [], historial: H1 })); }));
+  await assertFails(lote(db, b => { b.set(doc(db, 'compras', 'cx-malo'), nueva(correoCuenta('colX'), { pide: 'Persona', pideRol: 'colaborador', pideUid: 'colX', estado: 'autorizado', autorizaCorreo: correoCuenta('colX') })); })); });
+
 console.log('Paso 12: el límite de 1000 expresiones con CUENTAS PROPIAS (no solo personas de prueba)');
 await limpiar();
 const PNG = 'data:image/png;base64,iVBORw0KGgo', JPG = 'data:image/jpeg;base64,/9j/4AAQ';

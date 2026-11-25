@@ -198,8 +198,9 @@
     const App = A();
     const todas = D().reuniones.filter(r => proximas ? ACTIVA.includes(r.estado) : !ACTIVA.includes(r.estado));
     todas.sort(proximas ? ordenFecha : (a, b) => ordenFecha(b, a));
-    if (!todas.length) return UI.vacio('calendario', proximas ? 'No hay reuniones próximas' : 'Todavía no hay reuniones realizadas ni canceladas', proximas && esJefe() ? 'Cuando llegue un correo de reunión, revísalo en «Correos».' : '');
-    return `<div class="list">${todas.map(r => {
+    const bd = proximas ? window.ExcelBD.html(cfgReuniones()) : '';
+    if (!todas.length) return bd + UI.vacio('calendario', proximas ? 'No hay reuniones próximas' : 'Todavía no hay reuniones realizadas ni canceladas', proximas && esJefe() ? 'Cuando llegue un correo de reunión, revísalo en «Correos».' : '');
+    return bd + `<div class="list">${todas.map(r => {
       const st = EST_RE[r.estado] || ['Sin estado', 'none', 'pend'], p = progreso(r), acta = necDe(r.id).find(n => n.tipo === 'acta');
       const faltaActa = ACTIVA.includes(r.estado) && yaPaso(r) && acta && acta.estado === 'pendiente';
       const pct = p.total ? Math.round(p.hechas / p.total * 100) : 0;
@@ -455,6 +456,33 @@
     const p = window.DEMO.PERSONAS.find(x => x.rol === 'conductor' && x.nombre === nombre) || (D().usuarios || []).find(u => u.rol === 'conductor' && u.nombre === nombre);
     return p && p.correo ? String(p.correo).toLowerCase() : '';
   };
+  /** Las escrituras de una reunión nueva: la reunión, una tarea por cada rol y los avisos. Las usan el correo (agente) y el Excel. */
+  function opsReunionNueva(p) {
+    const { com, fecha, hora, lugar, asis, carros, ref, alm, items, inv, invitados, correoTxt, correoId, fuente, historial } = p;
+    const faltan = [!lugar && 'lugar', !asis && 'personas'].filter(Boolean);
+    const id = window.nube.idNuevo('re'), yo = persona().nombre;
+    const r = { comunidad: com, fecha, hora, lugar, asistentes: asis, jefe: yo, estado: 'programada', faltan, proyecto: 'Proyecto Costa Norte', correo: correoTxt, correos: correoId ? [correoId] : [], origen: fuente, historial };
+    const n = (tipo, detalle, cantidad, rol, extra) => ['set', 'necesidades', window.nube.idNuevo('ne'), Object.assign({ reunionId: id, comunidad: com, fechaReunion: fecha, tipo, detalle, cantidad, responsableRol: rol, estado: 'pendiente', por: '', en: '', motivo: '', conductor: '', items: [], acta: null, informes: [] }, extra || {})];
+    const quienes = asis ? plural(asis, 'persona', 'personas') : 'las personas que lleguen';
+    const ops = [['set', 'reuniones', id, r]];
+    if (ref) ops.push(n('refrigerios', `Refrigerios para ${quienes}`, asis, 'jefe'));
+    if (alm) ops.push(n('almuerzo', `Almuerzo para ${quienes}`, asis, 'jefe'));
+    if (carros) ops.push(n('carros', `${plural(carros, 'camioneta', 'camionetas')} para el equipo de campo`, carros, 'jefe'));
+    ops.push(n('logistica', `Alistar ${lugar || 'el lugar'} para ${quienes}`, asis, 'logistica', { items: (items.length ? items : ITEMS_LOG()).map(t => ({ t, ok: false })) }));
+    // Una tarea de asistencia por cada profesional invitado (cada quien decide la suya). Si no se conoce a ninguno, queda una para el rol.
+    if (!inv.length) ops.push(n('asistencia', 'Confirmar si vas a la reunión', 0, 'profesional'));
+    invitados.forEach(p => ops.push(n('asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', { responsableCorreo: p.correo, responsableNombre: p.nombre })));
+    ops.push(n('acta', 'Registrar el acta y el formato diario', 0, 'administrativo'));
+    const cuandoTxt = `${A().fechaCorta(fecha)} a las ${hora12(hora)}`;
+    const comidaTxt = [ref && 'refrigerio', alm && 'almuerzo'].filter(Boolean).join(' y ');
+    if (ref || alm) ops.push(aviso('compras', 'Reunión nueva: informa lo que hay de comida', `${com}, ${cuandoTxt}: ${comidaTxt} para ${quienes}. Cuéntale a la Jefe qué hay y qué falta.`));
+    if (carros) ops.push(aviso('carros', 'Reunión nueva: informa qué carros hay', `${com}, ${cuandoTxt}: piden ${plural(carros, 'camioneta', 'camionetas')}. Cuéntale a la Jefe cuáles están libres.`));
+    ops.push(aviso('asistente', 'Reunión nueva: informa lo que hay en bodega', `${com}, ${cuandoTxt}: ${[comidaTxt && comidaTxt + ' para ' + quienes, carros && plural(carros, 'camioneta', 'camionetas'), items.length && items.join(', ').toLowerCase()].filter(Boolean).join('; ')}.`));
+    ops.push(aviso('logistica', 'Reunión nueva: hay que alistar', `${com}, ${cuandoTxt}${lugar ? ' en ' + lugar : ' (falta el lugar)'}.`));
+    ops.push(aviso('profesional', 'Reunión nueva: ¿vas?', `${com}, ${cuandoTxt}. Confirma si vas.`));
+    ops.push(aviso('administrativo', 'Reunión nueva', `${com}, ${cuandoTxt}. Ese día registras el acta y el formato diario.`));
+    return ops;
+  }
   function confirmarNueva(c, d, encabezado, fuente) {
     const inv = invitables();
     abrir({
@@ -474,33 +502,12 @@
         if (fecha < hoy()) return fallar('La fecha ya pasó. Revísala.', 'rcFecha');
         if (!/^\d{2}:\d{2}$/.test(hora)) return fallar('Escribe la hora.', 'rcHora');
         if (D().reuniones.some(x => ACTIVA.includes(x.estado) && normal(x.comunidad) === normal(com))) return fallar('Ya hay una reunión activa con esa comunidad.', 'rcCom');
-        const faltan = [!lugar && 'lugar', !asis && 'personas'].filter(Boolean);
         const ref = $('rcRef').checked, alm = $('rcAlm').checked;
         const items = ITEMS_LOG().filter((t, k) => $('rcLog' + k).checked);
-        const id = window.nube.idNuevo('re'), yo = persona().nombre;
-        const r = { comunidad: com, fecha, hora, lugar, asistentes: asis, jefe: yo, estado: 'programada', faltan, proyecto: 'Proyecto Costa Norte', correo: c.texto, correos: [c.id], origen: fuente,
-          historial: [{ fecha: ahora(), texto: 'El agente leyó el correo y armó la reunión', por: origen(fuente) }, { fecha: ahora(), texto: 'La Jefe la revisó y repartió las tareas', por: yo }] };
-        const n = (tipo, detalle, cantidad, rol, extra) => ['set', 'necesidades', window.nube.idNuevo('ne'), Object.assign({ reunionId: id, comunidad: com, fechaReunion: fecha, tipo, detalle, cantidad, responsableRol: rol, estado: 'pendiente', por: '', en: '', motivo: '', conductor: '', items: [], acta: null, informes: [] }, extra || {})];
-        const quienes = asis ? plural(asis, 'persona', 'personas') : 'las personas que lleguen';
-        const ops = [['set', 'reuniones', id, r]];
-        if (ref) ops.push(n('refrigerios', `Refrigerios para ${quienes}`, asis, 'jefe'));
-        if (alm) ops.push(n('almuerzo', `Almuerzo para ${quienes}`, asis, 'jefe'));
-        if (carros) ops.push(n('carros', `${plural(carros, 'camioneta', 'camionetas')} para el equipo de campo`, carros, 'jefe'));
-        ops.push(n('logistica', `Alistar ${lugar || 'el lugar'} para ${quienes}`, asis, 'logistica', { items: (items.length ? items : ITEMS_LOG()).map(t => ({ t, ok: false })) }));
-        // Una tarea de asistencia por cada profesional invitado (cada quien decide la suya). Si no se conoce a ninguno, queda una para el rol.
         const invitados = inv.filter((p, k) => $('rcInv' + k) && $('rcInv' + k).checked);
-        if (!inv.length) ops.push(n('asistencia', 'Confirmar si vas a la reunión', 0, 'profesional'));
-        invitados.forEach(p => ops.push(n('asistencia', 'Confirmar si vas a la reunión', 0, 'profesional', { responsableCorreo: p.correo, responsableNombre: p.nombre })));
-        ops.push(n('acta', 'Registrar el acta y el formato diario', 0, 'administrativo'));
-        const cuandoTxt = `${A().fechaCorta(fecha)} a las ${hora12(hora)}`;
-        const comidaTxt = [ref && 'refrigerio', alm && 'almuerzo'].filter(Boolean).join(' y ');
-        if (ref || alm) ops.push(aviso('compras', 'Reunión nueva: informa lo que hay de comida', `${com}, ${cuandoTxt}: ${comidaTxt} para ${quienes}. Cuéntale a la Jefe qué hay y qué falta.`));
-        if (carros) ops.push(aviso('carros', 'Reunión nueva: informa qué carros hay', `${com}, ${cuandoTxt}: piden ${plural(carros, 'camioneta', 'camionetas')}. Cuéntale a la Jefe cuáles están libres.`));
-        ops.push(aviso('asistente', 'Reunión nueva: informa lo que hay en bodega', `${com}, ${cuandoTxt}: ${[comidaTxt && comidaTxt + ' para ' + quienes, carros && plural(carros, 'camioneta', 'camionetas'), items.length && items.join(', ').toLowerCase()].filter(Boolean).join('; ')}.`));
-        ops.push(aviso('logistica', 'Reunión nueva: hay que alistar', `${com}, ${cuandoTxt}${lugar ? ' en ' + lugar : ' (falta el lugar)'}.`));
-        ops.push(aviso('profesional', 'Reunión nueva: ¿vas?', `${com}, ${cuandoTxt}. Confirma si vas.`));
-        ops.push(aviso('administrativo', 'Reunión nueva', `${com}, ${cuandoTxt}. Ese día registras el acta y el formato diario.`));
-        return ops;
+        const yo = persona().nombre;
+        return opsReunionNueva({ com, fecha, hora, lugar, asis, carros, ref, alm, items, inv, invitados, correoTxt: c.texto, correoId: c.id, fuente,
+          historial: [{ fecha: ahora(), texto: 'El agente leyó el correo y armó la reunión', por: origen(fuente) }, { fecha: ahora(), texto: 'La Jefe la revisó y repartió las tareas', por: yo }] });
       }
     });
   }
@@ -773,6 +780,32 @@
   $('reCampos').addEventListener('click', e => { if (e.target.closest('[data-accion]')) alTocar(e); });
   $('reForm').addEventListener('submit', e => { e.preventDefault(); guardar(); });
   $('reSecundario').addEventListener('click', () => { if (accion && accion.alSecundario) accion.alSecundario(); });
+
+  /* ---------- base de datos en Excel (excel-bd.js): la Jefe agrega muchas reuniones a la vez (cada una con su reparto) ---------- */
+  const cfgReuniones = () => ({
+    clave: 'reuniones', hoja: 'Reuniones', titulo: 'Base de datos: reuniones', sub: 'Una fila por reunión', archivo: 'Base de datos Reuniones',
+    acciones: ['Agregar'], puedeSubir: esJefe,
+    columnas: [
+      { t: 'Comunidad', k: 'comunidad', clave: true, obligatoria: true, max: 80, ancho: 34 }, { t: 'Fecha', k: 'fecha', tipo: 'fecha', obligatoria: true }, { t: 'Hora', k: 'hora', tipo: 'hora', obligatoria: true },
+      { t: 'Lugar', k: 'lugar', max: 120, ancho: 34 }, { t: 'Personas esperadas', k: 'asis', tipo: 'entero', min: 0, max: 5000 }, { t: 'Camionetas', k: 'carros', tipo: 'entero', min: 0, max: 20 },
+      { t: 'Refrigerio', k: 'ref', tipo: 'sino' }, { t: 'Almuerzo', k: 'alm', tipo: 'sino' }, { t: 'Estado', k: 'estado', gris: true, ancho: 14 }],
+    filas: () => D().reuniones.slice().sort((a, b) => String(a.fecha).localeCompare(String(b.fecha))).map(r => { const ns = necDe(r.id), cs = ns.find(n => n.tipo === 'carros');
+      return { id: r.id, v: { comunidad: r.comunidad, fecha: r.fecha, hora: r.hora || '', lugar: r.lugar || '', asis: num(r.asistentes), carros: cs ? num(cs.cantidad) : 0, ref: ns.some(n => n.tipo === 'refrigerios') ? 'Sí' : 'No', alm: ns.some(n => n.tipo === 'almuerzo') ? 'Sí' : 'No', estado: (EST_RE[r.estado] || [r.estado])[0] } }; }),
+    ejemplo: { comunidad: 'Comunidad Ejemplo Sur', fecha: '2030-01-15', hora: '09:00', lugar: 'Casa comunal', asis: 30, carros: 1, ref: 'Sí', alm: 'No' },
+    ayuda: [['Reunión nueva', 'Cada fila nueva crea la reunión y reparte las tareas (comida, carros, logística, asistencia y acta) con sus avisos, igual que al confirmar un correo. Obligatorios: Comunidad, Fecha (de hoy en adelante) y Hora. Lo vacío queda como «falta».'],
+      ['Reuniones que ya están', 'Aquí solo se miran. Para cambiar la fecha, el lugar o cancelar, usa la reunión en la app (así se avisa a quien corresponde).']],
+    revisar: (x, { nuevo }) => {
+      if (!nuevo) return;
+      if (x.v.fecha < hoy()) x.errores.push('Fecha: ya pasó. Revísala.');
+      if (D().reuniones.some(r => ACTIVA.includes(r.estado) && normal(r.comunidad) === normal(x.v.comunidad))) x.errores.push('Ya hay una reunión activa con esa comunidad.');
+    },
+    revisarTodo: filas => { const n = {}; filas.filter(x => x.tipo === 'agregar' && !x.errores.length).forEach(x => { n[normal(x.v.comunidad)] = (n[normal(x.v.comunidad)] || 0) + 1; });
+      filas.forEach(x => { if (x.tipo === 'agregar' && !x.errores.length && n[normal(x.v.comunidad)] > 1) x.errores.push('Esa comunidad está repetida en el Excel (una reunión activa por comunidad).'); }); },
+    resumenNuevo: v => [`${v.fecha} a las ${v.hora}`, v.lugar || 'falta el lugar', v.asis ? plural(v.asis, 'persona', 'personas') : 'faltan las personas', v.carros ? plural(v.carros, 'camioneta', 'camionetas') : '', v.ref === 'Sí' ? 'refrigerio' : '', v.alm === 'Sí' ? 'almuerzo' : ''].filter(Boolean).join(' · '),
+    opsAgregar: x => opsReunionNueva({ com: x.v.comunidad, fecha: x.v.fecha, hora: x.v.hora, lugar: x.v.lugar, asis: x.v.asis || 0, carros: x.v.carros || 0, ref: x.v.ref === 'Sí', alm: x.v.alm === 'Sí', items: [], inv: invitables(), invitados: invitables(), correoTxt: '', correoId: '', fuente: 'excel',
+      historial: [{ fecha: ahora(), texto: 'Se creó desde un Excel', por: persona().nombre }, { fecha: ahora(), texto: 'La Jefe la revisó y repartió las tareas', por: persona().nombre }] })
+  });
+  window.ExcelBD.conectar($('reuContenido'), { reuniones: cfgReuniones }, () => pintar());
 
   window.Reuniones = Object.freeze({ pintar, resumen, tareas, limpiar });
 })();
