@@ -677,6 +677,45 @@ await prueba('cuenta propia de Compras informa lo que hay y cuenta propia de Pro
   await assertSucceeds(updateDoc(doc(cmp, 'necesidades', 'ne-i'), { informes: [{ rol: 'compras', por: 'Mauricio', texto: 'Hay 12', en: '2026-11-20' }] }));
   await assertSucceeds(updateDoc(doc(prof, 'necesidades', 'ne-as'), decide())); });
 
+console.log('Fase 9: plan de mantenimiento de cada carro (mttos)');
+await limpiar();
+const MT = (i, extra) => Object.assign({ id: 'mt' + i, tarea: 'Cambio de aceite ' + i, cadaKm: 5000, cadaDias: 180, ultimoKm: 40000, ultimaFecha: '2026-05-01', ultimoCosto: 0 }, extra);
+const VE9 = { placa: 'AAA111', estado: 'disponible', km: 44700, conductor: '', historial: H1, soat: '2027-01-01', tecno: '2027-01-01' };
+await prueba('Plan de mantenimiento: Transporte y Bodega ponen y cambian el plan de un carro con una línea nueva de historial', async () => {
+  const tra = await cuenta('mtTra', 'carros'), bod = await cuenta('mtBod', 'asistente');
+  await sembrar(d => setDoc(doc(d, 'vehiculos', 've-m1'), VE9));
+  await assertSucceeds(updateDoc(doc(tra, 'vehiculos', 've-m1'), { mttos: [MT(1)], historial: H2 }));
+  await assertSucceeds(updateDoc(doc(bod, 'vehiculos', 've-m1'), { mttos: [MT(1, { ultimoKm: 44700, ultimaFecha: '2026-11-25', ultimoCosto: 180000 })], km: 44700, historial: H3 })); });
+await prueba('Plan de mantenimiento: sin la línea nueva de historial, no pasa', async () => {
+  const tra = await cuenta('mtTra2', 'carros');
+  await sembrar(d => setDoc(doc(d, 'vehiculos', 've-m2'), VE9));
+  await assertFails(updateDoc(doc(tra, 'vehiculos', 've-m2'), { mttos: [MT(1)] })); });
+await prueba('Plan de mantenimiento: una lista de 10 tareas pasa y una de 11 no', async () => {
+  const tra = await cuenta('mtTra3', 'carros');
+  await sembrar(d => setDoc(doc(d, 'vehiculos', 've-m3'), VE9));
+  await assertSucceeds(updateDoc(doc(tra, 'vehiculos', 've-m3'), { mttos: Array.from({ length: 10 }, (_, i) => MT(i)), historial: H2 }));
+  await assertFails(updateDoc(doc(tra, 'vehiculos', 've-m3'), { mttos: Array.from({ length: 11 }, (_, i) => MT(i)), historial: H3 })); });
+await prueba('Plan de mantenimiento: lo que no es una lista no pasa', async () => {
+  const tra = await cuenta('mtTra4', 'carros');
+  await sembrar(d => setDoc(doc(d, 'vehiculos', 've-m4'), VE9));
+  await assertFails(updateDoc(doc(tra, 'vehiculos', 've-m4'), { mttos: 'cambio de aceite', historial: H2 }));
+  await assertFails(updateDoc(doc(tra, 'vehiculos', 've-m4'), { mttos: { a: 1 }, historial: H2 })); });
+await prueba('Plan de mantenimiento: el Conductor no lo puede cambiar (ni borrarlo)', async () => {
+  const con = await cuenta('mtCon', 'conductor');
+  await sembrar(d => setDoc(doc(d, 'vehiculos', 've-m5'), Object.assign({}, VE9, { mttos: [MT(1)] })));
+  await assertFails(updateDoc(doc(con, 'vehiculos', 've-m5'), { mttos: [MT(1, { ultimoKm: 44700 })], historial: H2 }));
+  await assertFails(updateDoc(doc(con, 'vehiculos', 've-m5'), { mttos: [], historial: H2 })); });
+await prueba('Plan de mantenimiento: quien solo consulta tampoco, y la Jefe sí (con el mismo límite de 10)', async () => {
+  const cons = await cuenta('mtCons', 'consulta'), jefe = await cuenta('mtJef', 'jefe');
+  await sembrar(d => setDoc(doc(d, 'vehiculos', 've-m6'), VE9));
+  await assertFails(updateDoc(doc(cons, 'vehiculos', 've-m6'), { mttos: [MT(1)], historial: H2 }));
+  await assertSucceeds(updateDoc(doc(jefe, 'vehiculos', 've-m6'), { mttos: [MT(1)], historial: H2 }));
+  await assertFails(updateDoc(doc(jefe, 'vehiculos', 've-m6'), { mttos: Array.from({ length: 11 }, (_, i) => MT(i)), historial: H3 })); });
+await prueba('Plan de mantenimiento: sigue sin poderse cambiar otro dato del carro junto con el plan (la placa)', async () => {
+  const tra = await cuenta('mtTra5', 'carros');
+  await sembrar(d => setDoc(doc(d, 'vehiculos', 've-m7'), VE9));
+  await assertFails(updateDoc(doc(tra, 'vehiculos', 've-m7'), { mttos: [MT(1)], placa: 'ZZZ999', historial: H2 })); });
+
 await env.cleanup();
 console.log(`\n${ok} pruebas bien, ${fallas.length} con falla.`);
 if (fallas.length) { console.log('Fallaron:\n - ' + fallas.join('\n - ')); process.exit(1); }

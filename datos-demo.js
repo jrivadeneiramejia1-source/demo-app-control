@@ -264,15 +264,21 @@
 
     // ---------- VEHÍCULOS ----------
     // Cada carro tiene su hoja de vida aquí; las novedades y las entregas (salida y llegada) van aparte, con sus fotos.
+    // Plan de mantenimiento de ejemplo: { id, tarea, cadaKm, cadaDias, ultimoKm, ultimaFecha (días atrás), ultimoCosto }.
+    const mtto = (id, tarea, cadaKm, cadaDias, ultimoKm, haceDias, ultimoCosto) => ({ id, tarea, cadaKm, cadaDias, ultimoKm, ultimaFecha: dias(haceDias), ultimoCosto });
     const vehiculos = {
       've-abc123': { placa: 'ABC 123', marca: 'Toyota', modelo: 'Hilux', anio: 2022, color: 'Blanco', conductor: 'Oscar Farfán', km: 45210,
-        soat: dias(12), tecno: dias(200), estado: 'en-uso', historial: [{ fecha: iso(-1, 6, 40), texto: 'Salió con Oscar Farfán (45.180 km)', por: 'Oscar Farfán' }] },
+        soat: dias(12), tecno: dias(200), estado: 'en-uso', historial: [{ fecha: iso(-1, 6, 40), texto: 'Salió con Oscar Farfán (45.180 km)', por: 'Oscar Farfán' }],
+        mttos: [mtto('mt-aceite', 'Cambio de aceite', 5000, 180, 40300, -70, 190000), mtto('mt-alin', 'Alineación y balanceo', 10000, 365, 38000, -200, 120000)] },
       've-def456': { placa: 'DEF 456', marca: 'Chevrolet', modelo: 'D-Max', anio: 2021, color: 'Gris', conductor: '', km: 62800,
-        soat: dias(150), tecno: dias(-5), estado: 'disponible', historial: [] },
+        soat: dias(150), tecno: dias(-5), estado: 'disponible', historial: [],
+        mttos: [mtto('mt-aceite', 'Cambio de aceite', 5000, 180, 57500, -150, 185000)] },
       've-ghi789': { placa: 'GHI 789', marca: 'Mitsubishi', modelo: 'L200', anio: 2020, color: 'Rojo', conductor: '', km: 88450,
-        soat: dias(90), tecno: dias(120), estado: 'en-taller', historial: [{ fecha: iso(-8, 9, 0), texto: 'Entró al taller por mantenimiento', por: 'Wilson Muñoz' }] },
+        soat: dias(90), tecno: dias(120), estado: 'en-taller', historial: [{ fecha: iso(-8, 9, 0), texto: 'Entró al taller por mantenimiento', por: 'Wilson Muñoz' }],
+        mttos: [mtto('mt-pastillas', 'Pastillas de freno', 30000, 540, 70000, -8, 260000)] },
       've-jkl012': { placa: 'JKL 012', marca: 'Toyota', modelo: 'Fortuner', anio: 2023, color: 'Plata', conductor: '', km: 21340,
-        soat: dias(240), tecno: dias(300), estado: 'disponible', historial: [] }
+        soat: dias(240), tecno: dias(300), estado: 'disponible', historial: [],
+        mttos: [mtto('mt-revision', 'Revisión de los 10.000 km', 10000, 180, 15000, -20, 150000)] }
     };
     // Foto de ejemplo (pequeña e inventada) para las novedades y entregas de muestra.
     const FOTO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA4KCw0LCQ4NDA0QDw4RFiQXFhQUFiwgIRokNC43NjMuMjI6QVNGOj1OPjIySGJJTlZYXV5dOEVmbWVabFNbXVn/2wBDAQ8QEBYTFioXFypZOzI7WVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVn/wAARCABuAKADASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDOiieaZIoxud2CqM4yT0pZYWhIDFDn+46t/ImpNPkSHUbWWQ7USVGY46AEZqza3UYWQIyWUhKkOm88DOR3POR7cVuc5QZGRUZlIDjcp9Rkj+YNLFG80yRRjc7sFUZxknpW1LqMUsSiG6NsRnbkN8i73O3gdwyf984pllfW8d2siTfZYxdGVl2n5o8jC8Dtg/nRcLIxaBycVqT3kLad5SFADGihMPkMMZPXaM4PI55pZbqOWwEEW0lkRFiAcsHGMnrt5weRzzRcLGWRgkenpSVv317Cr3katGDvmVlIcl2LNgjB29COTyMU2HVI1eFTOwjV7YEYOAgTEg+mcZ9fei4WMKnyxvDM8Ug2ujFWGc4I61qmdYtNtVeb5GtpB5GD8xLuAfTg4P4U+7vreR7ho58xP5uYtp/eMxJVumOMr1/u0XCxiUUUUxBRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRWz4Zhin1GRZo0kURE4dQRnI9aT0GlcxqK9C/s6y/wCfO3/79L/hR/Z1l/z52/8A36X/AAqecrkPPaK9C/s6y/587f8A79L/AIUf2dZf8+dv/wB+l/wo5w5Dz2ivQv7Osv8Anzt/+/S/4Uf2dZf8+dv/AN+l/wAKOcOQ89or0L+zrL/nzt/+/S/4Uf2dZf8APnb/APfpf8KOcOQ89orofFVvBB9l8mGOLdvzsUDP3fSueqk7ktWYUUUUxBRRRQAUUUUAFFdT4L/5ff8AgH/s1dTUOVmWoXVzy2tzwn/yE5f+uJ/9CWu2prgkcUnK5ShYiop2xvSjY3pUlDaKdsb0o2N6UANop2xvSjY3pQA2inbG9KNjelAHL+L/APlz/wCB/wDstc1XqEakZzTqpSsS4Xdzy2ivUqwPGH/IKi/67j/0FqalclwsjjKKKKsgKKKKAOp8F/8AL7/wD/2auprlvBf/AC+/8A/9mrqaylubR2CiiipKCiiigAooooAKKKKACiiigAooooAKwPGH/IKi/wCu4/8AQWrfrA8Yf8gqL/ruP/QWpx3JlscZRRRWxiFFFFAHU+C/+X3/AIB/7NXU1y3gv/l9/wCAf+zV1NZS3No7BRUV1cw2dtJcXEixxRjLMe1cZqXjwrK8enWyMqtgSzE4cf7oxjn3/D0ko7iiuH03x4WlSPUbZFVmwZYScIP905zz7/h69na3MN5bR3FvIskUgyrDvQBLRRRQAUUUUAFFI7rHGzyMqIoJZmOAAO5NcbqvjqKKRo9MgWcYGJpMhc9/l4J49xz+oB2dFcFZ+PpxJi9s4nQkcwkqVHfg5z+YrtLC/ttRthcWcyyxEkZGRgjsQeRQBZrA8Yf8gqL/AK7j/wBBat+sDxh/yCov+u4/9BanHcmWxxlFFFbGIUUUUAb/AIY1G1sPtX2qXy9+zb8pOcZz0HvW/wD8JFpf/P1/5Df/AArgaKlxTKUmtDS8ba7HeJBaWU7mEgvNhSobn5Rzzxgn06fhx9X9SjJKyAEgDB9vSqFZSVmbRd0Fdh4J12OzSe0vZ3EIAeHKlgvPzDjnnIPp1/Hj6v6bGQWkIIBGB7+tEVdhJ2R6b/wkWl/8/X/kN/8ACj/hItL/AOfr/wAhv/hXA0VpyIy52d9/wkWl/wDP1/5Df/Cj/hItL/5+v/Ib/wCFcDRRyIOdm94w8QwS6YtrYXDlpmxIVUqNgHIJPqSOnofx4OtPUIy8SuASUPP0rMqJKzNIu6Cul8F6yunX7wXMzrazKTtAyA4xg+vQEce3pxzVW9PjLTeZg7VHX3pJXY27I9R/4SLS/wDn6/8AIb/4VkeJNVsr7T44rabzHEoYjaw4wfUe9cxRWqikYubYUUUVRIUUUUAFFFFACOqupVhkHqKoy6fkkxMACejdvxq/RSaTGm1sUItPwQZWBAPRe/41eRVRQqjAHQUtFCSQNt7hRRRTEFFFFAAQCCCMg9qozaeCSYm2/wCyf8avUUmkxptbGcmnNn944A/2eavxxpEu1FwKdRQkkDk2FFFFMQUUUUAf/9k=';
@@ -389,5 +395,5 @@
     return { equipos, hojas, tareasEq, compras, vehiculos, novedades, entregas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 12, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 13, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

@@ -56,6 +56,29 @@
   /** Estado de un documento: vencido, por vencer (30 días) o al día. */
   const estDoc = f => { const d = dias(f); return d == null ? 'sin' : d < 0 ? 'vencido' : d <= 30 ? 'pronto' : 'ok'; };
   const docsMal = v => ['soat', 'tecno'].filter(k => estDoc(v[k]) !== 'ok');
+  /* ---------- plan de mantenimiento: tareas por kilómetros y/o por días ---------- */
+  const MTTO_PRONTO_KM = 500, MTTO_PRONTO_DIAS = 15;
+  const masDias = (f, n) => { const d = new Date(f + 'T12:00:00'); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const mttosDe = v => (Array.isArray(v.mttos) ? v.mttos.filter(x => x && typeof x === 'object' && x.id) : []);
+  /** Cuánto falta para una tarea del plan: por km (último km + cada cuántos km − km de hoy) y por días; manda lo que llegue primero. */
+  function estMtto(m, v) {
+    const kmFalta = num(m.cadaKm) > 0 ? num(m.ultimoKm) + num(m.cadaKm) - num(v.km) : null;
+    const venceEl = num(m.cadaDias) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(m.ultimaFecha || '') ? masDias(m.ultimaFecha, num(m.cadaDias)) : '';
+    const diasFalta = venceEl ? dias(venceEl) : null;
+    const vencido = (kmFalta != null && kmFalta <= 0) || (diasFalta != null && diasFalta < 0);
+    const pronto = !vencido && ((kmFalta != null && kmFalta <= MTTO_PRONTO_KM) || (diasFalta != null && diasFalta <= MTTO_PRONTO_DIAS));
+    // Se dice lo que hizo que toque: si ya tocaba, lo que ya se pasó; si falta poco, lo que está cerca; si está al día, las dos cuentas.
+    const kmMal = kmFalta != null && kmFalta <= 0, diasMal = diasFalta != null && diasFalta < 0;
+    const kmCerca = kmFalta != null && kmFalta <= MTTO_PRONTO_KM, diasCerca = diasFalta != null && diasFalta <= MTTO_PRONTO_DIAS;
+    const faltan = [], pasado = [];
+    if (kmFalta != null && (vencido ? kmMal : pronto ? kmCerca : true)) { if (kmFalta > 0) faltan.push(km(kmFalta)); else pasado.push(kmFalta < 0 ? `se pasó ${km(-kmFalta)}` : 'ya llegó a los km'); }
+    if (diasFalta != null && (vencido ? diasMal : pronto ? diasCerca : true)) { if (diasFalta > 0) faltan.push(`${diasFalta} días`); else pasado.push(diasFalta < 0 ? `se pasó hace ${-diasFalta} días` : 'toca hoy'); }
+    return { est: vencido ? 'vencido' : pronto ? 'pronto' : 'ok', kmFalta, diasFalta, texto: pasado.concat(faltan.length ? ['faltan ' + faltan.join(' o ')] : []).join(' y ') };
+  }
+  const conMtto = v => mttosDe(v).some(m => estMtto(m, v).est !== 'ok');
+  /** Tareas del plan de todos los carros que ya tocan o están por tocar (las vencidas primero). */
+  const mttosPend = () => D().vehiculos.flatMap(v => mttosDe(v).map(m => ({ v, m, e: estMtto(m, v) }))).filter(x => x.e.est !== 'ok')
+    .sort((a, b) => (a.e.est === b.e.est ? String(a.v.placa).localeCompare(String(b.v.placa)) : a.e.est === 'vencido' ? -1 : 1));
   const ultimaSalida = v => entDe(v.id).find(e => e.tipo === 'salida') || null;
   const reunionPorId = id => D().reuniones.find(r => r.id === id) || null;
   /** Viajes de reunión con carro asignado que todavía no terminan (para el conductor). */
@@ -76,7 +99,8 @@
       enUso: vs.filter(v => v.estado === 'en-uso').length,
       novedades: sinRevisar().length,
       docs: vs.reduce((n, v) => n + docsMal(v).length, 0),
-      mias: esAdmin() ? sinRevisar().length + vs.filter(v => docsMal(v).length).length : esConductor() ? misViajes().length : 0
+      mttos: mttosPend().length,
+      mias: esAdmin() ? sinRevisar().length + vs.filter(v => docsMal(v).length).length + mttosPend().length : esConductor() ? misViajes().length : 0
     };
   }
   /** Carros que se pueden asignar a una reunión en esa fecha (no en taller, papeles al día ese día, sin otro viaje ese día). */
@@ -127,7 +151,7 @@
       { k: 'v-disp', n: n.disponibles, lbl: 'Disponibles', icono: 'carro', tono: 'disco', filtro: 'disponible' },
       { k: 'v-uso', n: n.enUso, lbl: 'En uso', icono: 'persona', tono: 'listo', filtro: 'uso' },
       { k: 'v-nov', n: n.novedades, lbl: 'Novedades sin revisar', icono: 'aviso', tono: 'org', filtro: 'novedad' },
-      { k: 'v-doc', n: n.docs, lbl: 'Documentos por vencer o vencidos', icono: 'calendario', tono: 'peligro', filtro: 'docs' }
+      { k: 'v-doc', n: n.docs + n.mttos, lbl: 'Documentos y mantenimientos', icono: 'calendario', tono: 'peligro', filtro: 'docs' }
     ]);
     $('vehSecciones').innerHTML = secciones().map(([k, t]) => `<button type="button" class="chip" data-sec="${k}" aria-pressed="${seccion === k}">${esH(t)}${k === 'hacer' && n.mias ? ` <span class="n">${n.mias}</span>` : ''}</button>`).join('');
     const c = $('vehContenido');
@@ -159,8 +183,20 @@
       const docs = D().vehiculos.filter(v => docsMal(v).length);
       h += `<div class="section-label">Documentos por vencer o vencidos (${docs.length})</div>`;
       h += docs.length ? `<div class="list">${docs.map(v => `<div class="card tarea st-${docsMal(v).some(k => estDoc(v[k]) === 'vencido') ? 'peligro' : 'org'}"><div class="tarea-t"><b><span class="placa">${esH(v.placa)}</span> ${esH(v.marca)} ${esH(v.modelo)}</b></div><span class="docs">${docPill('SOAT', v.soat)}${docPill('Técnico-mecánica', v.tecno)}</span><div class="tarea-pie">${boton('docs', 'Actualizar fechas', 'calendario', v.id, 'primary small')}${boton('ver', 'Hoja de vida', '', v.id, 'ghost small')}</div></div>`).join('')}</div>` : '<p class="meta">Todos los documentos están al día.</p>';
+      const mp = mttosPend();
+      h += `<div class="section-label">Mantenimientos por hacer (${mp.length})</div>`;
+      h += mp.length ? `<div class="list">${mp.map(x => tarjetaMtto(x, true)).join('')}</div>` : '<p class="meta">No hay mantenimientos por vencer.</p>';
     }
     return h;
+  }
+  /** Una tarea del plan de un carro: qué es, cada cuánto, cuándo se hizo por última vez y cuánto falta. */
+  function tarjetaMtto({ v, m, e }, conPlaca = true) {
+    const cada = [num(m.cadaKm) > 0 ? `cada ${km(m.cadaKm)}` : '', num(m.cadaDias) > 0 ? `cada ${num(m.cadaDias)} días` : ''].filter(Boolean).join(' o ');
+    const tono = e.est === 'vencido' ? 'peligro' : e.est === 'pronto' ? 'org' : 'disco';
+    return `<div class="card tarea st-${tono}"><div class="tarea-t"><b>${conPlaca ? `<span class="placa">${esH(v.placa)}</span> ` : ''}${esH(m.tarea)}</b>
+      <span class="meta">${esH(cada)}. Último: ${esH(km(m.ultimoKm))}${m.ultimaFecha ? ' · ' + esH(A().fechaCorta(m.ultimaFecha)) : ''}${num(m.ultimoCosto) ? ' · costó ' + esH(A().cop(m.ultimoCosto)) : ''}</span></div>
+      <span class="docs">${A().pill(e.est === 'vencido' ? `Toca ya: ${e.texto}` : e.est === 'pronto' ? `Pronto: ${e.texto}` : `Al día: ${e.texto}`, e.est === 'vencido' ? 's-peligro' : e.est === 'pronto' ? 's-org' : 's-disco', e.est === 'ok' ? 'check' : 'mantenimiento')}</span>
+      ${esAdmin() ? `<div class="tarea-pie">${boton('mttohecho', 'Hecho', 'check', v.id, e.est === 'ok' ? 'small' : 'primary small', ` data-mtto="${esH(m.id)}"`)}${conPlaca ? boton('ver', 'Hoja de vida', '', v.id, 'ghost small') : boton('mttoquitar', 'Quitar del plan', '', v.id, 'ghost small', ` data-mtto="${esH(m.id)}"`)}</div>` : ''}</div>`;
   }
   function tarjetaViaje(n) {
     const v = vehPorId(n.vehiculoId), r = reunionPorId(n.reunionId);
@@ -189,12 +225,12 @@
     const q = buscar.trim().toLowerCase();
     const base = D().vehiculos.slice().sort((a, b) => String(a.placa).localeCompare(String(b.placa)))
       .filter(v => !q || [v.placa, v.marca, v.modelo, v.conductor, v.color].join(' ').toLowerCase().includes(q));
-    const FILTROS = { disponible: v => v.estado === 'disponible', uso: v => v.estado === 'en-uso', taller: v => v.estado === 'en-taller', docs: v => docsMal(v).length > 0 };
+    const FILTROS = { disponible: v => v.estado === 'disponible', uso: v => v.estado === 'en-uso', taller: v => v.estado === 'en-taller', docs: v => docsMal(v).length > 0 || conMtto(v) };
     const vs = FILTROS[f] ? base.filter(FILTROS[f]) : base;
     const chip = (k, txt, n) => `<button type="button" class="chip" data-accion="filtroveh" data-id="${k}" aria-pressed="${(f || '') === k}">${esH(txt)} <span class="n">${n}</span></button>`;
     const bd = `<input class="search" id="qVeh" type="search" placeholder="Buscar placa, marca, modelo o conductor" autocomplete="off" aria-label="Buscar carro" value="${esH(buscar)}">`
       + window.ExcelBD.html(cfgVehiculos())
-      + `<div class="chips" role="group" aria-label="Filtrar carros">${chip('', 'Todos', base.length)}${chip('disponible', 'Disponible', base.filter(FILTROS.disponible).length)}${chip('uso', 'En uso', base.filter(FILTROS.uso).length)}${chip('taller', 'En taller', base.filter(FILTROS.taller).length)}${chip('docs', 'Documentos', base.filter(FILTROS.docs).length)}</div>`;
+      + `<div class="chips" role="group" aria-label="Filtrar carros">${chip('', 'Todos', base.length)}${chip('disponible', 'Disponible', base.filter(FILTROS.disponible).length)}${chip('uso', 'En uso', base.filter(FILTROS.uso).length)}${chip('taller', 'En taller', base.filter(FILTROS.taller).length)}${chip('docs', 'Documentos y mantenimientos', base.filter(FILTROS.docs).length)}</div>`;
     if (!vs.length) return bd + UI.vacio('carro', 'No hay carros con ese filtro', '') + (f || q ? `<div class="barra-botones">${boton('filtroveh', 'Quitar filtro', 'x', '', 'primary', ' data-modo="todo"')}</div>` : '');
     return bd + `<div class="list">${vs.map(v => {
       const st = EST[v.estado] || ['Sin estado', 'none', 'pend'], pend = novDe(v.id).filter(n => !n.revisada).length;
@@ -202,7 +238,7 @@
         <span class="card-head"><span class="card-title"><span class="placa">${esH(v.placa)}</span></span>${App.pill(st[0], st[1])}</span>
         <span class="card-sub">${esH(v.marca)} ${esH(v.modelo)} ${esH(v.anio)}${v.color ? ' · ' + esH(v.color) : ''}</span>
         <span class="facts"><span>${window.ico('persona')} <b>${esH(v.conductor || 'Sin conductor')}</b></span><span class="valor">${esH(km(v.km))}</span></span>
-        <span class="docs">${docPill('SOAT', v.soat)}${docPill('Técnico-mecánica', v.tecno)}${pend ? App.pill(`${pend} ${pend === 1 ? 'novedad' : 'novedades'} sin revisar`, 's-org', 'aviso') : ''}</span>
+        <span class="docs">${docPill('SOAT', v.soat)}${docPill('Técnico-mecánica', v.tecno)}${pend ? App.pill(`${pend} ${pend === 1 ? 'novedad' : 'novedades'} sin revisar`, 's-org', 'aviso') : ''}${mttosDe(v).map(m => ({ m, e: estMtto(m, v) })).filter(x => x.e.est !== 'ok').slice(0, 2).map(x => App.pill(`${x.m.tarea}: ${x.e.texto}`, x.e.est === 'vencido' ? 's-peligro' : 's-org', 'mantenimiento')).join('')}</span>
       </button>`;
     }).join('')}</div>`;
   }
@@ -436,6 +472,52 @@
         return [['mezclar', 'vehiculos', v.id, { soat, tecno, historial: paso(v, `Actualizó los documentos (SOAT ${A().fechaCorta(soat)}, técnico-mecánica ${A().fechaCorta(tecno)})`) }]];
       } });
   }
+  /** El mantenimiento ya se hizo: se anota con qué kilometraje, qué día y cuánto costó, y el plan se pone al día. */
+  function mttoHecho(v, mid) {
+    const m = mttosDe(v).find(x => x.id === mid); if (!m) return null;
+    abrir({ titulo: `Mantenimiento hecho: ${m.tarea}`, sub: `${v.placa} · ${v.marca} ${v.modelo}. Va en ${km(v.km)}.`,
+      campos: `<div class="fields cols">${campoNum('vmKm', 'Kilometraje al hacerlo', v.km, 0, 2000000)}${campoTxt('vmFecha', 'Fecha', A().hoyISO(), '', 10, 'date')}</div>` +
+        campoNum('vmCosto', 'Costo en pesos (0 si no se sabe)', 0, 0, 100000000) + campoTxt('vmNota', 'Nota (opcional)', '', 'Ej: también se cambió el filtro', 120),
+      primario: 'Guardar', icono: 'check', listo: 'Listo: mantenimiento anotado. El plan quedó al día.', base: Object.assign({}, v),
+      ops: () => {
+        const kmv = entero('vmKm'), fecha = valor('vmFecha'), costo = valor('vmCosto') === '' ? 0 : entero('vmCosto'), nota = valor('vmNota');
+        if (!(kmv >= 0)) return fallar('Escribe el kilometraje (solo números).', 'vmKm');
+        if (kmv > num(v.km) + 3000) return fallar('El kilometraje parece muy alto. Revísalo.', 'vmKm');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > A().hoyISO()) return fallar('Revisa la fecha: no puede ser de mañana.', 'vmFecha');
+        if (!(costo >= 0)) return fallar('Escribe el costo en pesos, sin puntos ni comas.', 'vmCosto');
+        const act = vehPorId(v.id) || v;
+        const campos = { mttos: mttosDe(act).map(x => (x.id === mid ? Object.assign({}, x, { ultimoKm: kmv, ultimaFecha: fecha, ultimoCosto: costo }) : x)),
+          historial: paso(act, `Mantenimiento hecho: ${m.tarea} (${km(kmv)}, ${A().fechaCorta(fecha)}${costo ? ', costó ' + A().cop(costo) : ''})${nota ? '. ' + nota : ''}`) };
+        if (kmv > num(act.km)) campos.km = kmv;
+        return [['mezclar', 'vehiculos', v.id, campos]];
+      } });
+  }
+  /** Una tarea nueva del plan: qué se hace, cada cuántos km y/o días, y cuándo se hizo por última vez. */
+  function mttoNuevo(v) {
+    abrir({ titulo: `Agregar tarea al plan del ${v.placa}`, sub: 'Escribe cada cuánto se hace: por kilómetros, por días o por las dos (lo que llegue primero).',
+      campos: campoTxt('vtTarea', 'Qué se hace', '', 'Ej: cambio de aceite', 60) +
+        `<div class="fields cols">${campoNum('vtCadaKm', 'Cada cuántos km (0 = no aplica)', 5000, 0, 200000)}${campoNum('vtCadaDias', 'Cada cuántos días (0 = no aplica)', 180, 0, 3650)}</div>` +
+        `<div class="fields cols">${campoNum('vtUltKm', 'La última vez: kilometraje', v.km, 0, 2000000)}${campoTxt('vtUltFecha', 'La última vez: fecha', A().hoyISO(), '', 10, 'date')}</div>`,
+      primario: 'Agregar al plan', icono: 'check', listo: 'Listo: tarea agregada al plan.', base: Object.assign({}, v),
+      ops: () => {
+        const act = vehPorId(v.id) || v, tarea = valor('vtTarea'), cadaKm = entero('vtCadaKm'), cadaDias = entero('vtCadaDias'), ultKm = entero('vtUltKm'), fecha = valor('vtUltFecha');
+        if (mttosDe(act).length >= 10) return fallar('Un carro lleva hasta 10 tareas en su plan.');
+        if (tarea.length < 3) return fallar('Escribe qué se hace (por ejemplo, cambio de aceite).', 'vtTarea');
+        if (!(cadaKm >= 0) || !(cadaDias >= 0)) return fallar('Escribe cada cuánto: solo números (0 si no aplica).', 'vtCadaKm');
+        if (cadaKm === 0 && cadaDias === 0) return fallar('Escribe cada cuántos km o cada cuántos días (al menos uno).', 'vtCadaKm');
+        if (!(ultKm >= 0) || ultKm > num(act.km)) return fallar(`El kilometraje de la última vez no puede ser mayor que el de hoy (${km(act.km)}).`, 'vtUltKm');
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > A().hoyISO()) return fallar('Revisa la fecha de la última vez: no puede ser de mañana.', 'vtUltFecha');
+        const nueva = { id: 'mt' + Date.now().toString(36), tarea, cadaKm, cadaDias, ultimoKm: ultKm, ultimaFecha: fecha, ultimoCosto: 0 };
+        const cada = [cadaKm > 0 ? `cada ${km(cadaKm)}` : '', cadaDias > 0 ? `cada ${cadaDias} días` : ''].filter(Boolean).join(' o ');
+        return [['mezclar', 'vehiculos', v.id, { mttos: mttosDe(act).concat([nueva]), historial: paso(act, `Plan de mantenimiento: agregó «${tarea}» (${cada})`) }]];
+      } });
+  }
+  function mttoQuitar(v, mid) {
+    const m = mttosDe(v).find(x => x.id === mid); if (!m) return null;
+    abrir({ titulo: `Quitar «${m.tarea}» del plan`, sub: `${v.placa}. Se quita del plan; el historial del carro guarda que se quitó.`, campos: '<p class="meta">Si solo cambió cada cuánto se hace, quítala y agrégala otra vez con los datos nuevos.</p>',
+      primario: 'Quitar del plan', icono: 'borrar', listo: 'Listo: tarea quitada del plan.', base: Object.assign({}, v),
+      ops: () => { const act = vehPorId(v.id) || v; return [['mezclar', 'vehiculos', v.id, { mttos: mttosDe(act).filter(x => x.id !== mid), historial: paso(act, `Plan de mantenimiento: quitó «${m.tarea}»`) }]]; } });
+  }
   function estado(v) {
     const aTaller = v.estado !== 'en-taller';
     abrir({ titulo: aTaller ? `Mandar el ${v.placa} al taller` : `El ${v.placa} salió del taller`, sub: aTaller ? 'Mientras esté en el taller no se puede asignar a reuniones.' : 'Queda disponible para salir.',
@@ -533,6 +615,7 @@
         <dl class="datos"><dt>Conductor</dt><dd>${esH(v.conductor || 'Sin conductor')}</dd><dt>Kilometraje</dt><dd>${esH(km(v.km))}</dd></dl>
         <div class="docs">${docPill('SOAT', v.soat)}${docPill('Técnico-mecánica', v.tecno)}</div>
         ${bts.length ? `<div class="tarea-pie">${bts.join('')}</div>` : ''}
+        <div class="section-label">Plan de mantenimiento (${mttosDe(v).length})</div>${mttosDe(v).length ? `<div class="list">${mttosDe(v).map(m => tarjetaMtto({ v, m, e: estMtto(m, v) }, false)).join('')}</div>` : '<p class="meta">Este carro todavía no tiene plan de mantenimiento.</p>'}${esAdmin() && mttosDe(v).length < 10 ? `<div class="tarea-pie">${boton('mttonuevo', 'Agregar tarea al plan', 'mas', v.id, 'small')}</div>` : ''}
         <div class="section-label">Novedades (${ns.length})</div>${ns.length ? `<div class="list">${ns.map(tarjetaNovedad).join('')}</div>` : '<p class="meta">Sin novedades.</p>'}
         <div class="section-label">Salidas y llegadas</div>${es.length ? `<ul class="necesidades-l">${es.map(e => `<li><span class="nf-cab"><span class="nf-t"><b>${e.tipo === 'salida' ? 'Salida' : 'Llegada'} · ${esH(km(e.km))}</b><span class="meta">${esH(e.conductor)} · ${e.tipo === 'salida' ? 'entregó' : 'recibió'} ${esH(e.con)} · ${esH(App.hace(e.fecha))} · combustible ${esH(e.combustible)}</span>${e.observaciones ? `<span class="meta">${esH(e.observaciones)}</span>` : ''}</span>${Object.values(e.revision || {}).every(Boolean) ? App.pill('Revisión bien', 's-disco', 'check') : App.pill('Con problemas', 's-peligro', 'aviso')}</span><span class="meta rev-res">Críticos: ${esH(textoRevision(e.revision).criticos)} · Otros: ${esH(textoRevision(e.revision).otros)}</span><div class="fotos-fila">${fotosDe(e)}</div></li>`).join('')}</ul>` : '<p class="meta">Todavía no hay salidas registradas.</p>'}
         <div class="section-label">Historial</div><ol class="linea">${hist.map(x => `<li><b>${esH(x.texto)}</b><span class="meta">${esH(x.por || '')} · ${esH(App.hace(x.fecha))}</span></li>`).join('') || '<li><span class="meta">Sin historial.</span></li>'}</ol>` });
@@ -560,6 +643,9 @@
       docs: () => v && esAdmin() ? docs(v) : null,
       estado: () => v && esAdmin() ? estado(v) : null,
       asignar: () => v && esAdmin() ? asignar(v) : null,
+      mttohecho: () => v && esAdmin() ? mttoHecho(v, b.dataset.mtto) : null,
+      mttonuevo: () => v && esAdmin() && mttosDe(v).length < 10 ? mttoNuevo(v) : null,
+      mttoquitar: () => v && esAdmin() ? mttoQuitar(v, b.dataset.mtto) : null,
       salida: () => v && v.estado === 'disponible' && (esAdmin() || esConductor()) ? entrega(v, 'salida', b.dataset.viaje) : null,
       llegada: () => v && v.estado === 'en-uso' && (esAdmin() || esConductor()) ? entrega(v, 'llegada', b.dataset.viaje) : null
     };

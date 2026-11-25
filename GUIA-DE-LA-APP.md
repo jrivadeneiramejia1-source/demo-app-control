@@ -488,13 +488,13 @@ El **Encargado de equipos** puede tocar el botón de **códigos de barras** que 
 | Rol / nivel | Qué hace en Vehículos |
 |---|---|
 | **Conductor** (Oscar Farfán) — nivel «Reporta» | **Reporta novedades** (siempre con foto), **registra la salida y la llegada** del carro (con 5 fotos, kilometraje y combustible). Confirma **su** viaje. |
-| **Transporte** (Wilson Muñoz) y **Bodega** (Andrés Beltrán) — nivel «Autoriza» | **Revisan las novedades** (le ponen costo y nota), actualizan los documentos, asignan conductor y ven **Resumen y Reportes**. |
+| **Transporte** (Wilson Muñoz) y **Bodega** (Andrés Beltrán) — nivel «Autoriza» | **Revisan las novedades** (le ponen costo y nota), actualizan los documentos, asignan conductor, llevan el **plan de mantenimiento** de cada carro y ven **Resumen y Reportes**. |
 | **Jefe** | Todo. |
 | **Gerente** | Solo ver: Resumen, Reportes, Carros, Novedades. |
 | **Consulta** y quien tenga «Solo ver» | Solo mirar. |
 
 ### 10.2 Las pestañas de Vehículos
-- **Lo que me toca**, **Carros**, **Novedades**.
+- **Lo que me toca**, **Carros**, **Novedades**. En «Lo que me toca» de Transporte, Bodega y la Jefe sale **«Mantenimientos por hacer»**.
 - En **Carros** hay un **buscador** (placa, marca, modelo o conductor) y botones **Todos · Disponible · En uso · En taller · Documentos**, cada uno con cuántos hay. Se suman al buscador y a las cifras de arriba (tocar «En uso» arriba o en los botones es lo mismo). Si no hay resultados, sale **«Quitar filtro»**.
 - **Resumen** y **Reportes** (solo Transporte, Bodega, Jefe y, en su versión, el Gerente).
 
@@ -509,6 +509,12 @@ El **Encargado de equipos** puede tocar el botón de **códigos de barras** que 
   - La lista es la del plan: **no hay un formato oficial único** (el PESV de la Resolución 40595 de 2022 deja que cada empresa arme el suyo, y los extintores, botiquines, kit de carretera y llanta de repuesto salen del Código de Tránsito, sin confirmar con el texto de la ley). Si Transporte entrega su formato, se cambia la lista en `vehiculos.js` (`REV_CRITICOS` y `REV_OTROS`).
 - Un carro **solo sale** si no está en el taller y tiene el **SOAT y la técnico-mecánica al día**.
 - **Avisos de documentos:** cuando un documento está por vencer o vencido, avisan la Jefe, Transporte y Bodega.
+- **Plan de mantenimiento de cada carro** (en su hoja de vida). Cada carro puede tener hasta **10 tareas** (cambio de aceite, alineación, pastillas de freno…). Cada tarea se pone **cada cuántos km, cada cuántos días, o las dos** (lo que llegue primero), con cuándo se hizo por última vez.
+  - Cada tarea está **«Al día»**, **«Pronto»** (faltan 500 km o menos, o 15 días o menos) o **«Toca ya»** (ya se pasó el km o la fecha). Ejemplo: aceite cada 5.000 km, el último a los 40.000 km y el carro va en 44.700 → faltan 300 km: **Pronto**.
+  - **Quién lo maneja:** Transporte, Bodega y la Jefe agregan tareas, las marcan **«Hecho»** y las quitan. El Conductor y quien solo consulta lo **ven**, pero no lo cambian (las reglas de Firebase también lo impiden).
+  - **«Hecho»** pide el **kilometraje** (si es mayor que el del carro, el carro sube a ese kilometraje), la **fecha** (no puede ser de mañana), el **costo** y una nota; la tarea queda al día y el **historial** del carro guarda la línea («Mantenimiento hecho: Cambio de aceite (62.900 km, …, costó $ 210.000)»).
+  - Lo que está por tocar o ya tocó aparece en **«Mantenimientos por hacer»** (los que ya tocan, primero), en la tarjeta del carro en **Carros** y en la cifra de arriba, que ahora se llama **«Documentos y mantenimientos»** (suma los documentos por vencer o vencidos y los mantenimientos por hacer). El botón **«Documentos y mantenimientos»** de Carros filtra los carros con algo de eso.
+  - El Inicio sigue contando solo documentos (SOAT y técnico-mecánica).
 - Las salidas y llegadas **no se cambian después**.
 - Si un carro de una reunión ya salió, hay que registrar su llegada antes de reasignarlo.
 

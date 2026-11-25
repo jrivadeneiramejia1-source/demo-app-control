@@ -235,13 +235,16 @@ service cloud.firestore {
 
     // Vehículos: hoja de vida de cada carro. Transporte y Bodega asignan, actualizan documentos y estado;
     // el Conductor solo cambia estado (salida/llegada), kilometraje (nunca hacia atrás) y conductor, con una línea de historial.
+    // El plan de mantenimiento de un carro (`mttos`) es una lista de hasta 10 tareas: { id, tarea, cadaKm, cadaDias, ultimoKm, ultimaFecha, ultimoCosto }.
+    // Lo cambian Transporte y Bodega (siempre con una línea nueva de historial) y la Jefe; el Conductor no.
+    function mttosOk() { return nuevo().get('mttos', []) is list && nuevo().get('mttos', []).size() <= 10; }
     match /vehiculos/{id} {
       allow read: if veVehiculos();
       allow create, delete: if esJefe();
-      allow update: if esJefe()
-        || (esDemo() && nivel('vehiculos') == 'autoriza' && soloCambia(['conductor', 'soat', 'tecno', 'estado', 'km', 'historial', 'ultimaEntrega'])
+      allow update: if (esJefe() && mttosOk())
+        || (esDemo() && nivel('vehiculos') == 'autoriza' && soloCambia(['conductor', 'soat', 'tecno', 'estado', 'km', 'historial', 'ultimaEntrega', 'mttos'])
             && nuevo().km is number && nuevo().km >= antes().km && nuevo().estado in ['disponible', 'en-uso', 'en-taller']
-            && esFecha(nuevo().soat) && esFecha(nuevo().tecno) && historialSigue())
+            && esFecha(nuevo().soat) && esFecha(nuevo().tecno) && historialSigue() && mttosOk())
         // El Conductor solo pasa el carro de disponible a en uso (o al revés) junto con la salida o llegada que registra en ese mismo momento.
         || (esDemo() && nivel('vehiculos') == 'reporta' && soloCambia(['estado', 'km', 'conductor', 'historial', 'ultimaEntrega'])
             && antes().estado in ['disponible', 'en-uso'] && nuevo().estado in ['disponible', 'en-uso'] && nuevo().estado != antes().estado
