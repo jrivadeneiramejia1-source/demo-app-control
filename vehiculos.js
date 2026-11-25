@@ -117,9 +117,8 @@
     ]);
     $('vehSecciones').innerHTML = secciones().map(([k, t]) => `<button type="button" class="chip" data-sec="${k}" aria-pressed="${seccion === k}">${esH(t)}${k === 'hacer' && n.mias ? ` <span class="n">${n.mias}</span>` : ''}</button>`).join('');
     const c = $('vehContenido');
-    if (['vehiculos', 'novedades', 'entregas'].some(App.cargando)) { c.innerHTML = UI.esqueleto(3); return; }
-    c.innerHTML = ({ hacer: htmlHacer, carros: () => htmlCarros(f), novedades: () => htmlNovedades(f), resumen: htmlResumen, reportes: htmlReportes })[seccion]();
-    window.llenarIconos(c);
+    if (['vehiculos', 'novedades', 'entregas'].some(App.cargando)) { UI.poner(c, UI.esqueleto(3)); return; }
+    if (UI.poner(c, ({ hacer: htmlHacer, carros: () => htmlCarros(f), novedades: () => htmlNovedades(f), resumen: htmlResumen, reportes: htmlReportes })[seccion]())) window.llenarIconos(c);
     avisarVencimientos();
   }
   const boton = (acc, txt, icono, id, clase, extra) => `<button class="btn ${clase || 'small'}" type="button" data-accion="${acc}" data-id="${esH(id)}"${extra || ''}>${icono ? `<span data-ico="${icono}"></span>` : ''}${esH(txt)}</button>`;

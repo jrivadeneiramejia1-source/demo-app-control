@@ -430,7 +430,7 @@ try {
   await t.page.click('#acPrimario');
   log('el máximo menor que el mínimo no deja guardar', await hasta(t.page, () => /máximo debe ser mayor/.test(document.getElementById('acErr').textContent)));
   await t.page.fill('#acMax', '12'); await t.page.click('#acPrimario');
-  log('el artículo nuevo entra a la bodega con su movimiento inicial (y sale bajo del mínimo)', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const a = Object.entries(d.articulos).find(([, x]) => x.nombre === 'Guantes de nitrilo talla M'); return a && a[1].cantidad === 4 && Object.values(d.movimientos).some(m => m.articuloId === a[0] && m.motivo === 'inicial'); }) && /Guantes de nitrilo talla M/.test(await texto(t.page, '#invContenido')));
+  log('el artículo nuevo entra a la bodega con su movimiento inicial (y sale bajo del mínimo)', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const a = Object.entries(d.articulos).find(([, x]) => x.nombre === 'Guantes de nitrilo talla M'); return a && a[1].cantidad === 4 && Object.values(d.movimientos).some(m => m.articuloId === a[0] && m.motivo === 'inicial') && /Guantes de nitrilo talla M/.test(document.getElementById('invContenido').textContent); }));
   await t.page.click('#invSecciones [data-sec="hacer"]');
   await t.page.screenshot({ path: path.join(CAPTURAS, '05-inventario-sofia.png'), fullPage: true });
   console.log('4d. Compras con varias líneas, monto del Gerente en dos pasos, sobrecosto, kárdex');
@@ -521,6 +521,18 @@ try {
   const [descK] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#acCampos [data-accion="excelkardex"]')]);
   if (descK) { const ruta = path.join(CAPTURAS, 'excel-kardex.xlsx'); await descK.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del kárdex tiene formato y su título dice el artículo', hs.length === 1 && bienFormado(hs[0]) && /Cinta aislante/.test(hs[0].titulo), JSON.stringify(hs.map(h => [h.nombre, h.titulo]))); }
   log('descarga el Excel de ese artículo', !!descK && /^Kardex Cinta aislante .*\.xlsx$/.test(descK.suggestedFilename()), descK && descK.suggestedFilename());
+  await t.page.keyboard.press('Escape');
+  // Kárdex largo: con 120 movimientos más se muestran de 50 en 50 y «Ver más» agrega los siguientes sin rehacer la lista.
+  await t.page.evaluate(() => { const S = window.App.S, base = S.datos.movimientos.find(m => m.articuloId === 'ar-009'); S.datos.movimientos = S.datos.movimientos.concat(Array.from({ length: 120 }, (_, i) => Object.assign({}, base, { id: 'mov-prueba-' + i, fecha: new Date(Date.now() - (i + 1) * 3600000).toISOString() }))); });
+  await t.page.locator('#invContenido [data-accion="verart"][data-id="ar-009"]').click();
+  await t.page.click('#acCampos [data-accion="kardex"]');
+  const filasK = () => t.page.evaluate(() => document.querySelectorAll('#acCampos .lineas-tabla tbody tr').length);
+  const totalK = await t.page.evaluate(() => window.App.S.datos.movimientos.filter(m => m.articuloId === 'ar-009').length);
+  log('el kárdex largo muestra solo 50 filas y el botón dice cuántas faltan', await hasta(t.page, n => document.querySelectorAll('#acCampos .lineas-tabla tbody tr').length === 50 && new RegExp(`Ver más \\(${n - 50} más\\)`).test((document.querySelector('#acCampos .ver-mas') || {}).textContent || ''), totalK));
+  await t.page.click('#acCampos .ver-mas');
+  log('«Ver más» agrega otras 50 filas', (await filasK()) === 100);
+  await t.page.click('#acCampos .ver-mas');
+  log('al llegar al final, se muestran todas y el botón desaparece', (await filasK()) === totalK && !(await t.page.locator('#acCampos .ver-mas').count()));
   await t.page.keyboard.press('Escape');
   await t.page.locator('#invContenido [data-accion="verart"][data-id="ar-004"]').click();
   log('un artículo que sale seguido muestra cuánto sale y el mínimo sugerido', await hasta(t.page, () => !document.getElementById('shAccion').hidden && /En los últimos 30 días salieron/.test(document.getElementById('acCampos').textContent) && /mínimo de \d+ alcanza para unos 10 días/.test(document.getElementById('acCampos').textContent), await texto(t.page, '#acCampos')));
@@ -859,13 +871,17 @@ try {
   log('cada persona (no Gerente) trae un nivel para cada módulo', await t.page.evaluate(i => ['equipos', 'inventario', 'vehiculos', 'reuniones'].every(m => !!document.getElementById(`pm-${i}-${m}`)), uidBruno));
   await t.page.selectOption(`#pm-${uidBruno}-inventario`, 'ver');
   log('la Jefe le pone a Bruno «Inventario: solo ver» y queda guardado junto al de Equipos', await hasta(t.page, i => { const p = JSON.parse(localStorage.getItem('__fb_datos')).usuarios[i].permisos; return p && p.inventario === 'ver' && p.equipos === 'ver'; }, uidBruno));
+  await t.page.waitForTimeout(250);   // el panel termina de guardar el cambio anterior antes de aceptar otro
   await t.page.selectOption(`#pm-${uidBruno}-equipos`, '');
   log('«Como su rol» le quita el permiso de Equipos y deja el otro', await hasta(t.page, i => { const p = JSON.parse(localStorage.getItem('__fb_datos')).usuarios[i].permisos; return p && p.inventario === 'ver' && !('equipos' in p); }, uidBruno));
+  await t.page.waitForTimeout(250);   // el panel termina de guardar el cambio anterior antes de aceptar otro
   await t.page.selectOption(`#pm-${uidBruno}-inventario`, '');
   log('la Jefe le devuelve a Bruno «Inventario: como su rol» (Bodega)', await hasta(t.page, i => Object.keys(JSON.parse(localStorage.getItem('__fb_datos')).usuarios[i].permisos || {}).length === 0, uidBruno));
   const uidNora = (await perfilDe('nora.admin@ejemplo.test')).id;
+  await t.page.waitForTimeout(250);   // el panel termina de guardar el cambio anterior antes de aceptar otro
   await t.page.selectOption(`#pm-${uidNora}-inventario`, 'ver');
   log('y a Nora le pone «Inventario: solo ver»', await hasta(t.page, i => (JSON.parse(localStorage.getItem('__fb_datos')).usuarios[i].permisos || {}).inventario === 'ver', uidNora));
+  await t.page.waitForTimeout(250);   // el panel termina de guardar el cambio anterior antes de aceptar otro
   await t.page.locator(`#genteCuerpo input[data-g="extra"][data-id="${uidBruno}"][data-x="compra"]`).check({ force: true });
   log('también le marca «También hace y recibe compras»', await hasta(t.page, i => JSON.stringify(JSON.parse(localStorage.getItem('__fb_datos')).usuarios[i].extras) === '["compra"]', uidBruno));
   await t.page.screenshot({ path: path.join(CAPTURAS, '07b-permisos-por-persona.png'), fullPage: true });
