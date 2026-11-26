@@ -106,11 +106,11 @@ try {
   await esp(900); // las cifras cuentan hasta su valor
   const sem = await t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos') || '{}'));
   const COLS = ['equipos', 'hojas', 'tareasEq', 'compras', 'proveedores', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'reuniones', 'necesidades', 'avisos'];
-  log('sembró 13 equipos (12 en uso y 1 de baja), 6 actas, 3 tareas de equipos, 14 compras, 5 proveedores, 18 artículos, 13 movimientos, 5 pedidos, 4 carros, 3 novedades, 3 salidas/llegadas, 4 reuniones, 25 tareas de reuniones y 12 avisos',
-    COLS.map(c => Object.keys(sem[c] || {}).length).join(',') === '13,6,3,14,5,18,13,5,4,3,3,4,25,12', COLS.map(c => c + ':' + Object.keys(sem[c] || {}).length).join(' '));
+  log('sembró 13 equipos (12 en uso y 1 de baja), 6 actas, 3 tareas de equipos, 14 compras, 5 proveedores, 20 artículos, 16 movimientos, 7 pedidos, 4 carros, 3 novedades, 3 salidas/llegadas, 4 reuniones, 25 tareas de reuniones y 12 avisos',
+    COLS.map(c => Object.keys(sem[c] || {}).length).join(',') === '13,6,3,14,5,20,16,7,4,3,3,4,25,12', COLS.map(c => c + ':' + Object.keys(sem[c] || {}).length).join(' '));
   log('el saludo dice Hola, Carolina', (await texto(t.page, '#tInicio')) === 'Hola, Carolina');
   log('Jefe ve 9 cifras de pendientes (ya no autoriza compras)', (await t.page.locator('#sumInicio .sum').count()) === 9);
-  log('bodega: 5 agotados o bajos y 3 pedidos por entregar', (await cifra(t.page, 'sumInicio', 0)) === 5 && (await cifra(t.page, 'sumInicio', 1)) === 3);
+  log('bodega: 5 agotados o bajos y 4 pedidos por entregar', (await cifra(t.page, 'sumInicio', 0)) === 5 && (await cifra(t.page, 'sumInicio', 1)) === 4);
   log('a la Jefe ya no le sale «compras que te toca autorizar»; sí las sin autorizar = 1', (await cifra(t.page, 'sumInicio', 2)) === 1 && !/te toca autorizar/.test(await texto(t.page, '#sumInicio')) && /sin autorizar/.test(await texto(t.page, '#sumInicio')));
   log('Jefe ve las 5 pestañas y los 4 módulos abiertos', (await t.page.locator('.tab:not([hidden])').count()) === 5 && (await t.page.locator('#modulosLista .modulo.bloqueado').count()) === 0);
   log('la campana tiene avisos sin leer (1 de la Jefe y 1 para todos)', (await texto(t.page, '#badgeAvisos')) === '2');
@@ -178,18 +178,18 @@ try {
   await t.page.click('#invContenido [data-accion="ir"][data-sec="existencias"]');
   log('tocar «artículos agotados» lleva a Existencias ya filtradas', await hasta(t.page, () => document.querySelector('#invSecciones [data-sec="existencias"]').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('#invContenido .art').length === 2));
   await t.page.click('#invSecciones [data-sec="hacer"]');
-  log('Inventario: la Jefe ve 12 tareas agrupadas por a quién le tocan (la Coordinadora, Compras, Andrés y el Gerente general)', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return document.querySelectorAll('#invContenido .tarea').length === 12 && !/Te toca a ti/.test(x) && /Le toca a Mauricio G\. \(3\)/.test(x) && /Le toca a Andrés B\./.test(x) && /Le toca a Fredy T\./.test(x) && /Le toca a Gerente/.test(x); }), await texto(t.page, '#invContenido'));
+  log('Inventario: la Jefe ve 13 tareas agrupadas por a quién le tocan (la Coordinadora, Compras, Andrés y el Gerente general)', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return document.querySelectorAll('#invContenido .tarea').length === 13 && !/Te toca a ti/.test(x) && /Le toca a Mauricio G\. \(3\)/.test(x) && /Le toca a Andrés B\./.test(x) && /Le toca a Fredy T\./.test(x) && /Le toca a Gerente/.test(x); }), await texto(t.page, '#invContenido'));
   log('la Jefe puede comprar, recibir y entregar, pero ya NO autoriza compras ni marca revisadas (eso es de la Coordinadora y del Gerente general)', await t.page.evaluate(() => ['comprar', 'recibir', 'entregar'].every(a => document.querySelector(`#invContenido [data-accion="${a}"]`)) && !document.querySelector('#invContenido [data-accion="autorizar"]') && !document.querySelector('#invContenido [data-accion="rechazar"]') && !document.querySelector('#invContenido [data-accion="revisada"]') && /La pidió la Coordinadora|Le toca a Mauricio/.test(document.getElementById('invContenido').textContent)));
   log('Inventario: sale la tarea de autorizar las botas (agotadas) y no la de pedirlas', /Autorizar compra: Botas de seguridad talla 40/.test(await texto(t.page, '#invContenido')) && !/Pedir compra: Botas de seguridad talla 40/.test(await texto(t.page, '#invContenido')));
   await esp(900);
   log('Inventario: tablero con 2 agotados y 3 bajos', (await cifra(t.page, 'sumInventario', 0)) === 2 && (await cifra(t.page, 'sumInventario', 1)) === 3);
   await t.page.click('#invSecciones [data-sec="existencias"]');
-  log('Existencias: 18 artículos, primero los agotados', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.art').length === 18 && /Agotado/.test(document.querySelector('#invContenido .card.art').textContent)));
+  log('Existencias: 20 artículos, primero los agotados', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.art').length === 20 && /Agotado/.test(document.querySelector('#invContenido .card.art').textContent)));
   await t.page.click('#sumInventario button.sum[data-filtro="agotado"]');
   log('Existencias: tocar "Agotados" deja 2', (await t.page.locator('#invContenido .card.art').count()) === 2);
   await t.page.click('#sumInventario button.sum[data-filtro="agotado"]');
   await t.page.fill('#qInventario', 'botas');
-  log('Existencias: la búsqueda encuentra las 2 botas (se repinta 300 ms después de escribir)', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.art').length === 2));
+  log('Existencias: la búsqueda encuentra las 3 botas (se repinta 300 ms después de escribir)', await hasta(t.page, () => document.querySelectorAll('#invContenido .card.art').length === 3));
   await t.page.fill('#qInventario', '');
   // Código del artículo, clase ABC, tabla en pantalla ancha y «Te toca contar hoy» (Fase 13), con los datos de ejemplo todavía sin tocar
   log('Existencias: las tarjetas dicen el código de los artículos que lo tienen («Cód. BOT040»)', await hasta(t.page, () => { const c = [...document.querySelectorAll('#invContenido .card.art')].find(x => /Botas de seguridad talla 40/.test(x.textContent)); return !!c && /Cód\. BOT040/.test(c.textContent); }));
@@ -211,14 +211,14 @@ try {
   await t.page.click('#invSecciones [data-sec="existencias"]');
   log('a 1280 px sale el botón Tabla/Tarjetas, empieza en Tarjetas y no hay tabla', await hasta(t.page, () => !!document.querySelector('#invContenido .vista-toggle') && document.querySelector('#invContenido [data-accion="vista"][data-id="tarjetas"]').getAttribute('aria-pressed') === 'true' && !document.querySelector('#invContenido .tabla-inv')));
   await t.page.click('#invContenido [data-accion="vista"][data-id="tabla"]');
-  log('al escoger «Tabla» sale la tabla con los 18 artículos, con código, bodega, mínimo, máximo, valor, clase ABC y estado', await hasta(t.page, () => { const th = [...document.querySelectorAll('#invContenido .tabla-inv thead th')].map(x => x.textContent.trim().replace(/[▲▼]/g, '').trim()); return document.querySelectorAll('#invContenido .tabla-inv tbody tr').length === 18 && ['Código', 'Artículo', 'Categoría', 'Bodega', 'Ubicación', 'Hay', 'Mín.', 'Máx.', 'Valor en bodega', 'ABC', 'Estado'].every((x, i) => th[i] === x); }));
+  log('al escoger «Tabla» sale la tabla con los 20 artículos, con código, bodega, mínimo, máximo, valor, clase ABC y estado', await hasta(t.page, () => { const th = [...document.querySelectorAll('#invContenido .tabla-inv thead th')].map(x => x.textContent.trim().replace(/[▲▼]/g, '').trim()); return document.querySelectorAll('#invContenido .tabla-inv tbody tr').length === 20 && ['Código', 'Artículo', 'Categoría', 'Bodega', 'Ubicación', 'Hay', 'Mín.', 'Máx.', 'Valor en bodega', 'ABC', 'Estado'].every((x, i) => th[i] === x); }));
   log('la tabla ensancha la ventana (más de 900 px de ancho) y el encabezado queda fijo al bajar (sticky)', await t.page.evaluate(() => document.querySelector('#invContenido .tabla-inv-wrap').getBoundingClientRect().width > 900 && getComputedStyle(document.querySelector('#invContenido .tabla-inv thead th')).position === 'sticky'));
   log('la elección se recuerda en este navegador (inv.vista = tabla)', await t.page.evaluate(() => localStorage.getItem('inv.vista') === 'tabla'));
-  log('la clase ABC: 2 A, 3 B y 13 C, y las A son las botas 40 y las resmas (lo que más valor sacó en 90 días)', await hasta(t.page, () => { const f = [...document.querySelectorAll('#invContenido .tabla-inv tbody tr')], por = k => f.filter(r => r.querySelector('.abc') && r.querySelector('.abc').textContent === k); return por('A').length === 2 && por('B').length === 3 && por('C').length === 13 && por('A').every(r => /Botas de seguridad talla 40|Resmas de papel/.test(r.textContent)); }));
+  log('la clase ABC: 2 A, 3 B y 15 C, y las A son las botas 40 y las resmas (lo que más valor sacó en 90 días)', await hasta(t.page, () => { const f = [...document.querySelectorAll('#invContenido .tabla-inv tbody tr')], por = k => f.filter(r => r.querySelector('.abc') && r.querySelector('.abc').textContent === k); return por('A').length === 2 && por('B').length === 3 && por('C').length === 15 && por('A').every(r => /Botas de seguridad talla 40|Resmas de papel/.test(r.textContent)); }));
   const colTabla = (k, num) => t.page.evaluate(([i, n]) => [...document.querySelectorAll('#invContenido .tabla-inv tbody tr')].map(r => { const x = r.children[i].textContent.trim(); return n ? Number(x.replace(/\D/g, '')) : x; }), [k, num]);
   await t.page.click('#invContenido .th-orden[data-id="cantidad"]');
   const asc = await colTabla(5, true);
-  log('ordenar por «Hay»: de menor a mayor (el encabezado lo dice con aria-sort y una flecha)', asc.length === 18 && asc.every((v, i) => i === 0 || asc[i - 1] <= v) && await t.page.evaluate(() => document.querySelector('#invContenido .tabla-inv th[aria-sort="ascending"]') !== null && /▲/.test(document.querySelector('#invContenido .tabla-inv th[aria-sort="ascending"]').textContent)), JSON.stringify(asc));
+  log('ordenar por «Hay»: de menor a mayor (el encabezado lo dice con aria-sort y una flecha)', asc.length === 20 && asc.every((v, i) => i === 0 || asc[i - 1] <= v) && await t.page.evaluate(() => document.querySelector('#invContenido .tabla-inv th[aria-sort="ascending"]') !== null && /▲/.test(document.querySelector('#invContenido .tabla-inv th[aria-sort="ascending"]').textContent)), JSON.stringify(asc));
   await t.page.click('#invContenido .th-orden[data-id="cantidad"]');
   const desc = await colTabla(5, true);
   log('tocar otra vez el mismo encabezado lo ordena de mayor a menor', desc.every((v, i) => i === 0 || desc[i - 1] >= v) && desc[0] === Math.max(...asc), JSON.stringify(desc));
@@ -228,16 +228,16 @@ try {
   await t.page.click('#invContenido .th-orden[data-id="nombre"]');
   const nom = await colTabla(1, false);
   log('ordenar por «Artículo»: de la A a la Z', nom.every((v, i) => i === 0 || nom[i - 1].localeCompare(v, 'es', { numeric: true }) <= 0), JSON.stringify(nom));
-  log('el pie de la tabla suma el valor de lo que se ve (hay × precio de cada artículo, recalculado aparte)', await hasta(t.page, () => { const d = window.App.S.datos.articulos, total = d.reduce((s, a) => s + (Number(a.cantidad) || 0) * (Number(a.costo) || 0), 0); return document.querySelector('#invContenido .tabla-inv tfoot .num').textContent.trim() === window.App.cop(total) && /Total de 18 artículos/.test(document.querySelector('#invContenido .tabla-inv tfoot').textContent); }));
+  log('el pie de la tabla suma el valor de lo que se ve (hay × precio de cada artículo, recalculado aparte)', await hasta(t.page, () => { const d = window.App.S.datos.articulos, total = d.reduce((s, a) => s + (Number(a.cantidad) || 0) * (Number(a.costo) || 0), 0); return document.querySelector('#invContenido .tabla-inv tfoot .num').textContent.trim() === window.App.cop(total) && /Total de 20 artículos/.test(document.querySelector('#invContenido .tabla-inv tfoot').textContent); }));
   await t.page.screenshot({ path: path.join(CAPTURAS, '29-existencias-tabla-1280.png'), fullPage: true });
   await t.page.fill('#qInventario', 'botas');
-  log('en la tabla también funciona el buscador (escribir «botas» deja 2 filas)', await hasta(t.page, () => document.querySelectorAll('#invContenido .tabla-inv tbody tr').length === 2));
+  log('en la tabla también funciona el buscador (escribir «botas» deja 3 filas)', await hasta(t.page, () => document.querySelectorAll('#invContenido .tabla-inv tbody tr').length === 3));
   await t.page.fill('#qInventario', '');
   await t.page.click('#invContenido .tabla-inv tbody tr:first-child .fila-nombre'); await t.page.waitForSelector('#shAccion:not([hidden])');
   log('tocar un artículo de la tabla abre su hoja, con el código, la clase ABC y el último conteo', await hasta(t.page, () => { const x = document.getElementById('acCampos').textContent; return /Clase ABC/.test(x) && /Último conteo/.test(x); }), await texto(t.page, '#acCampos'));
   await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shAccion').hidden);
   await t.page.setViewportSize({ width: 412, height: 860 });
-  log('al achicar la ventana a 412 px la tabla se vuelve tarjetas y desaparece el botón Tabla/Tarjetas', await hasta(t.page, () => !document.querySelector('#invContenido .tabla-inv') && !document.querySelector('#invContenido .vista-toggle') && document.querySelectorAll('#invContenido .card.art').length === 18));
+  log('al achicar la ventana a 412 px la tabla se vuelve tarjetas y desaparece el botón Tabla/Tarjetas', await hasta(t.page, () => !document.querySelector('#invContenido .tabla-inv') && !document.querySelector('#invContenido .vista-toggle') && document.querySelectorAll('#invContenido .card.art').length === 20));
   await t.page.evaluate(() => localStorage.removeItem('inv.vista'));
   for (const [sec, re] of [['movimientos', /Registró/], ['solicitudes', /En espera/], ['compras', /En curso/], ['conteo', /conteo/i], ['resumen', /Cómo van las compras[\s\S]*Valor de lo que hay en bodega/]]) {
     await t.page.click(`#invSecciones [data-sec="${sec}"]`);
@@ -357,7 +357,7 @@ try {
     const ruta = path.join(CAPTURAS, 'base-existencias.xlsx'); await descBd.saveAs(ruta); const hs = await excelInfo(ruta), e = hs.find(h => h.nombre === 'Bodega');
     log('trae las hojas Bodega, Ayuda y una de listas oculta', ['Bodega', 'Ayuda', 'Listas'].every(n => hs.some(h => h.nombre === n)) && hs.find(h => h.nombre === 'Listas').oculta && !e.oculta, JSON.stringify(hs.map(h => h.nombre)));
     log('Bodega tiene el formato (título, negrillas, cuadros, fila fija, filtros) y las columnas de una base de datos', !!e && bienFormado(e) && e.titulos.join() === 'ID,Acción,Bodega,Artículo,Categoría,Unidad,Cantidad hoy,Cantidad real (conteo),Mínimo,Máximo,Ubicación,Precio aprox.,Proveedor,Estado,Valor en bodega', JSON.stringify(e && e.titulos));
-    log('trae los 18 artículos con su código, una fila de ejemplo y filas vacías para agregar', !!e && e.filas.filter(f => /^ar-\d+$/.test(f[0])).length === 18 && e.filas.filter(f => /^Ejemplo/.test(f[1])).length === 1 && ['Riohacha', 'Guamal', 'Bogotá'].every(b => e.filas.some(f => f[2] === b)) && e.filas.filter(f => f.slice(0, 13).every(x => x === '')).length >= 15, JSON.stringify(e && e.filas.slice(17, 21)));
+    log('trae los 20 artículos con su código, una fila de ejemplo y filas vacías para agregar', !!e && e.filas.filter(f => /^ar-\d+$/.test(f[0])).length === 20 && e.filas.filter(f => /^Ejemplo/.test(f[1])).length === 1 && ['Riohacha', 'Guamal', 'Bogotá'].every(b => e.filas.some(f => f[2] === b)) && e.filas.filter(f => f.slice(0, 13).every(x => x === '')).length >= 15, JSON.stringify(e && e.filas.slice(17, 21)));
     log('tiene listas desplegables (acción, bodega, categoría, unidad), solo enteros desde 0 y fórmulas de Estado y Valor', await t.page.evaluate(async b64 => {
       const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer);
       const ws = wb.getWorksheet('Bodega'), fila = ws.rowCount, dv = c => (ws.getCell(fila, c).dataValidation || {}).type;
@@ -1885,7 +1885,7 @@ try {
   log('guarda el carro nuevo y el cambio', await hasta(t.page, () => /1 agregado, 1 cambiado/.test(document.body.textContent)));
   const dVe1 = await dBD(), nuevoVe = dVe1.vehiculos['ve-xyz789'];
   log('el carro nuevo queda «disponible», con la placa en mayúsculas y las fechas (también la que venía como fecha de Excel)', !!nuevoVe && nuevoVe.placa === 'XYZ 789' && nuevoVe.estado === 'disponible' && nuevoVe.soat === '2027-06-30' && nuevoVe.tecno === '2027-06-30' && nuevoVe.anio === 2024 && nuevoVe.historial.length === 1);
-  log('el carro que cambió guarda el kilometraje y el color con una línea de historial', dVe1.vehiculos['ve-jkl012'].km === 21500 && dVe1.vehiculos['ve-jkl012'].color === 'Plata brillante' && dVe1.vehiculos['ve-jkl012'].historial.length === 1 && dVe1.vehiculos['ve-def456'].km === 62800 && !!dVe1.vehiculos['ve-abc123']);
+  log('el carro que cambió guarda el kilometraje y el color y suma una línea de historial (de 2 a 3)', dVe1.vehiculos['ve-jkl012'].km === 21500 && dVe1.vehiculos['ve-jkl012'].color === 'Plata brillante' && dVe1.vehiculos['ve-jkl012'].historial.length === 3 && dVe1.vehiculos['ve-def456'].km === 62800 && !!dVe1.vehiculos['ve-abc123']);
   const rutaVe2 = path.join(CAPTURAS, 'bd-carros-eliminar.xlsx');
   await xlsxHoja('Carros', [{ ID: 've-xyz789', Acción: 'Eliminar', Placa: 'XYZ 789' }], rutaVe2);
   await esp(900);

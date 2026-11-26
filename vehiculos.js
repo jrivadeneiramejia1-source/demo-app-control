@@ -54,6 +54,8 @@
   const CONDUCTORES = ['Oscar Farfán', 'Rafael Ospino', 'Hernán Brito'];
   const QUIEN_ENTREGA = ['Wilson Muñoz', 'Andrés Beltrán'];
   let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], fotos = {}, fotoNov = '', fotoTan = '', periodo = 'mes', buscar = '';
+  // Historial completo de la hoja de vida: filtro, orden y el carro al que pertenecen (se reinician al abrir otro carro).
+  let lineaFiltro = 'todo', lineaOrden = 'nuevo', lineaVeh = '';
 
   /* ---------- datos derivados ---------- */
   const vehPorId = id => D().vehiculos.find(v => v.id === id) || null;
@@ -861,11 +863,109 @@
       ops: () => [['mezclar', 'vehiculos', v.id, { conductor: valor('vaCond'), historial: paso(v, valor('vaCond') ? `Asignado a ${valor('vaCond')}` : 'Quedó sin conductor') }]] });
   }
 
+  /* ---------- historial completo del carro ---------- */
+  // Se arma en pantalla con datos que ya existen (historial del carro, entregas, novedades, tanqueos y reservas); no escribe nada nuevo.
+  const LINEA_FILTROS = [['todo', 'Todo'], ['viajes', 'Viajes'], ['mtto', 'Mantenimiento y llantas'], ['novedades', 'Novedades'], ['combustible', 'Combustible'], ['papeles', 'Papeles y taller'], ['reservas', 'Reservas']];
+  const LINEA_TIPO = { viajes: 'Viajes', mtto: 'Mantenimiento y llantas', novedades: 'Novedades', combustible: 'Combustible', papeles: 'Papeles y taller', reservas: 'Reservas', otros: 'Otros' };
+  const msFecha = f => { const s = String(f == null ? '' : f).trim(), d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s), t = d ? new Date(+d[1], +d[2] - 1, +d[3], 12).getTime() : Date.parse(s); return Number.isFinite(t) ? t : 0; };
+  /** Todos los pasos de la vida del carro: [{ fecha, titulo, quien, detalle, tipos }]. Las líneas «Salió con…» y «Llegó con…» del historial se dejan: salen de las entregas, que traen más datos. */
+  function pasosDe(v) {
+    const pasos = [], trs = tramosVeh(v.id);
+    historial(v).filter(x => !/^(Salió|Llegó) con /.test(String(x.texto || ''))).forEach(x => {
+      const t = String(x.texto || '');
+      pasos.push({ fecha: x.fecha, titulo: t, quien: x.por, tipos: [/^(Mantenimiento hecho|Plan de mantenimiento)/.test(t) ? 'mtto' : /^(Actualizó los documentos|Entró al taller|Salió del taller)/.test(t) ? 'papeles' : 'otros'] });
+    });
+    entDe(v.id).forEach(e => {
+      const sal = e.tipo === 'salida', res = e.reservaId ? resPorId(e.reservaId) : null, reu = e.reunionId ? reunionPorId(e.reunionId) : null;
+      pasos.push({ fecha: e.fecha, titulo: `${sal ? 'Salió con' : 'Llegó con'} ${e.conductor || 'sin nombre'}`, quien: e.por, tipos: ['viajes'],
+        detalle: [km(e.km), res ? 'viaje a ' + res.destino : reu ? 'viaje a la ' + reu.comunidad : '', e.combustible ? 'combustible ' + e.combustible : '', e.con ? `${sal ? 'entregó' : 'recibió'} ${e.con}` : '', e.observaciones].filter(Boolean).join(' · ') });
+    });
+    novDe(v.id).forEach(n => {
+      const tipo = TIPO_NOV[n.tipo] || 'Otro', tipos = ['novedades'].concat(['llanta', 'mantenimiento'].includes(n.tipo) ? ['mtto'] : []);
+      pasos.push({ fecha: n.fecha, titulo: `Novedad: ${tipo}`, quien: n.reporta, tipos, detalle: [n.descripcion, km(n.km)].filter(Boolean).join(' · ') });
+      if (n.revisada) pasos.push({ fecha: n.revisadaEn || n.fecha, titulo: `Novedad revisada: ${tipo}`, quien: n.revisadaPor, tipos, detalle: [num(n.costo) ? 'costó ' + A().cop(n.costo) : '', n.nota ? 'nota: ' + n.nota : ''].filter(Boolean).join(' · ') });
+    });
+    tanDe(v.id).forEach(t => {
+      const x = trs.find(y => y.t.id === t.id);
+      pasos.push({ fecha: t.fecha, titulo: `Tanqueo: ${A().cop(t.valor)}`, quien: t.por, tipos: ['combustible'],
+        detalle: [`${nGal(t.galones)} galones${t.lleno === false ? ' (no llenó el tanque)' : ''}`, km(t.km), x ? `rindió ${nKmGal(x.kmGal)} km por galón${x.raro ? ' (consumo raro)' : ''}` : ''].filter(Boolean).join(' · ') });
+    });
+    // Reservas de este carro que se aprobaron (y las que luego se cancelaron). Quien solo conduce ve las suyas.
+    reservas().filter(r => r.vehiculoId === v.id && ['aprobada', 'cancelada'].includes(r.estado) && (!esConductor() || esMiaRes(r) || r.conductor === persona().nombre)).forEach(r => {
+      const det = [`para el ${A().fechaCorta(r.fecha)}${r.hora ? ', ' + r.hora : ''}`, r.conductor ? 'conductor ' + r.conductor : '', r.por ? 'pidió ' + r.por : ''].filter(Boolean).join(' · ');
+      if (r.decideEn) pasos.push({ fecha: r.decideEn, titulo: `Reserva aprobada: ${r.destino}`, quien: r.decidePor, tipos: ['reservas'], detalle: det });
+      if (r.estado === 'cancelada') pasos.push({ fecha: r.canceladaEn || r.decideEn || r.fecha, titulo: `Reserva cancelada: ${r.destino}`, quien: r.canceladaPor, tipos: ['reservas'], detalle: det });
+    });
+    return pasos;
+  }
+  /** Quién ha tenido el carro: cada salida con su llegada, por conductor (veces, km recorridos y última vez). */
+  function quienLoHaTenido(v) {
+    const es = entDe(v.id).slice().sort((a, b) => msFecha(a.fecha) - msFecha(b.fecha)), viajes = []; let abierto = null;
+    es.forEach(e => {
+      if (e.tipo === 'salida') { abierto = { sal: e, lle: null }; viajes.push(abierto); }
+      else if (e.tipo === 'llegada' && abierto) { abierto.lle = e; abierto = null; }
+    });
+    const por = new Map(), ultimo = viajes[viajes.length - 1];
+    viajes.forEach(x => {
+      const c = x.sal.conductor || 'Sin nombre', p = por.get(c) || { c, veces: 0, km: 0, ultima: x.sal.fecha, ahora: false };
+      p.veces++;
+      if (x.lle && num(x.lle.km) > num(x.sal.km)) p.km += num(x.lle.km) - num(x.sal.km);
+      if (msFecha(x.sal.fecha) >= msFecha(p.ultima)) p.ultima = x.sal.fecha;
+      if (x === ultimo && !x.lle && v.estado === 'en-uso') p.ahora = true;
+      por.set(c, p);
+    });
+    return Array.from(por.values()).sort((a, b) => msFecha(b.ultima) - msFecha(a.ultima));
+  }
+  /** Los dos apartados de la hoja de vida: «Quién lo ha tenido» y «Historial completo» (filtros, orden, línea de tiempo y Excel). */
+  function htmlHistorialCarro(v) {
+    const App = A(), pasos = pasosDe(v), quien = quienLoHaTenido(v);
+    const sel = lineaFiltro === 'todo' ? pasos : pasos.filter(p => p.tipos.includes(lineaFiltro));
+    const r = App.lineaTiempo(`veh-${v.id}-${lineaFiltro}`, sel, { orden: lineaOrden, reiniciar: true });
+    const chip = (acc, k, txt, n, on) => `<button type="button" class="chip" data-accion="${acc}" data-id="${esH(k)}" data-veh="${esH(v.id)}" aria-pressed="${on}">${esH(txt)}${n == null ? '' : ` <span class="n">${n}</span>`}</button>`;
+    const cuantos = k => k === 'todo' ? pasos.length : pasos.filter(p => p.tipos.includes(k)).length;
+    return `<div class="section-label">Quién lo ha tenido</div>` + (quien.length ? `<div class="list">${quien.map(x => `<div class="card"><span class="card-head"><span class="card-title">${esH(x.c)}</span>${x.ahora ? App.pill('Lo tiene ahora', 's-listo', 'listo') : ''}</span>
+        <span class="facts"><span>${x.veces} ${x.veces === 1 ? 'vez' : 'veces'}</span><span>${x.km ? esH(km(x.km)) + ' recorridos' : 'sin llegada todavía'}</span><span>última vez ${esH(App.hace(x.ultima))}</span></span></div>`).join('')}</div>` : '<p class="meta">Todavía nadie ha salido con este carro.</p>')
+      + `<div class="section-label">Historial completo</div>
+        <div class="chips sub" role="group" aria-label="Filtrar el historial">${LINEA_FILTROS.map(([k, t]) => chip('lineafiltro', k, t, cuantos(k), lineaFiltro === k)).join('')}</div>
+        <div class="chips sub" role="group" aria-label="Orden del historial">${chip('lineaorden', 'nuevo', 'Lo más nuevo primero', null, lineaOrden === 'nuevo')}${chip('lineaorden', 'viejo', 'Desde el comienzo', null, lineaOrden === 'viejo')}</div>
+        <p class="meta" role="status">${r.total ? `${r.total} ${r.total === 1 ? 'registro' : 'registros'}${r.primera ? ' desde el ' + esH(r.primera) : ''}` : 'Sin registros en este filtro.'}</p>
+        ${r.ol}`
+      + (esAdmin() || esGerente() ? `<div class="barra-botones">${boton('excelhist', 'Bajar el historial en Excel', 'excel', v.id, 'small', ` data-veh="${esH(v.id)}"`)}</div>` : '');
+  }
+  /** Excel con todo el historial del carro (sin filtro) y quién lo ha tenido. Solo lee. */
+  async function excelHistorial(v, b) {
+    b.disabled = true;
+    try {
+      const f = window.Inventario.fechaLocal, gen = `Generado el ${A().hoyISO()}.`;
+      const filas = pasosDe(v).sort((a, c) => msFecha(c.fecha) - msFecha(a.fecha))
+        .map(p => ({ Fecha: /^\d{4}-\d{2}-\d{2}$/.test(String(p.fecha)) ? p.fecha : f(p.fecha, true), Tipo: p.tipos.map(k => LINEA_TIPO[k]).join(', '), Qué: p.titulo, Quién: p.quien || '', Detalle: p.detalle || '' }));
+      const quien = quienLoHaTenido(v).map(x => ({ Conductor: x.c, Veces: x.veces, 'Km recorridos': x.km, 'Última vez': /^\d{4}-\d{2}-\d{2}$/.test(String(x.ultima)) ? x.ultima : f(x.ultima, true), 'Lo tiene ahora': x.ahora ? 'Sí' : 'No' }));
+      await window.Excel.descargar({ archivo: `Historial ${v.placa} ${A().hoyISO()}`, hojas: [
+        window.Excel.deObjetos('Historial', `Historial del ${v.placa}`, `Todo lo que ha pasado con el carro, de lo más nuevo a lo más viejo. ${gen}`, filas),
+        window.Excel.deObjetos('Quién lo ha tenido', `Quién ha tenido el ${v.placa}`, `Cada conductor con sus salidas. ${gen}`, quien)] });
+      A().toast('Listo: Excel descargado');
+    } catch (e) { A().toast('No se pudo preparar el Excel. Revisa la conexión y vuelve a intentar.'); }
+    finally { b.disabled = false; }
+  }
+  /** Filtro, orden y Excel del historial: se repinta la hoja de vida en el mismo lugar. */
+  function historialAccion(b) {
+    const v = vehPorId(b.dataset.veh); if (!v) return;
+    if (b.dataset.accion === 'excelhist') { excelHistorial(v, b); return; }
+    if (b.dataset.accion === 'lineafiltro' && LINEA_FILTROS.some(([k]) => k === b.dataset.id)) lineaFiltro = b.dataset.id;
+    else if (b.dataset.accion === 'lineaorden') lineaOrden = b.dataset.id === 'viejo' ? 'viejo' : 'nuevo';
+    const sh = $('shVeh').querySelector('.sheet'), arriba = sh ? sh.scrollTop : 0;
+    ver(v);
+    if (sh) sh.scrollTop = arriba;
+    const igual = Array.from($('veCampos').querySelectorAll('[data-accion]')).find(x => x.dataset.accion === b.dataset.accion && x.dataset.id === b.dataset.id);
+    if (igual) { try { igual.focus({ preventScroll: true }); } catch (e) {} }
+  }
+
   /* ---------- hoja de vida ---------- */
   function ver(v) {
     const App = A(), st = EST[v.estado] || ['Sin estado', 'none'];
     const tans = tanDe(v.id).slice().reverse(), trs = tramosVeh(v.id), rd = rendimiento(trs), cm = costosDe(v, A().hoyISO().slice(0, 8) + '01');
-    const ns = novDe(v.id), es = entDe(v.id).slice(0, 6), hist = historial(v).slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).slice(0, 8);
+    const ns = novDe(v.id), es = entDe(v.id).slice(0, 6);
+    if (lineaVeh !== v.id) { lineaVeh = v.id; lineaFiltro = 'todo'; lineaOrden = 'nuevo'; }
     const bts = [];
     if (puedeReportar()) { bts.push(boton('novedad', 'Reportar novedad', 'aviso', v.id, 'small')); bts.push(boton('tanqueo', 'Registrar tanqueo', 'pagada', v.id, 'small')); }
     if ((esAdmin() || esConductor()) && v.estado === 'disponible') bts.push(boton('salida', 'Registrar salida', 'llave', v.id, 'primary small'));
@@ -887,7 +987,7 @@
         ${tans.length ? `<div class="list">${tans.slice(0, 4).map(t => tarjetaTanqueo(t, trs.find(x => x.t.id === t.id))).join('')}</div>${tans.length > 4 ? `<p class="meta">Los últimos 4 de ${tans.length}. Todos están en Tanqueos.</p>` : ''}` : '<p class="meta">Todavía no hay tanqueos de este carro.</p>'}
         <div class="section-label">Novedades (${ns.length})</div>${ns.length ? `<div class="list">${ns.map(tarjetaNovedad).join('')}</div>` : '<p class="meta">Sin novedades.</p>'}
         <div class="section-label">Salidas y llegadas</div>${es.length ? `<ul class="necesidades-l">${es.map(e => `<li><span class="nf-cab"><span class="nf-t"><b>${e.tipo === 'salida' ? 'Salida' : 'Llegada'} · ${esH(km(e.km))}</b><span class="meta">${esH(e.conductor)} · ${e.tipo === 'salida' ? 'entregó' : 'recibió'} ${esH(e.con)} · ${esH(App.hace(e.fecha))} · combustible ${esH(e.combustible)}</span>${e.observaciones ? `<span class="meta">${esH(e.observaciones)}</span>` : ''}</span>${Object.values(e.revision || {}).every(Boolean) ? App.pill('Revisión bien', 's-disco', 'check') : App.pill('Con problemas', 's-peligro', 'aviso')}</span><span class="meta rev-res">Críticos: ${esH(textoRevision(e.revision).criticos)} · Otros: ${esH(textoRevision(e.revision).otros)}</span><div class="fotos-fila">${fotosDe(e)}</div></li>`).join('')}</ul>` : '<p class="meta">Todavía no hay salidas registradas.</p>'}
-        <div class="section-label">Historial</div><ol class="linea">${hist.map(x => `<li><b>${esH(x.texto)}</b><span class="meta">${esH(x.por || '')} · ${esH(App.hace(x.fecha))}</span></li>`).join('') || '<li><span class="meta">Sin historial.</span></li>'}</ol>` });
+        ${htmlHistorialCarro(v)}` });
     accion.volverA = v.id;
   }
 
@@ -902,6 +1002,7 @@
     if (p) { periodo = p.dataset.periodo; A().pintarTodo(); return; }
     const b = e.target.closest('[data-accion]'); if (!b) return;
     if (b.dataset.accion === 'excelveh') { excelVehiculos(b); return; }
+    if (['lineafiltro', 'lineaorden', 'excelhist'].includes(b.dataset.accion)) { historialAccion(b); return; }
     const id = b.dataset.id, v = vehPorId(id), n = D().novedades.find(x => x.id === id), rs = resPorId(id);
     const desde = $('veCampos').contains(b) && accion ? accion.volverA : '';
     const mapa = {

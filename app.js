@@ -604,10 +604,54 @@
     addEventListener('online', red); addEventListener('offline', red); red();
   }
 
+  /* ---------- línea de tiempo común (historiales de Vehículos e Inventario; mismo aspecto que Equipos) ---------- */
+  /** Momento de un paso en milisegundos. Una fecha sin hora (2026-11-20) cuenta como mediodía, para que no se corra de día por la zona horaria. */
+  const msPaso = f => {
+    if (f instanceof Date) return f.getTime();
+    const s = String(f ?? '').trim();
+    const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    const t = d ? new Date(+d[1], +d[2] - 1, +d[3], 12).getTime() : Date.parse(s);
+    return Number.isFinite(t) ? t : null;
+  };
+  /** «hoy», «ayer», «hace 3 h», «hace 4 días» si el paso es de hace menos de 7 días; si no, vacío. */
+  const haceCorto = (f, t) => {
+    const dif = Date.now() - t;
+    if (dif < 0 || dif >= 7 * 86400000) return '';
+    if (typeof f === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(f.trim())) {
+      const d = diasHasta(f.trim()); return d === 0 ? 'hoy' : d === -1 ? 'ayer' : d < 0 ? `hace ${-d} días` : '';
+    }
+    return hace(new Date(t).toISOString());
+  };
+  /** Línea de tiempo ordenada y por partes (como el historial de Equipos).
+      clave: identifica la lista para «Ver más»; si el historial se filtra, la clave debe incluir el filtro (el orden se agrega solo).
+      pasos: [{ fecha, titulo, quien, detalle, tipo }]; lo que falte se omite; un paso sin fecha válida va al final.
+      o: { orden: 'nuevo' (por defecto, lo más nuevo primero) | 'viejo' (desde el comienzo), n: de cuántos en cuántos (30), reiniciar: volver a empezar }.
+      Devuelve { html: los <li> (vacío si no hay pasos), mas: el botón «Ver más» o '', ol: <ol class="linea"> completa (con «Sin historial.» si está vacía) + el botón,
+      total: cuántos pasos hay, primera: fecha corta del paso más viejo o '' }.
+      Para el botón: ponerlo justo después del <ol> (es lo que hace `ol`); comun.js ya atiende el clic, no hay que enganchar nada. */
+  const lineaTiempo = (clave, pasos, o) => {
+    const orden = o && o.orden === 'viejo' ? 'viejo' : 'nuevo';
+    const lista = (Array.isArray(pasos) ? pasos : []).filter(Boolean).map((p, i) => ({ p, i, t: msPaso(p.fecha) }));
+    lista.sort((a, b) => (a.t == null) - (b.t == null) || (a.t == null ? 0 : orden === 'viejo' ? a.t - b.t : b.t - a.t) || a.i - b.i);
+    const filas = lista.map(({ p, t }) => {
+      const meta = [p.quien, t == null ? '' : [fechaCorta(typeof p.fecha === 'string' ? p.fecha : new Date(t).toISOString()), haceCorto(p.fecha, t)].filter(Boolean).join(' · '), p.detalle]
+        .filter(x => x != null && String(x).trim() !== '').map(esH).join(' · ');
+      return `<li><b>${esH(p.titulo)}</b>${meta ? `<span class="meta">${meta}</span>` : ''}</li>`;
+    });
+    const pg = UI.pagina(`linea|${clave}|${orden}`, filas, { n: (o && o.n) || 30, reiniciar: !!(o && o.reiniciar) });
+    const fechas = lista.filter(x => x.t != null);
+    const primera = fechas.length ? fechas.reduce((m, x) => x.t < m.t ? x : m) : null;
+    return {
+      html: pg.html, mas: pg.mas, total: lista.length,
+      primera: primera ? fechaCorta(typeof primera.p.fecha === 'string' ? primera.p.fecha : new Date(primera.t).toISOString()) : '',
+      ol: `<ol class="linea">${pg.html || '<li><span class="meta">Sin historial.</span></li>'}</ol>${pg.mas}`
+    };
+  };
+
   /* ---------- ayudas para inventario.js ---------- */
   window.App = Object.freeze({
     S, $, esH, pill, cop, hace, fechaCorta, hoyISO, toast, permiso, tieneExtra, tablero, cargando, iniciales, montoGerente,
-    abrirHoja, cerrarHoja, vigilar, confirmar, pintarTodo, diasHasta
+    abrirHoja, cerrarHoja, vigilar, confirmar, pintarTodo, diasHasta, lineaTiempo
   });
 
   /* ---------- arranque ---------- */
