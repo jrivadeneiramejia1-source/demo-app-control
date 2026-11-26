@@ -569,7 +569,7 @@ Para un viaje que no es una reunión (por ejemplo, llevar documentos a Maicao o 
 
 ### 11.1 El camino de una reunión
 1. **Llega un correo** al Gmail de prueba (en la demo hay 4 de ejemplo) y aparece en **Reuniones > Correos**.
-2. La **Jefe** lo abre y el **agente lo lee** (con Gemini; si no está conectado, usa una respuesta de respaldo). El agente dice qué entendió.
+2. La **Jefe** lo abre y el **agente lo lee** (con Gemini; si no está conectado, usa una respuesta de respaldo). El agente dice qué entendió. Si Gemini no responde, la pantalla dice el motivo real y reintenta hasta un minuto y medio; si la clave de Gemini no sirve, no reintenta y usa el respaldo en seguida diciendo por qué. El motivo también queda en Cloudflare > Workers > agente-demo > Logs.
 3. Según el correo, puede ser: **reunión nueva**, **datos que faltaban**, **cambio de fecha**, **cancelación** u **otro**.
 4. La **Jefe revisa y corrige** lo que haga falta (comunidad, fecha, hora, lugar, personas, camionetas, comida, logística).
 5. En la reunión nueva, la Jefe también escoge **quiénes van** (los profesionales invitados).

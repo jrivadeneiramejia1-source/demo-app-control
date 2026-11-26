@@ -357,8 +357,8 @@
       const j = await r.json().catch(() => null);
       if (r.ok && j && j.ok && j.reunion) return { ok: true, datos: limpiar(j.reunion) };
       const motivo = `el agente respondió ${r.status}${j && (j.detalle || j.error) ? ': ' + String(j.detalle || j.error).slice(0, 200) : ''}`;
-      // Sesión, permiso, clave o correo malo: no se arregla esperando.
-      if ([400, 401, 403, 413].includes(r.status) || (j && ['sesion', 'permiso', 'sin-clave', 'origen', 'correo', 'json', 'grande'].includes(j.error))) return { ok: false, reintentar: false, motivo };
+      // Sesión, permiso, clave (que no sirve o falta) o correo malo: no se arregla esperando.
+      if ([400, 401, 403, 413].includes(r.status) || (j && ['sesion', 'permiso', 'clave', 'sin-clave', 'origen', 'correo', 'json', 'grande'].includes(j.error))) return { ok: false, reintentar: false, motivo };
       // Cupo por minuto (de Gemini o del agente): se espera más.
       if (r.status === 429) return { ok: false, reintentar: true, espera: 20000, motivo };
       // Gemini saturado (503), lento o error del servidor: se vuelve a intentar.
@@ -368,7 +368,8 @@
       return { ok: false, reintentar: true, espera: Math.min(15000, 3000 + intento * 2000), motivo };
     }
   }
-  const REINTENTAR_HASTA = 180000;   // 3 minutos: para la presentación es mejor esperar que fallar
+  const REINTENTAR_HASTA = 90000;   // un minuto y medio: si Gemini sigue sin responder, se dice el motivo real en vez de seguir esperando
+  let motivoAgente = '';   // lo último que dijo el agente al fallar (para mostrarlo aunque la Jefe toque «No esperar»)
   const dormir = ms => new Promise(r => setTimeout(r, ms));
   /** Le pide al agente que lea el correo. Si Gemini está saturado, vuelve a intentar solo (hasta 3 minutos)
       mientras la pantalla muestra en qué va. avance(texto) cambia ese texto; vigente() dice si todavía hay que seguir.
@@ -377,16 +378,17 @@
     const cfg = window.AGENTE_DEMO || {}, sigue = vigente || (() => true), aviso = avance || (() => {});
     const activas = D().reuniones.filter(r => ACTIVA.includes(r.estado)).map(r => ({ id: r.id, comunidad: r.comunidad, fecha: r.fecha, hora: r.hora, lugar: r.lugar, estado: r.estado }));
     let motivo = 'el agente no está conectado';
+    motivoAgente = '';
     if (cfg.url) {
       const t0 = Date.now();
       for (let intento = 1; sigue(); intento++) {
         if (intento > 1) aviso(`Intento ${intento}…`);
         const r = await llamarAgente(cfg.url, c, activas, intento);
         if (r.ok) return { datos: r.datos, fuente: 'gemini' };
-        motivo = r.motivo;
+        motivo = motivoAgente = r.motivo;
         if (!r.reintentar || Date.now() - t0 + r.espera > REINTENTAR_HASTA) break;
         for (let falta = Math.round(r.espera / 1000); falta > 0 && sigue(); falta--) {
-          aviso(`Gemini está ocupado (intento ${intento}). Vuelvo a intentar en ${falta} s…`);
+          aviso(`Gemini no respondió (intento ${intento}): ${motivo.slice(0, 120)}. Vuelvo a intentar en ${falta} s…`);
           await dormir(1000);
         }
       }
@@ -402,9 +404,10 @@
   let lectura = 0;
   async function procesarCorreo(c) {
     const yo = ++lectura;
+    motivoAgente = '';
     // Mientras lee: cuenta los segundos y, si tarda, deja seguir con la respuesta de respaldo sin esperar.
     let noEsperar;
-    const atajo = new Promise(res => { noEsperar = () => res(c.respaldo ? { datos: limpiar(c.respaldo), fuente: 'respaldo', motivo: 'no se esperó al agente' } : { datos: null, fuente: 'error', motivo: 'se dejó de esperar al agente' }); });
+    const atajo = new Promise(res => { noEsperar = () => res(c.respaldo ? { datos: limpiar(c.respaldo), fuente: 'respaldo', motivo: 'no se esperó al agente' + (motivoAgente ? ` (lo último que dijo: ${motivoAgente.slice(0, 160)})` : '') } : { datos: null, fuente: 'error', motivo: 'se dejó de esperar al agente' + (motivoAgente ? ` (lo último que dijo: ${motivoAgente.slice(0, 160)})` : '') }); });
     abrir({ titulo: 'El agente está leyendo el correo…', sub: c.asunto, campos: `<p class="meta" id="reSeg" aria-live="polite">Leyendo… 0 s</p><div class="leyendo">${UI.esqueleto(2)}</div>`,
       secundario: c.respaldo ? 'No esperar: usar el respaldo' : 'Dejar de esperar', alSecundario: () => noEsperar() });
     $('reSecundario').hidden = true;

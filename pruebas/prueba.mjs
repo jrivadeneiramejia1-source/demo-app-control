@@ -1742,6 +1742,13 @@ try {
   await t.page.click('#reSecundario');
   log('«No esperar» sigue con la respuesta de respaldo', await hasta(t.page, () => /no se esperó/.test(document.getElementById('reCampos').textContent) && !!document.getElementById('rcMotivo')));
   await t.page.keyboard.press('Escape');
+  // Clave de Gemini mala: el agente lo dice («clave») y la app no pierde minutos reintentando: respaldo en seguida con el motivo real.
+  let llamadasClave = 0;
+  await t.ctx.route('https://agente-clave.prueba/', r => { llamadasClave++; return r.fulfill({ status: 502, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ok: false, error: 'clave', detalle: 'gemini-3.1-flash-lite: Gemini respondió 400: API key not valid. Please pass a valid API key.' }) }); });
+  await t.page.evaluate(() => { window.AGENTE_DEMO = { url: 'https://agente-clave.prueba/' }; });
+  await tocarReu('correo', 'cancela');
+  log('si la clave de Gemini no sirve, no reintenta: usa el respaldo en seguida y dice el motivo real', await hasta(t.page, () => /Respuesta de respaldo: el agente respondió 502: .*API key not valid/.test(document.getElementById('reCampos').textContent), null, 8000) && llamadasClave === 1, String(llamadasClave));
+  await t.page.keyboard.press('Escape');
   // El agente conectado: se finge el Worker para ver que manda el token y se usa su respuesta.
   let tokenRecibido = '';
   await t.ctx.route('https://agente.prueba/', async r => { tokenRecibido = r.request().headers().authorization || ''; return r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ok: true, reunion: { tipo: 'cancela', reunionId: '', comunidad: 'Comunidad Ejemplo Oriente', fecha: '', hora: '', lugar: '', asistentes: 0, refrigerios: false, almuerzo: false, carros: 0, logistica: [], faltan: [], motivo: 'Lo pidió la autoridad tradicional', resumen: 'Se cancela la reunión <b>ya</b>.' } }) }); });
@@ -1764,7 +1771,7 @@ try {
   await t.ctx.route('https://agente2.prueba/', r => (++llamadasAgente2 === 1 ? r.fulfill({ status: 502, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ok: false, error: 'gemini', detalle: 'Gemini respondió 503' }) }) : r.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify({ ok: true, reunion: { tipo: 'nueva', reunionId: '', comunidad: 'Comunidad Ejemplo Este', fecha: fechaEste, hora: '09:00', lugar: '', asistentes: 50, refrigerios: true, almuerzo: false, carros: 2, logistica: [], faltan: ['lugar'], motivo: '', resumen: 'Reunión nueva con 50 personas, refrigerios y 2 camionetas.' } }) })));
   await t.page.evaluate(() => { window.AGENTE_DEMO = { url: 'https://agente2.prueba/' }; });
   await t.page.click('#reSecundario');
-  log('si Gemini está saturado (503), espera y vuelve a intentar solo, diciendo en qué va', await hasta(t.page, () => /Gemini está ocupado \(intento 1\)\. Vuelvo a intentar en \d+ s/.test(document.getElementById('reCampos').textContent), null, 8000));
+  log('si Gemini está saturado (503), espera y vuelve a intentar solo, diciendo en qué va', await hasta(t.page, () => /Gemini no respondió \(intento 1\): el agente respondió 502: Gemini respondió 503\. Vuelvo a intentar en \d+ s/.test(document.getElementById('reCampos').textContent), null, 8000));
   log('con el agente, el correo arma la reunión: 50 personas, refrigerio y 2 camionetas (al segundo intento)', llamadasAgente2 >= 1 && await hasta(t.page, () => !!document.getElementById('rcCom') && document.getElementById('rcCom').value === 'Comunidad Ejemplo Este' && document.getElementById('rcAsis').value === '50' && document.getElementById('rcCarros').value === '2' && document.getElementById('rcRef').checked, null, 15000) && llamadasAgente2 === 2);
   log('la Jefe la crea, se reparten las tareas y el correo queda «Repartido»', await guardarReu() && await (async () => { const d = await reu(); const r = Object.values(d.reuniones).find(x => x.comunidad === 'Comunidad Ejemplo Este'); return !!r && r.correos.includes('gm-gm18c3') && Object.values(d.necesidades).filter(n => n.comunidad === 'Comunidad Ejemplo Este').length === 4 + nProf; })() && await hasta(t.page, () => /Repartido/.test(document.getElementById('reuContenido').textContent) && !document.querySelector('#reuContenido [data-accion="buzon"]')));
   await t.page.screenshot({ path: path.join(CAPTURAS, '09b-bandeja.png'), fullPage: true });
