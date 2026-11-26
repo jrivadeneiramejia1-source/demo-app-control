@@ -208,10 +208,10 @@
     };
     // ---------- PROVEEDORES (todo inventado: NIT con su dígito de verificación bien calculado, teléfonos y correos de ejemplo) ----------
     const proveedores = {
-      'pv-elfaro': { nombre: 'Ferretería El Faro', nit: '900000001-2', contacto: 'Marta Ejemplo', telefono: '300 000 0001', correo: 'ventas@elfaro.example.com', nota: 'Entrega en 2 días. Fía a 30 días.' },
-      'pv-papcentral': { nombre: 'Papelería Central', nit: '900000003-7', contacto: 'Luis Ejemplo', telefono: '300 000 0003', correo: 'pedidos@papeleriacentral.example.com', nota: 'Descuento si se compran más de 5 resmas.' },
+      'pv-elfaro': { nombre: 'Ferretería El Faro', nit: '900000001-2', contacto: 'Marta Ejemplo', telefono: '300 000 0001', correo: 'ventas.elfaro@example.com', nota: 'Entrega en 2 días. Fía a 30 días.' },
+      'pv-papcentral': { nombre: 'Papelería Central', nit: '900000003-7', contacto: 'Luis Ejemplo', telefono: '300 000 0003', correo: 'pedidos.papeleriacentral@example.com', nota: 'Descuento si se compran más de 5 resmas.' },
       'pv-aguaclara': { nombre: 'Distribuidora Agua Clara', nit: '', contacto: 'Rosa Ejemplo', telefono: '300 000 0005', correo: '', nota: 'Reparte los martes y los viernes. Todavía sin NIT anotado.' },
-      'pv-tecnoventas': { nombre: 'Tecnoventas Ejemplo S. A. S.', nit: '901234567-7', contacto: 'Carlos Ejemplo', telefono: '300 000 0007', correo: 'comercial@tecnoventas.example.com', nota: 'Da garantía de un año en los equipos.' },
+      'pv-tecnoventas': { nombre: 'Tecnoventas Ejemplo S. A. S.', nit: '900000011-6', contacto: 'Carlos Ejemplo', telefono: '300 000 0007', correo: 'comercial.tecnoventas@example.com', nota: 'Da garantía de un año en los equipos.' },
       'pv-eqcaribe': { nombre: 'Equipos del Caribe Ejemplo', nit: '900000009-0', contacto: '', telefono: '300 000 0009', correo: '', nota: '' }
     };
     Object.values(proveedores).forEach(v => Object.assign(v, { por: 'Fredy Torres', porRol: 'compras', en: dias(-110) }));
@@ -472,5 +472,5 @@
     return { equipos, hojas, tareasEq, compras, proveedores, vehiculos, novedades, entregas, tanqueos, reservas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 18, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 19, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

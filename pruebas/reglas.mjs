@@ -38,6 +38,8 @@ const nueva = (quien, o = {}) => compra(Object.assign({ pideCorreo: quien.includ
 const hist = n => Array.from({ length: n }, (_, i) => ({ fecha: '2026-11-20T10:0' + i + ':00Z', texto: 'Paso ' + (i + 1), por: 'Alguien' }));
 const H1 = hist(1), H2 = hist(2), H3 = hist(3);
 const FOTO = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ';
+/** Revisión antes de salir con los 4 puntos críticos en «Bien» (sin eso, una salida no pasa). */
+const REV_OK = { frenos: true, llantas: true, luces: true, direccion: true };
 const correoCuenta = uid => uid + '@correo-inventado.test';
 
 console.log('Lectura');
@@ -62,6 +64,21 @@ await prueba('quien pide no se la autoriza solo', () => assertFails(updateDoc(do
 await prueba('Compras no autoriza (solo compra lo autorizado)', () => assertFails(updateDoc(doc(prueba_('compras'), 'compras', 'co-1'), { autorizaCorreo: CORREOS.compras, estado: 'autorizado', autoriza: 'Luis' })));
 await prueba('Compras no compra algo que nadie autorizó', () => assertFails(updateDoc(doc(prueba_('compras'), 'compras', 'co-1'), { estado: 'comprado', proveedor: 'X', valorReal: 100000, fechaCompra: '2026-11-20', factura: '', historial: H1 })));
 await prueba('la Coordinadora de compras autoriza la compra de otro', () => assertSucceeds(updateDoc(doc(prueba_('coordcompras'), 'compras', 'co-1'), { autorizaCorreo: CORREOS.coordcompras, estado: 'autorizado', autoriza: 'Ana Pérez', historial: H1 })));
+await prueba('Compras: lo pagado no pasa de 1,5 veces lo autorizado; más que eso necesita otra autorización', async () => {
+  await sembrar(async db => { for (const i of [1, 2, 3, 4]) await setDoc(doc(db, 'compras', 'co-vr' + i), compra({ estado: 'autorizado', valorAprox: 1000000 })); });
+  const cmp = await cuenta('vrCom', 'compras'), paga = v => ({ estado: 'comprado', proveedor: 'X', valorReal: v, fechaCompra: '2026-11-25', factura: '', historial: H1 });
+  await assertFails(updateDoc(doc(cmp, 'compras', 'co-vr1'), paga(50000000)));
+  await assertFails(updateDoc(doc(cmp, 'compras', 'co-vr1'), paga(1500001)));
+  await assertFails(updateDoc(doc(cmp, 'compras', 'co-vr1'), paga(-100)));
+  await assertFails(updateDoc(doc(cmp, 'compras', 'co-vr1'), paga('mucho')));
+  await assertSucceeds(updateDoc(doc(cmp, 'compras', 'co-vr2'), paga(1100000)));
+  await assertSucceeds(updateDoc(doc(cmp, 'compras', 'co-vr3'), paga(1500000)));
+  await assertSucceeds(updateDoc(doc(cmp, 'compras', 'co-vr4'), paga(900000))); });
+await prueba('Compras: cada línea del pedido lleva un valor que es número de 0 en adelante (no se compensan unas con otras)', async () => {
+  const db = await cuenta('lnNeg', 'logistica'), l = v => ({ que: 'Algo', cantidad: 1, valor: v });
+  await assertFails(setDoc(doc(db, 'compras', 'ln-1'), nueva(correoCuenta('lnNeg'), { pideRol: 'logistica', pideUid: 'lnNeg', valorAprox: 1000, lineas: [l(10000000), l(-9999000)] })));
+  await assertFails(setDoc(doc(db, 'compras', 'ln-2'), nueva(correoCuenta('lnNeg'), { pideRol: 'logistica', pideUid: 'lnNeg', valorAprox: 1000, lineas: [l('mil')] })));
+  await assertSucceeds(setDoc(doc(db, 'compras', 'ln-3'), nueva(correoCuenta('lnNeg'), { pideRol: 'logistica', pideUid: 'lnNeg', valorAprox: 1000, lineas: [l(400), l(600)] }))); });
 await prueba('Compras compra lo autorizado', () => assertSucceeds(updateDoc(doc(prueba_('compras'), 'compras', 'co-1'), { estado: 'comprado', proveedor: 'Ferretería', valorReal: 100000, fechaCompra: '2026-11-20', factura: '', historial: H2 })));
 await prueba('Compras no cambia lo autorizado (la cantidad)', async () => { await sembrar(db => setDoc(doc(db, 'compras', 'co-3'), compra({ estado: 'autorizado' })));
   await assertFails(updateDoc(doc(prueba_('compras'), 'compras', 'co-3'), { estado: 'comprado', cantidad: 99, proveedor: 'X', valorReal: 1, fechaCompra: '2026-11-20', factura: '', historial: H1 })); });
@@ -447,8 +464,13 @@ await prueba('no se reusa un movimiento viejo para justificar otro cambio', asyn
   await sembrar(db => setDoc(doc(db, 'movimientos', 'mo-viejo'), movDe()));
   await assertFails(updateDoc(doc(bodegaR, 'articulos', 'ar-m'), { cantidad: 7, ultimoMov: 'mo-viejo' })); });
 await prueba('Bodega edita datos del artículo (sin cambiar la cantidad) y no puede meter campos raros', async () => { await sembrarArt();
-  await assertSucceeds(updateDoc(doc(bodegaR, 'articulos', 'ar-m'), { ubicacion: 'B2', costo: 150, minimo: 3 }));
+  await assertSucceeds(updateDoc(doc(bodegaR, 'articulos', 'ar-m'), { ubicacion: 'B2', minimo: 3 }));
   await assertFails(updateDoc(doc(bodegaR, 'articulos', 'ar-m'), { extraRaro: 'x' })); });
+await prueba('Kárdex: el costo (promedio) solo cambia con un ajuste de cantidad 0 en la misma escritura; nunca negativo ni texto', async () => { await sembrarArt('ar-c1');
+  await assertFails(updateDoc(doc(bodegaR, 'articulos', 'ar-c1'), { costo: 150 }));
+  await assertFails(lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-c1'), { costo: -5, ultimoMov: 'mo-c0' }); b.set(doc(bodegaR, 'movimientos', 'mo-c0'), movDe({ articuloId: 'ar-c1', tipo: 'ajuste', motivo: 'precio', cantidad: 0, saldo: 5 })); }));
+  await assertFails(lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-c1'), { costo: 'caro', ultimoMov: 'mo-c0b' }); b.set(doc(bodegaR, 'movimientos', 'mo-c0b'), movDe({ articuloId: 'ar-c1', tipo: 'ajuste', motivo: 'precio', cantidad: 0, saldo: 5 })); }));
+  await assertSucceeds(lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-c1'), { costo: 150, ultimoMov: 'mo-c1' }); b.set(doc(bodegaR, 'movimientos', 'mo-c1'), movDe({ articuloId: 'ar-c1', tipo: 'ajuste', motivo: 'precio', cantidad: 0, saldo: 5, costoUnit: 150 })); })); });
 await prueba('un artículo nuevo con cantidad trae su movimiento; sin cantidad no hace falta', async () => {
   await assertFails(setDoc(doc(bodegaR, 'articulos', 'ar-n1'), { nombre: 'Nuevo', cantidad: 8, bodega: 'Riohacha' }));
   await assertSucceeds(setDoc(doc(bodegaR, 'articulos', 'ar-n2'), { nombre: 'Nuevo', cantidad: 0, bodega: 'Riohacha' }));
@@ -481,9 +503,23 @@ await prueba('recibir una compra de 5 artículos (cuenta propia de Bodega) cabe 
   await assertSucceeds(lote(bodegaR, b => { b.update(doc(bodegaR, 'compras', 'cp-5'), { estado: 'recibido', entregadoA: '', historial: H2 });
     for (const i of ids) { b.update(doc(bodegaR, 'articulos', 'ar-' + i), { cantidad: 3, ultimoMov: 'mo-' + i }); b.set(doc(bodegaR, 'movimientos', 'mo-' + i), movDe({ articuloId: 'ar-' + i })); } })); });
 await prueba('movimientos: Bodega solo crea entrada, salida o ajuste con números', async () => {
-  await assertFails(setDoc(doc(bodegaR, 'movimientos', 'mo-x1'), movDe({ tipo: 'regalo' })));
-  await assertFails(setDoc(doc(bodegaR, 'movimientos', 'mo-x2'), movDe({ cantidad: 'dos' })));
-  await assertSucceeds(setDoc(doc(bodegaR, 'movimientos', 'mo-x3'), movDe())); });
+  await sembrarArt('ar-x');
+  const con = (id, o) => lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-x'), { cantidad: 7, ultimoMov: id }); b.set(doc(bodegaR, 'movimientos', id), movDe(Object.assign({ articuloId: 'ar-x', saldo: 7 }, o))); });
+  await assertFails(con('mo-x1', { tipo: 'regalo' }));
+  await assertFails(con('mo-x2', { cantidad: 'dos' }));
+  await assertSucceeds(con('mo-x3', {})); });
+await prueba('Kárdex: un movimiento no se crea suelto (sin tocar su artículo), una salida o entrada no lleva cantidad negativa ni 0, y el costo y el valor no son negativos', async () => {
+  await sembrarArt('ar-y');
+  await assertFails(setDoc(doc(bodegaR, 'movimientos', 'mo-y1'), movDe({ articuloId: 'ar-y' })));
+  await assertFails(setDoc(doc(bodegaR, 'movimientos', 'mo-y2'), movDe({ articuloId: 'ar-y', tipo: 'salida', cantidad: 3, costoUnit: 1000000, valor: 3000000 })));
+  const con = (id, delta, o) => lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-y'), { cantidad: 5 + delta, ultimoMov: id }); b.set(doc(bodegaR, 'movimientos', id), movDe(Object.assign({ articuloId: 'ar-y', saldo: 5 + delta }, o))); });
+  await assertFails(con('mo-y3', 4, { tipo: 'salida', cantidad: -4 }));
+  await assertFails(con('mo-y4', 0, { tipo: 'entrada', cantidad: 0 }));
+  await assertFails(con('mo-y5', 2, { costoUnit: -1 }));
+  await assertFails(con('mo-y6', 2, { valor: -100 }));
+  await assertSucceeds(con('mo-y7', 2, { costoUnit: 100, valor: 200 }));
+  await sembrarArt('ar-y2');
+  await assertSucceeds(lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-y2'), { cantidad: 2, ultimoMov: 'mo-y8' }); b.set(doc(bodegaR, 'movimientos', 'mo-y8'), movDe({ articuloId: 'ar-y2', tipo: 'ajuste', motivo: 'conteo', cantidad: -3, saldo: 2 })); })); });
 await prueba('pedidos de material: Bodega solo los entrega o los cierra y nunca cambia de quién son', async () => {
   const sol = { articulo: 'Guantes', cantidad: 1, pideUid: 'pide1', pideRol: 'profesional', estado: 'pendiente', pide: 'Persona', fecha: '2026-11-20' };
   await sembrar(async db => { await setDoc(doc(db, 'solicitudes', 'so-1'), sol); await setDoc(doc(db, 'solicitudes', 'so-2'), sol); await setDoc(doc(db, 'solicitudes', 'so-3'), Object.assign({}, sol, { estado: 'entregada' })); });
@@ -659,7 +695,7 @@ await prueba('cuenta propia de Transporte: el Conductor registra una salida (veh
   await sembrar(db0 => setDoc(doc(db0, 'vehiculos', 've-l'), { placa: 'AAA111', estado: 'disponible', km: 1000, conductor: '', historial: H1, soat: '2027-01-01', tecno: '2027-01-01' }));
   const fotos = { frente: JPG, atras: JPG, izquierda: JPG, derecha: JPG, llantas: JPG };
   await assertSucceeds(lote(db, b => { b.update(doc(db, 'vehiculos', 've-l'), { estado: 'en-uso', km: 1100, conductor: 'Persona', historial: H2, ultimaEntrega: 'en-l' });
-    b.set(doc(db, 'entregas', 'en-l'), { vehiculoId: 've-l', km: 1100, tipo: 'salida', porRol: 'conductor', fotos }); })); });
+    b.set(doc(db, 'entregas', 'en-l'), { vehiculoId: 've-l', km: 1100, tipo: 'salida', porRol: 'conductor', fotos, revision: REV_OK }); })); });
 await prueba('cuenta propia Administrativo: registrar el acta (reunión realizada + acta lista)', async () => { const db = await cuenta('lmA', 'administrativo');
   await sembrar(async d => { await setDoc(doc(d, 'reuniones', 're-l'), { comunidad: 'X', fecha: '2020-01-01', estado: 'programada', historial: H1 });
     await setDoc(doc(d, 'necesidades', 'ne-l'), { reunionId: 're-l', tipo: 'acta', responsableRol: 'administrativo', estado: 'pendiente', fechaReunion: '2020-01-01' }); });
@@ -695,6 +731,13 @@ await prueba('Plan de mantenimiento: una lista de 10 tareas pasa y una de 11 no'
   await sembrar(d => setDoc(doc(d, 'vehiculos', 've-m3'), VE9));
   await assertSucceeds(updateDoc(doc(tra, 'vehiculos', 've-m3'), { mttos: Array.from({ length: 10 }, (_, i) => MT(i)), historial: H2 }));
   await assertFails(updateDoc(doc(tra, 'vehiculos', 've-m3'), { mttos: Array.from({ length: 11 }, (_, i) => MT(i)), historial: H3 })); });
+await prueba('Plan de mantenimiento: cada tarea trae «cada cuántos km y días» como números (no texto ni negativos)', async () => {
+  const tra = await cuenta('mtTra9', 'carros');
+  await sembrar(d => setDoc(doc(d, 'vehiculos', 've-m9'), VE9));
+  await assertFails(updateDoc(doc(tra, 'vehiculos', 've-m9'), { mttos: [MT(1, { cadaKm: 'mucho' })], historial: H2 }));
+  await assertFails(updateDoc(doc(tra, 'vehiculos', 've-m9'), { mttos: [MT(1, { cadaDias: -5 })], historial: H2 }));
+  await assertFails(updateDoc(doc(tra, 'vehiculos', 've-m9'), { mttos: [MT(1), MT(2, { cadaKm: null })], historial: H2 }));
+  await assertSucceeds(updateDoc(doc(tra, 'vehiculos', 've-m9'), { mttos: [MT(1), MT(2, { cadaKm: 0 })], historial: H2 })); });
 await prueba('Plan de mantenimiento: lo que no es una lista no pasa', async () => {
   const tra = await cuenta('mtTra4', 'carros');
   await sembrar(d => setDoc(doc(d, 'vehiculos', 've-m4'), VE9));
@@ -764,6 +807,15 @@ await prueba('Tanqueos: el carro tiene que existir', async () => {
   await sembrarT();
   await assertFails(setDoc(doc(await cuenta('tqCon8', 'conductor'), 'tanqueos', 'ta-25'), TQ({ vehiculoId: 've-no-existe' })));
   await assertFails(setDoc(doc(await cuenta('tqCon9', 'conductor'), 'tanqueos', 'ta-26'), TQ({ vehiculoId: 123 }))); });
+await prueba('Tanqueos: la placa tiene que ser la del carro y la fecha tiene que parecer una fecha (AAAA-MM-DD, con hora o sin ella)', async () => {
+  await sembrarT(); const db = await cuenta('tqPla', 'conductor');
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-pl1'), TQ({ placa: 'ZZZ999' })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-pl2'), TQ({ placa: 12345 })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-pl3'), TQ({ fecha: 'ayer' })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-pl4'), TQ({ fecha: 20261125 })));
+  await assertFails(setDoc(doc(db, 'tanqueos', 'ta-pl5'), TQ({ por: 'x'.repeat(81) })));
+  await assertSucceeds(setDoc(doc(db, 'tanqueos', 'ta-pl6'), TQ({ fecha: '2026-11-25' })));
+  await assertSucceeds(setDoc(doc(db, 'tanqueos', 'ta-pl7'), TQ({ fecha: new Date().toISOString() }))); });
 await prueba('Tanqueos: no se editan ni se borran (ni el Conductor ni Transporte ni Bodega)', async () => {
   await sembrarT(); await sembrar(d => setDoc(doc(d, 'tanqueos', 'ta-e'), TQ()));
   for (const [uid, rol] of [['tqE1', 'conductor'], ['tqE2', 'carros'], ['tqE3', 'asistente']]) { const db = await cuenta(uid, rol);
@@ -848,6 +900,19 @@ await prueba('Baja: la Jefe también la da directa (sin solicitud) con motivo y 
   await assertFails(updateDoc(doc(jef, 'equipos', 'eq-d1'), { estado: 'baja', bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }));
   await assertFails(updateDoc(doc(jef, 'equipos', 'eq-d1'), { estado: 'baja', bajaPedida: BP({ nota: 'ok' }), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }));
   await assertSucceeds(updateDoc(doc(jef, 'equipos', 'eq-d2'), { estado: 'baja', bajaPedida: BP({ porRol: 'jefe' }), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 })); });
+await prueba('Baja: lo pedido o lo dado de baja directo lleva el rol de quien lo hace (nadie se anota como otro rol)', async () => {
+  await sembrarEq('eq-g1'); await sembrarEq('eq-g2'); await sembrarEq('eq-g3');
+  const enc = await cuenta('bjEnc8', 'equipos'), jef = await cuenta('bjJef6', 'jefe');
+  await assertFails(updateDoc(doc(enc, 'equipos', 'eq-g1'), { bajaPedida: BP({ porRol: 'jefe' }), historial: H2 }));
+  await assertFails(updateDoc(doc(jef, 'equipos', 'eq-g2'), { estado: 'baja', bajaPedida: BP({ porRol: 'equipos' }), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }));
+  await assertSucceeds(updateDoc(doc(enc, 'equipos', 'eq-g3'), { bajaPedida: BP({ porRol: 'equipos' }), historial: H2 })); });
+await prueba('Baja: un equipo con la baja pedida no se entrega (su solicitud quedaría colgada); uno sin baja pedida sí', async () => {
+  await sembrarEq('eq-h1', { bajaPedida: BP() }); await sembrarEq('eq-h2'); const enc = await cuenta('bjEnc9', 'equipos');
+  const paso = hojaId => ({ fecha: '2026-11-20T10:00:00Z', texto: 'Entregado', por: 'Fabián', hojaId, tipo: 'entrega' });
+  const hoja = n => ({ numero: n, porRol: 'equipos', revision: 'pendiente', devoluciones: [], persona: 'Persona Uno', cedula: '123456', equipos: [{ serial: 'S1' }], otros: [], firmaPersona: PNG });
+  const entrega = id => ({ estado: 'asignado', asignadoA: 'Persona Uno', asignadoCedula: '123456', proyecto: 'P', historial: H1.concat([paso(id)]) });
+  await assertFails(lote(enc, b => { b.update(doc(enc, 'equipos', 'eq-h1'), entrega('ac81')); b.set(doc(enc, 'hojas', 'ac81'), hoja(81)); }));
+  await assertSucceeds(lote(enc, b => { b.update(doc(enc, 'equipos', 'eq-h2'), entrega('ac82')); b.set(doc(enc, 'hojas', 'ac82'), hoja(82)); })); });
 await prueba('Baja: la Jefe puede no aprobar (quita la solicitud con su línea de historial); el Encargado no', async () => {
   await sembrarEq('eq-e1', { bajaPedida: BP() }); await sembrarEq('eq-e2', { bajaPedida: BP() });
   await assertSucceeds(updateDoc(doc(await cuenta('bjJef4', 'jefe'), 'equipos', 'eq-e1'), { bajaPedida: null, historial: H2 }));
@@ -953,14 +1018,14 @@ await prueba('Código: la Jefe de prueba carga los datos de ejemplo con códigos
 
 console.log('Fase 12: proveedores');
 await limpiar();
-const PV = (rol, o = {}) => Object.assign({ nombre: 'Ferretería El Faro', nit: '900000001-2', contacto: 'Marta Ejemplo', telefono: '300 000 0001', correo: 'ventas@elfaro.example.com', nota: 'Entrega en 2 días', por: 'Persona de prueba', porRol: rol, en: '2026-11-25' }, o);
+const PV = (rol, o = {}) => Object.assign({ nombre: 'Ferretería El Faro', nit: '900000001-2', contacto: 'Marta Ejemplo', telefono: '300 000 0001', correo: 'ventas.elfaro@example.com', nota: 'Entrega en 2 días', por: 'Persona de prueba', porRol: rol, en: '2026-11-25' }, o);
 await prueba('Proveedores: Compras crea un proveedor (completo, o solo con el nombre y sin NIT)', async () => {
   const com = await cuenta('pvCom1', 'compras');
   await assertSucceeds(setDoc(doc(com, 'proveedores', 'pv-elfaro'), PV('compras')));
   await assertSucceeds(setDoc(doc(com, 'proveedores', 'pv-aguaclara'), { nombre: 'Distribuidora Agua Clara', nit: '', contacto: '', telefono: '', correo: '', nota: '', por: 'Persona de prueba', porRol: 'compras', en: '2026-11-25' })); });
 await prueba('Proveedores: la Jefe y Bodega con el extra «compra» también los crean; Bodega sin el extra, no', async () => {
   await assertSucceeds(setDoc(doc(await cuenta('pvJef1', 'jefe'), 'proveedores', 'pv-jefe1'), PV('jefe', { nombre: 'Papelería Central', nit: '900000003-7' })));
-  await assertSucceeds(setDoc(doc(await cuenta('pvBod1', 'asistente', { extras: ['compra'] }), 'proveedores', 'pv-bodega1'), PV('asistente', { nombre: 'Tecnoventas Ejemplo S. A. S.', nit: '901234567-7' })));
+  await assertSucceeds(setDoc(doc(await cuenta('pvBod1', 'asistente', { extras: ['compra'] }), 'proveedores', 'pv-bodega1'), PV('asistente', { nombre: 'Tecnoventas Ejemplo S. A. S.', nit: '900000011-6' })));
   await assertFails(setDoc(doc(await cuenta('pvBod2', 'asistente'), 'proveedores', 'pv-bodega2'), PV('asistente', { nombre: 'Otro proveedor', nit: '' }))); });
 await prueba('Proveedores: la Coordinadora, el Financiero, el Gerente, el Conductor, el Colaborador y Consulta no los crean', async () => {
   for (const [uid, rol] of [['pvCoo', 'coordcompras'], ['pvFin', 'financiero'], ['pvGer', 'gerente'], ['pvCon', 'conductor'], ['pvCol', 'colaborador'], ['pvCons', 'consulta']])
@@ -997,7 +1062,7 @@ await prueba('Proveedores: los ven Compras, la Coordinadora, Bodega, el Financie
 await prueba('Proveedores: Compras cambia el nombre, el NIT, el contacto, el teléfono, el correo y la nota; no quién lo creó ni cuándo', async () => {
   await sembrar(d => setDoc(doc(d, 'proveedores', 'pv-ed1'), PV('compras')));
   const com = await cuenta('pvCom6', 'compras');
-  await assertSucceeds(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { nombre: 'Ferretería El Faro S. A. S.', nit: '900000003-7', contacto: 'Luis Ejemplo', telefono: '300 000 0003', correo: 'otro@elfaro.example.com', nota: '' }));
+  await assertSucceeds(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { nombre: 'Ferretería El Faro S. A. S.', nit: '900000003-7', contacto: 'Luis Ejemplo', telefono: '300 000 0003', correo: 'otro.elfaro@example.com', nota: '' }));
   await assertFails(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { por: 'Otra persona' }));
   await assertFails(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { porRol: 'jefe' }));
   await assertFails(updateDoc(doc(com, 'proveedores', 'pv-ed1'), { en: '2020-01-01' }));
@@ -1018,7 +1083,7 @@ await prueba('Proveedores: solo la Jefe los borra', async () => {
   await assertSucceeds(deleteDoc(doc(await cuenta('pvB3', 'jefe'), 'proveedores', 'pv-bo1')));
   await assertSucceeds(deleteDoc(doc(prueba_('jefe'), 'proveedores', 'pv-bo2'))); });
 await prueba('Proveedores: la Jefe de prueba carga los datos de ejemplo sin pasar por las revisiones', async () => {
-  await assertSucceeds(setDoc(doc(prueba_('jefe'), 'proveedores', 'pv-elfaro2'), { nombre: 'Ferretería El Faro', nit: '900000001-2', contacto: 'Marta Ejemplo', telefono: '300 000 0001', correo: 'ventas@elfaro.example.com', nota: '', por: 'Fredy Torres', porRol: 'compras', en: '2026-08-07' })); });
+  await assertSucceeds(setDoc(doc(prueba_('jefe'), 'proveedores', 'pv-elfaro2'), { nombre: 'Ferretería El Faro', nit: '900000001-2', contacto: 'Marta Ejemplo', telefono: '300 000 0001', correo: 'ventas.elfaro@example.com', nota: '', por: 'Fredy Torres', porRol: 'compras', en: '2026-08-07' })); });
 await prueba('Compra con proveedor: Compras registra la compra con el id de un proveedor que ya existe', async () => {
   await sembrar(async d => { await setDoc(doc(d, 'proveedores', 'pv-existe'), PV('compras')); await setDoc(doc(d, 'compras', 'co-pv1'), compra({ estado: 'autorizado' })); });
   await assertSucceeds(updateDoc(doc(await cuenta('pvC1', 'compras'), 'compras', 'co-pv1'), { estado: 'comprado', proveedor: 'Ferretería El Faro', proveedorId: 'pv-existe', valorReal: 100000, fechaCompra: '2026-11-25', factura: '', historial: H1 })); });
@@ -1143,7 +1208,7 @@ await prueba('Reservas: solo la Jefe las borra; la Jefe de prueba las carga con 
 const FT14 = { frente: JPG, atras: JPG, izquierda: JPG, derecha: JPG, llantas: JPG };
 const salidaConReserva = async (uid, ve, resId, entId, extra = {}) => { const db = await cuenta(uid, 'conductor');
   return lote(db, b => { b.update(doc(db, 'vehiculos', ve), { estado: 'en-uso', km: 1100, conductor: 'Persona', historial: H2, ultimaEntrega: entId });
-    b.set(doc(db, 'entregas', entId), Object.assign({ vehiculoId: ve, km: 1100, tipo: 'salida', porRol: 'conductor', fotos: FT14 }, resId ? { reservaId: resId } : {}, extra)); }); };
+    b.set(doc(db, 'entregas', entId), Object.assign({ vehiculoId: ve, km: 1100, tipo: 'salida', porRol: 'conductor', fotos: FT14, revision: REV_OK }, resId ? { reservaId: resId } : {}, extra)); }); };
 await prueba('Salida de un carro con reserva: el Conductor la registra ligada a una reserva aprobada de ese mismo carro', async () => {
   await sembrar(async d => { await setDoc(doc(d, 'vehiculos', 've-r2'), VE14()); await setDoc(doc(d, 'reservas', 'rs-en1'), RS('rsEn0', 'carros', { estado: 'aprobada', vehiculoId: 've-r2', placa: 'ABC123', conductor: 'Persona' })); });
   await assertSucceeds(salidaConReserva('rsEn1', 've-r2', 'rs-en1', 'en-rs1')); });
@@ -1153,6 +1218,16 @@ await prueba('Salida de un carro con reserva: no se acepta una reserva que no ex
   await assertFails(salidaConReserva('rsEn2', 've-r3', 'rs-no-existe', 'en-rs2'));
   await assertFails(salidaConReserva('rsEn3', 've-r3', 'rs-en2', 'en-rs3'));
   await assertFails(salidaConReserva('rsEn4', 've-r4', 'rs-en3', 'en-rs4')); });
+await prueba('Salida de un carro: con un punto crítico mal (frenos, llantas, luces o dirección) o sin la revisión no sale; una llegada sí se registra', async () => {
+  await sembrar(async d => { for (const v of ['ve-c1', 've-c2', 've-c3', 've-c4', 've-c5']) await setDoc(doc(d, 'vehiculos', v), VE14()); });
+  await assertFails(salidaConReserva('rsCr1', 've-c1', '', 'en-cr1', { revision: Object.assign({}, REV_OK, { frenos: false }) }));
+  await assertFails(salidaConReserva('rsCr2', 've-c2', '', 'en-cr2', { revision: Object.assign({}, REV_OK, { direccion: false }) }));
+  await assertFails(salidaConReserva('rsCr3', 've-c3', '', 'en-cr3', { revision: { frenos: true } }));
+  await assertFails(salidaConReserva('rsCr4', 've-c4', '', 'en-cr4', { revision: 'todo bien' }));
+  await sembrar(d => setDoc(doc(d, 'vehiculos', 've-c6'), VE14({ estado: 'en-uso' })));
+  const db = await cuenta('rsCr5', 'conductor');
+  await assertSucceeds(lote(db, b => { b.update(doc(db, 'vehiculos', 've-c6'), { estado: 'disponible', km: 1100, conductor: '', historial: H2, ultimaEntrega: 'en-cr6' });
+    b.set(doc(db, 'entregas', 'en-cr6'), { vehiculoId: 've-c6', km: 1100, tipo: 'llegada', porRol: 'conductor', fotos: FT14, revision: Object.assign({}, REV_OK, { luces: false }) }); })); });
 await prueba('Salida de un carro sin reserva (reunión o viaje suelto): sigue como antes', async () => {
   await sembrar(d => setDoc(doc(d, 'vehiculos', 've-r6'), VE14()));
   await assertSucceeds(salidaConReserva('rsEn5', 've-r6', '', 'en-rs5')); });

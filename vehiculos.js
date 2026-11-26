@@ -82,7 +82,7 @@
     const faltan = [], pasado = [];
     if (kmFalta != null && (vencido ? kmMal : pronto ? kmCerca : true)) { if (kmFalta > 0) faltan.push(km(kmFalta)); else pasado.push(kmFalta < 0 ? `se pasó ${km(-kmFalta)}` : 'ya llegó a los km'); }
     if (diasFalta != null && (vencido ? diasMal : pronto ? diasCerca : true)) { if (diasFalta > 0) faltan.push(`${diasFalta} días`); else pasado.push(diasFalta < 0 ? `se pasó hace ${-diasFalta} días` : 'toca hoy'); }
-    return { est: vencido ? 'vencido' : pronto ? 'pronto' : 'ok', kmFalta, diasFalta, texto: pasado.concat(faltan.length ? ['faltan ' + faltan.join(' o ')] : []).join(' y ') };
+    return { est: vencido ? 'vencido' : pronto ? 'pronto' : 'ok', kmFalta, diasFalta, texto: pasado.concat(faltan.length ? ['faltan ' + faltan.join(' o ')] : []).join(' y ') || (kmFalta == null && diasFalta == null ? 'falta anotar la fecha de la última vez' : '') };
   }
   const conMtto = v => mttosDe(v).some(m => estMtto(m, v).est !== 'ok');
   /** Tareas del plan de todos los carros que ya tocan o están por tocar (las vencidas primero). */
@@ -100,7 +100,8 @@
     ts.forEach(t => {
       if (ancla) { g += num(t.galones); val += num(t.valor); }
       if (t.lleno === false) return;
-      if (ancla && g > 0 && num(t.km) > num(ancla.km)) {
+      if (ancla && !(num(t.km) > num(ancla.km))) return;   // otro tanque lleno con el mismo km: no cierra tramo y sus galones se suman al siguiente
+      if (ancla && g > 0) {
         const k = num(t.km) - num(ancla.km), prom = out.length >= TAN_MIN_TRAMOS ? sumKm / sumGal : 0;
         out.push({ t, km: k, galones: g, valor: val, kmGal: k / g, costoKm: val / k, prom, raro: prom > 0 && k / g < prom * TAN_RARO });
         sumKm += k; sumGal += g;
@@ -126,6 +127,9 @@
     const comb = tanDe(v.id).filter(t => en(t.fecha)).reduce((s, t) => s + num(t.valor), 0);
     return { nov, mtt, comb, total: nov + mtt + comb };
   }
+  /** Un reporte de «Revisión antes de salir» que nadie ha revisado todavía: mientras tanto el carro no sale otra vez. */
+  const PREFIJO_REV = 'Revisión antes de salir:';
+  const reporteSinRevisar = v => D().novedades.find(n => n.vehiculoId === v.id && !n.revisada && String(n.descripcion || '').startsWith(PREFIJO_REV)) || null;
   const ultimaSalida = v => entDe(v.id).find(e => e.tipo === 'salida') || null;
   const reunionPorId = id => D().reuniones.find(r => r.id === id) || null;
   /** Viajes de reunión con carro asignado que todavía no terminan (para el conductor). */
@@ -666,6 +670,8 @@
         if (kmv > num(v.km) + 3000) return fallar('El kilometraje parece muy alto. Revísalo.', 'vmKm');
         if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha > A().hoyISO()) return fallar('Revisa la fecha: no puede ser de mañana.', 'vmFecha');
         if (!(costo >= 0)) return fallar('Escribe el costo en pesos, sin puntos ni comas.', 'vmCosto');
+        if (/^\d{4}-\d{2}-\d{2}$/.test(m.ultimaFecha || '') && fecha < m.ultimaFecha) return fallar(`La fecha no puede ser anterior a la última vez que se hizo (${A().fechaCorta(m.ultimaFecha)}).`, 'vmFecha');
+        if (num(m.ultimoKm) > kmv) return fallar(`El kilometraje no puede ser menor que el de la última vez (${km(m.ultimoKm)}).`, 'vmKm');
         const act = vehPorId(v.id) || v;
         // Cada «Hecho» con costo se guarda (hasta 12 por tarea) para sumar lo gastado en cualquier periodo; los planes anteriores traían solo el último.
         const previos = Array.isArray(m.hechos) ? m.hechos : num(m.ultimoCosto) > 0 && m.ultimaFecha ? [{ fecha: m.ultimaFecha, km: m.ultimoKm, costo: m.ultimoCosto }] : [];
@@ -746,6 +752,7 @@
       ops: () => {
         const act = resPorId(r.id);
         if (!act || act.estado !== 'pedida') return fallar('Este pedido ya cambió. Ciérralo y revisa la lista.');
+        if (act.fecha < A().hoyISO()) return fallar('La fecha de este pedido ya pasó. Recházalo y dile a la persona que pida otro.');
         if (esMiaRes(act)) return fallar('Nadie aprueba lo suyo: lo decide otra persona.');
         const veh = libresPara(act.fecha, '', act.id).find(x => x.id === valor('vrVeh')), cond = valor('vrCond');
         if (!veh) return fallar('Ese carro ya no está libre ese día. Cierra esto y vuelve a abrirlo.', 'vrVeh');
@@ -812,13 +819,14 @@
             const obs0 = valor('vsObs'), f0 = LADOS.map(([k]) => fotos['vf_' + k]).find(Boolean);
             if (obs0.length < 5) return fallar(`Este carro no debe salir (${criticos.join(', ').toLowerCase()}). Cuenta qué falla en observaciones.`, 'vsObs');
             if (!f0) return fallar('Toma al menos una foto del problema (cualquiera de las 5).');
-            const desc = `Revisión antes de salir: ${criticos.join(', ').toLowerCase()} mal. ${obs0}`.slice(0, 300);
+            const desc = `${PREFIJO_REV} ${criticos.join(', ').toLowerCase()} mal. ${obs0}`.slice(0, 300);
             accion.listo = 'Listo: problema reportado. El carro no salió y ya les llegó el aviso.';
             return [['set', 'novedades', window.nube.idNuevo('no'), { vehiculoId: v.id, placa: v.placa, tipo: 'mantenimiento', fecha: ahora(), km: num(v.km), descripcion: desc, foto: f0,
               reporta: persona().nombre, reportaRol: miRol(), costo: 0, revisada: false, revisadaPor: '', revisadaEn: '', nota: '' }]]
               .concat(['jefe', 'carros', 'asistente', 'gerente'].map(rol => aviso(rol, 'Un carro no debe salir', `${persona().nombre} no sacó el ${v.placa}: ${desc.slice(0, 120)}`)));
           }
         }
+        if (salida && reporteSinRevisar(v)) return fallar('Este carro tiene un problema reportado en la revisión y nadie lo ha revisado. Transporte o Bodega lo revisan primero (en Novedades).');
         const kmv = entero('vsKm'), cond = $('vsCond') ? valor('vsCond') : (viaje && viaje.conductor) || persona().nombre, con = valor('vsCon');
         if (!(kmv >= num(v.km))) return fallar(`El kilometraje no puede ser menor que el último registrado (${km(v.km)}).`, 'vsKm');
         if (!salida && ultima && kmv < num(ultima.km)) return fallar(`El kilometraje no puede ser menor que el de la salida (${km(ultima.km)}).`, 'vsKm');
@@ -909,7 +917,7 @@
       salida: () => v && v.estado === 'disponible' && (esAdmin() || esConductor()) ? entrega(v, 'salida', b.dataset.viaje, b.dataset.reserva) : null,
       llegada: () => v && v.estado === 'en-uso' && (esAdmin() || esConductor()) ? entrega(v, 'llegada', b.dataset.viaje, b.dataset.reserva) : null,
       pedircarro: () => puedeReportar() ? (pedirCarro(), true) : null,
-      aprobares: () => rs && rs.estado === 'pedida' && esAdmin() && !esMiaRes(rs) ? (aprobarCarro(rs), true) : null,
+      aprobares: () => rs && rs.estado === 'pedida' && rs.fecha >= A().hoyISO() && esAdmin() && !esMiaRes(rs) ? (aprobarCarro(rs), true) : null,
       rechazares: () => rs && rs.estado === 'pedida' && esAdmin() && !esMiaRes(rs) ? (rechazarCarro(rs), true) : null,
       cancelares: () => rs && cancelable(rs) ? (cancelarReserva(rs), true) : null
     };
@@ -961,5 +969,5 @@
   });
   window.ExcelBD.conectar($('vehContenido'), { vehiculos: cfgVehiculos }, () => pintar());
 
-  window.Vehiculos = Object.freeze({ pintar, resumen, libresPara });
+  window.Vehiculos = Object.freeze({ pintar, resumen, libresPara, tramosDe });
 })();
