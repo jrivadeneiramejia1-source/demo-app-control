@@ -798,6 +798,18 @@ try {
   await t.page.click('#invSecciones [data-sec="movimientos"]');
   const guantes0 = await art('ar-004');
   await t.page.click('#invContenido [data-accion="entrada"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  log('«Registrar entrada» primero pregunta qué entra: una devolución o una compra que llegó', await t.page.evaluate(() => /¿Qué está entrando a la bodega\?/.test(document.getElementById('acSub').textContent) && !!document.querySelector('#acCampos [data-accion="entdev"]') && !!document.querySelector('#acCampos [data-accion="entcompra"]') && document.getElementById('acPrimario').hidden));
+  await t.page.screenshot({ path: path.join(CAPTURAS, '26-entrada-paso1.png') });
+  await t.page.click('#acCampos [data-accion="entcompra"]'); await esp(300);
+  await t.page.screenshot({ path: path.join(CAPTURAS, '26b-entrada-compras.png') });
+  log('«Llegó una compra» lista las compras ya hechas que faltan por recibir, con su botón «Recibir»', await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')), n = Object.values(d.compras).filter(c => c.estado === 'comprado').length, tit = document.getElementById('acT').textContent, cards = document.querySelectorAll('#acCampos [data-accion="recibir"]').length; return tit === 'Llegó una compra' && cards === n; }));
+  if (await t.page.$('#acCampos [data-accion="recibir"]')) {
+    await t.page.click('#acCampos [data-accion="recibir"]'); await esp(300);
+    log('«Recibir» abre el formulario de esa compra (cuánto llegó), igual que desde «Qué hay que hacer»', await t.page.evaluate(() => /Recibir|Marcar como recibida/.test(document.getElementById('acT').textContent) && !document.getElementById('acPrimario').hidden));
+  }
+  await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shAccion').hidden);
+  await t.page.click('#invContenido [data-accion="entrada"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
+  await t.page.click('#acCampos [data-accion="entdev"]'); await t.page.waitForSelector('#acPersona');
   await t.page.selectOption('#acArt', 'ar-004'); await t.page.fill('#acCant', '3'); await t.page.fill('#acPersona', 'Paola Ríos');
   await t.page.click('#acPrimario');
   log('una devolución suma a la bodega', await hasta(t.page, x => JSON.parse(localStorage.getItem('__fb_datos')).articulos['ar-004'].cantidad === x, guantes0 + 3));
