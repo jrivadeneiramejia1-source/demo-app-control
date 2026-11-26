@@ -544,7 +544,7 @@ Para un viaje que no es una reunión (por ejemplo, llevar documentos a Maicao o 
   - **En la llegada** la misma lista es **opcional**: se marca solo lo que se note.
   - La hoja de vida y el Excel de «Salidas y llegadas» dicen cómo salió y cómo llegó cada carro por grupo («Críticos: bien», «Otros: 2 mal (pito, botiquín)»). Las salidas viejas, que solo traían 4 casillas, se siguen leyendo.
   - La lista es la del plan: **no hay un formato oficial único** (el PESV de la Resolución 40595 de 2022 deja que cada empresa arme el suyo, y los extintores, botiquines, kit de carretera y llanta de repuesto salen del Código de Tránsito, sin confirmar con el texto de la ley). Si Transporte entrega su formato, se cambia la lista en `vehiculos.js` (`REV_CRITICOS` y `REV_OTROS`).
-- Un carro **solo sale** si no está en el taller y tiene el **SOAT y la técnico-mecánica al día**.
+- Un carro **solo sale** si no está en el taller y tiene el **SOAT y la técnico-mecánica al día**: la app y las reglas lo revisan también al registrar la salida (en una llegada no se bloquea).
 - **Avisos de documentos:** cuando un documento está por vencer o vencido, avisan la Jefe, Transporte y Bodega.
 - **Plan de mantenimiento de cada carro** (en su hoja de vida). Cada carro puede tener hasta **10 tareas** (cambio de aceite, alineación, pastillas de freno…). Cada tarea se pone **cada cuántos km, cada cuántos días, o las dos** (lo que llegue primero), con cuándo se hizo por última vez.
   - Cada tarea está **«Al día»**, **«Pronto»** (faltan 500 km o menos, o 15 días o menos) o **«Toca ya»** (ya se pasó el km o la fecha). Ejemplo: aceite cada 5.000 km, el último a los 40.000 km y el carro va en 44.700 → faltan 300 km: **Pronto**.

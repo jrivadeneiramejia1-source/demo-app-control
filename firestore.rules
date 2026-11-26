@@ -328,10 +328,19 @@ service cloud.firestore {
       let r = nuevo().get('revision', {});
       return nuevo().tipo == 'llegada' || (r.get('frenos', false) == true && r.get('llantas', false) == true && r.get('luces', false) == true && r.get('direccion', false) == true);
     }
+    // Un papel (SOAT o técnico-mecánica) sirve hasta el final del día que dice (hora de Colombia, UTC-5): 24 h + 5 h después de las 00:00 UTC de esa fecha.
+    // Una SALIDA solo se registra si el carro tiene los dos papeles vigentes (una llegada no se bloquea). Si la fecha está mal escrita, la regla da error y la salida se niega.
+    function vigente(f) {
+      return request.time < timestamp.date(int(f.split('-')[0]), int(f.split('-')[1]), int(f.split('-')[2])) + duration.value(29, 'h');
+    }
+    function papelesParaSalir() {
+      let v = get(rutaVeh(nuevo().vehiculoId)).data;
+      return nuevo().tipo == 'llegada' || (vigente(v.soat) && vigente(v.tecno));
+    }
     match /entregas/{id} {
       allow read: if veVehiculos();
       allow create: if (esPrueba() && esJefe()) || (esDemo() && nivel('vehiculos') in ['reporta', 'autoriza', 'jefe']
-        && nuevo().porRol == rol() && nuevo().tipo in ['salida', 'llegada'] && salidaOk() && reservaDeEntregaOk()
+        && nuevo().porRol == rol() && nuevo().tipo in ['salida', 'llegada'] && salidaOk() && papelesParaSalir() && reservaDeEntregaOk()
         && nuevo().fotos.keys().hasOnly(['frente', 'atras', 'izquierda', 'derecha', 'llantas'])
         && nuevo().fotos.keys().hasAll(['frente', 'atras', 'izquierda', 'derecha', 'llantas'])
         && nuevo().fotos.frente is string && nuevo().fotos.frente.size() < 200000

@@ -1128,6 +1128,15 @@ try {
   log('le avisa a la Jefe, Transporte, Bodega y Gerente que el carro no debe salir', await (async () => { const d = await dat(); return ['jefe', 'carros', 'asistente', 'gerente'].every(r => Object.values(d.avisos).some(a => a.para === r && /no debe salir/.test(a.titulo))); })());
   // Se quita lo que se creó para esta prueba y se vuelve a abrir la salida.
   await t.page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return window.nube.lote(Object.entries(d.novedades).filter(([, n]) => /Revisión antes de salir/.test(n.descripcion)).map(([id]) => ['borrar', 'novedades', id]).concat(Object.entries(d.avisos).filter(([, a]) => /no debe salir/.test(a.titulo)).map(([id]) => ['borrar', 'avisos', id]))); });
+  // Con el SOAT vencido el carro no puede salir; con las fechas al día, sí.
+  const soatJkl = await t.page.evaluate(async () => { const v = JSON.parse(localStorage.getItem('__fb_datos')).vehiculos['ve-jkl012']; await window.nube.lote([['mezclar', 'vehiculos', 've-jkl012', { soat: '2020-01-01' }]]); return v.soat; });
+  await hasta(t.page, () => JSON.parse(localStorage.getItem('__fb_datos')).vehiculos['ve-jkl012'].soat === '2020-01-01');
+  await t.page.click('#vehContenido [data-accion="salida"][data-viaje="ne-025"]'); await abiertaVeh();
+  await t.page.click('#vePrimario');
+  log('con el SOAT vencido la salida no se guarda y dice que el carro no puede salir', await errVeh(/el SOAT vencido o sin fecha y no puede salir/));
+  await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shVeh').hidden);
+  await t.page.evaluate(async soat => { await window.nube.lote([['mezclar', 'vehiculos', 've-jkl012', { soat }]]); }, soatJkl);
+  await hasta(t.page, soat => JSON.parse(localStorage.getItem('__fb_datos')).vehiculos['ve-jkl012'].soat === soat, soatJkl);
   await t.page.click('#vehContenido [data-accion="salida"][data-viaje="ne-025"]'); await abiertaVeh();
   await t.page.fill('#vsKm', '21300'); await t.page.click('#vePrimario');
   log('un kilometraje menor que el último no deja guardar', await errVeh(/no puede ser menor/));
@@ -1501,6 +1510,7 @@ try {
   log('al subir el Excel muestra lo que entendió: 4 listas y 4 con problema', await hasta(t.page, () => /4 listas para guardar/.test(document.getElementById('genteCuerpo').textContent) && /4 con problema/.test(document.getElementById('genteCuerpo').textContent)), await texto(t.page, '#genteCuerpo'));
   log('marca el correo repetido, el rol que no entiende y el nombre con fórmula', await t.page.evaluate(() => { const x = document.getElementById('genteCuerpo').textContent; return /repetido en el Excel/.test(x) && /No entendí el rol «Presidente»/.test(x) && /no puede empezar con/.test(x) && /Los Gerentes y las Jefes se crean desde la consola de Firebase/.test(x); }));
   log('todavía no guardó nada', !Object.keys((await fb()).invitaciones || {}).length);
+  log('el cargo «Coord. Compras» del Excel es Coordinador de compras (no Compras) y el nivel «Coordina compras» se entiende', await t.page.evaluate(() => { const r = window.Gente.entender([{ Nombre: 'Coral Compras', Correo: 'coral.compras@ejemplo.test', Cargo: 'Coord. Compras', Inventario: 'Coordina compras' }, { Nombre: 'Carlos Compras', Correo: 'carlos.compras@ejemplo.test', Cargo: 'Auxiliar Compras', Inventario: 'Hace las compras' }]); return r[0].rol === 'coordcompras' && r[0].permisos.inventario === 'coordina' && !r[0].errores.length && r[1].rol === 'compras' && r[1].permisos.inventario === 'compra' && !r[1].errores.length; }));
   await t.page.screenshot({ path: path.join(CAPTURAS, '07-panel-excel.png'), fullPage: true });
   await t.page.click('#genteCuerpo [data-g="guardarinv"]');
   log('«Guardar» deja 4 invitaciones, una por correo en minúscula', await hasta(t.page, () => Object.keys(JSON.parse(localStorage.getItem('__fb_datos')).invitaciones || {}).sort().join() === 'bruno.bodega@ejemplo.test,gina.gerente@ejemplo.test,mario.prueba@ejemplo.test,nora.admin@ejemplo.test'));
