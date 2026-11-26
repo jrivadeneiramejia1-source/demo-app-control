@@ -22,6 +22,7 @@
   const esJefe = () => perm() === 'jefe';
   const esGerente = () => miRol() === 'gerente';
   const esEncargado = () => perm() === 'encargado' || esJefe();          // actas, devoluciones, mantenimiento
+  const apruebaBajas = () => esJefe() && miRol() === 'jefe';          // las reglas dejan dar de baja solo al ROL Jefe (no a quien tenga el permiso «jefe» con otro rol)
   const esSoporte = () => perm() === 'soporte';
   const revisaActas = () => esJefe() || (esSoporte() && A().tieneExtra('actas'));
   const puedeRevisar = h => revisaActas() && h.revision === 'pendiente' && h.porRol !== miRol();   // nadie revisa lo suyo
@@ -87,7 +88,7 @@
   }
   function resumen() {
     const es = D().equipos;
-    const mias = (esEncargado() ? recibidos().length + tareasPend().length + conProblema().length : 0) + (esJefe() ? bajasPend().length : 0) + (revisaActas() ? porRevisar().filter(h => h.porRol !== miRol()).length : 0);
+    const mias = (esEncargado() ? recibidos().length + tareasPend().length + conProblema().length : 0) + (apruebaBajas() ? bajasPend().length : 0) + (revisaActas() ? porRevisar().filter(h => h.porRol !== miRol()).length : 0);
     return {
       asignados: es.filter(e => e.estado === 'asignado').length, bodega: es.filter(e => e.estado === 'bodega').length,
       recibidos: es.filter(e => e.estado === 'recibido').length, actas: porRevisar().length,
@@ -156,7 +157,7 @@
     return `<div class="card tarea st-org">
       <div class="tarea-t"><b><span class="serial-chip">${esH(e.serial)}</span> ${esH(e.tipo)} ${esH(e.marca)} ${esH(e.modelo)}</b>
         <span class="meta">${esH(MOTIVO_BAJA[b.motivo] || b.motivo)}: ${esH(b.nota)}</span><span class="meta">La pidió ${esH(b.por)} · ${esH(A().fechaCorta(b.en))} · ${esH(quienTiene(e))}</span></div>
-      <div class="tarea-pie">${esJefe() ? boton('aprobarbaja', 'Aprobar la baja', 'check', e.id, 'primary small') + boton('noaprobarbaja', 'No aprobar', 'x', e.id, 'small') : A().pill('Esperando a la Jefe', 's-org', 'reloj')}${boton('ver', 'Hoja de vida', '', e.id, 'ghost small')}</div>
+      <div class="tarea-pie">${apruebaBajas() ? boton('aprobarbaja', 'Aprobar la baja', 'check', e.id, 'primary small') + boton('noaprobarbaja', 'No aprobar', 'x', e.id, 'small') : A().pill('Esperando a la Jefe', 's-org', 'reloj')}${boton('ver', 'Hoja de vida', '', e.id, 'ghost small')}</div>
     </div>`;
   }
   function htmlHacer() {
@@ -164,7 +165,7 @@
     if (programa()) h += `<div class="barra-botones">${botonVerificar('small')}</div>`;
     if (esEncargado()) {
       const bs = bajasPend();
-      if (bs.length) h += `<div class="section-label">${esJefe() ? 'Bajas por aprobar' : 'Bajas que pediste (esperan a la Jefe)'} (${bs.length})</div><div class="list">${bs.map(tarjetaBaja).join('')}</div>`;
+      if (bs.length) h += `<div class="section-label">${apruebaBajas() ? 'Bajas por aprobar' : 'Bajas que pediste (esperan a la Jefe)'} (${bs.length})</div><div class="list">${bs.map(tarjetaBaja).join('')}</div>`;
     }
     if (esEncargado()) {
       const rs = recibidos(), ts = tareasPend(), ps = conProblema();
@@ -588,7 +589,7 @@
       ops: () => {
         const serial = valor('ehSerial').toUpperCase(), marcaV = valor('ehMarca'), modelo = valor('ehModelo');
         if (!/^[A-Z0-9-]{4,30}$/.test(serial)) return fallar('Escribe el serial (letras, números y guiones).', 'ehSerial');
-        if (D().equipos.some(e => String(e.serial).toUpperCase() === serial)) return fallar('Ya hay un equipo con ese serial.', 'ehSerial');
+        if (D().equipos.some(e => normSerial(e.serial) === normSerial(serial))) return fallar('Ya hay un equipo con ese serial (los guiones, los puntos y los espacios no cuentan).', 'ehSerial');
         if (!marcaV) return fallar('Escribe la marca.', 'ehMarca');
         const compra = leerCompra(); if (typeof compra === 'string') return false;
         return [['set', 'equipos', window.nube.idNuevo('eq'), { serial, tipo: valor('ehTipo'), marca: marcaV, modelo, estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', ultimoMtto: '', ultimoBackup: '', obs: valor('ehObs'), ...compra,
@@ -622,7 +623,7 @@
   /* ---------- baja de un equipo ---------- */
   /** Pedir la baja (Encargado) o darla directamente (la Jefe): motivo y una nota obligatoria. */
   function baja(e) {
-    const directa = esJefe();
+    const directa = apruebaBajas();
     abrir({ titulo: `${directa ? 'Dar de baja' : 'Pedir la baja del'} ${directa ? 'el ' : ''}${e.serial}`, sub: directa ? 'El equipo sale de las cifras y ya no se puede entregar. Su hoja de vida queda en «De baja».' : 'La Jefe decide. Mientras tanto el equipo sigue donde está.',
       campos: `<p class="meta">${esH(`${e.tipo} ${e.marca} ${e.modelo}`)} · ${esH(quienTiene(e))}</p>` + campoSel('ebMotivo', 'Por qué', Object.keys(MOTIVO_BAJA).map(k => [k, MOTIVO_BAJA[k]]), 'danado') +
         campoTxt('ebNota', 'Cuenta qué pasó (obligatorio)', '', 'Ej: no enciende y el arreglo cuesta más que uno nuevo', 200),
@@ -727,10 +728,10 @@
       if (e.estado === 'asignado') { const p = personas().find(x => x.equipos.some(y => y.id === e.id)); if (p) bts.push(boton('devolver', 'Recibir (devolución)', 'devolucion', '', 'small', ` data-clave="${esH(p.clave)}"`)); }
       if (e.estado === 'recibido' && pend(e).mtto) bts.push(boton('mtto', 'Mantenimiento hecho', 'mantenimiento', e.id, 'primary small'));
       if (e.estado === 'recibido' && pend(e).backup) bts.push(boton('backup', 'Backup hecho', 'backup', e.id, 'small'));
-      if (['bodega', 'recibido'].includes(e.estado) && !b) bts.push(boton('pedirbaja', esJefe() ? 'Dar de baja' : 'Pedir la baja', 'borrar', e.id, 'ghost small'));
+      if (['bodega', 'recibido'].includes(e.estado) && !b) bts.push(boton('pedirbaja', apruebaBajas() ? 'Dar de baja' : 'Pedir la baja', 'borrar', e.id, 'ghost small'));
       bts.push(boton('datoscompra', 'Compra y garantía', 'lapiz', e.id, 'ghost small'));
     }
-    if (esJefe() && b && !enBaja) bts.push(boton('aprobarbaja', 'Aprobar la baja', 'check', e.id, 'primary small'), boton('noaprobarbaja', 'No aprobar', 'x', e.id, 'small'));
+    if (apruebaBajas() && b && !enBaja) bts.push(boton('aprobarbaja', 'Aprobar la baja', 'check', e.id, 'primary small'), boton('noaprobarbaja', 'No aprobar', 'x', e.id, 'small'));
     if (programa() && !enBaja) bts.push(boton('programar', 'Programar tarea', 'programar', e.id, 'ghost small'));
     abrir({ titulo: `${e.serial} · ${e.tipo} ${e.marca}`, sub: e.modelo,
       campos: `<div class="row">${App.pill(st[0], st[1])}</div>
@@ -869,8 +870,8 @@
         A().pintarTodo(); return true;
       },
       pedirbaja: () => (eq && esEncargado() && ['bodega', 'recibido'].includes(eq.estado) && !bajaDe(eq) ? baja(eq) : null),
-      aprobarbaja: () => (eq && esJefe() && bajaDe(eq) && ['bodega', 'recibido'].includes(eq.estado) ? aprobarBaja(eq) : null),
-      noaprobarbaja: () => (eq && esJefe() && bajaDe(eq) && ['bodega', 'recibido'].includes(eq.estado) ? noAprobarBaja(eq) : null),
+      aprobarbaja: () => (eq && apruebaBajas() && bajaDe(eq) && ['bodega', 'recibido'].includes(eq.estado) ? aprobarBaja(eq) : null),
+      noaprobarbaja: () => (eq && apruebaBajas() && bajaDe(eq) && ['bodega', 'recibido'].includes(eq.estado) ? noAprobarBaja(eq) : null),
       datoscompra: () => (eq && esEncargado() && eq.estado !== 'baja' ? datosCompra(eq) : null),
       verbaja: () => { bajasAbiertas = !bajasAbiertas; pintar(); return true; },
       verificar: () => (programa() ? verificar() : null), verescanear: () => (accion && accion.esVerif ? escanearVerif() : null),

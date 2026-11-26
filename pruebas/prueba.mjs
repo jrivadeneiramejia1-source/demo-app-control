@@ -282,7 +282,7 @@ try {
   // Ficha de Ferretería El Faro: precios (con lo que subieron) y compras hechas.
   await t.page.click('#invContenido .card.tarea[data-id="pv-elfaro"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
   const espFaro = espPv0.find(x => x.id === 'pv-elfaro');
-  log('la ficha de El Faro dice su NIT, cuántas compras tiene y cuánto se le pagó este año', await t.page.evaluate(x => { const tx = document.getElementById('acCampos').textContent; return document.getElementById('acT').textContent === 'Ferretería El Faro' && tx.includes('900000001-2') && tx.includes(window.App.cop(x.anio)) && new RegExp('Compras hechas\\s*' + x.n + '\\b').test(tx) && /Marta Ejemplo/.test(tx) && /ventas@elfaro\.example\.com/.test(tx); }, espFaro), await texto(t.page, '#acCampos'));
+  log('la ficha de El Faro dice su NIT, cuántas compras tiene y cuánto se le pagó este año', await t.page.evaluate(x => { const tx = document.getElementById('acCampos').textContent; return document.getElementById('acT').textContent === 'Ferretería El Faro' && tx.includes('900000001-2') && tx.includes(window.App.cop(x.anio)) && new RegExp('Compras hechas\\s*' + x.n + '\\b').test(tx) && /Marta Ejemplo/.test(tx) && /ventas\.elfaro@example\.com/.test(tx); }, espFaro), await texto(t.page, '#acCampos'));
   log('«Último precio por artículo»: los chalecos subieron de 33.000 a 36.500 (11 %) y los cables HDMI de 26.000 a 30.400 (17 %), y lo dice', await t.page.evaluate(() => {
     const cop = window.App.cop, filas = [...document.querySelectorAll('#acCampos .lineas-tabla tbody tr')].map(r => r.textContent);
     const ch = filas.find(f => /Chalecos reflectivos/.test(f)), hd = filas.find(f => /Cables HDMI/.test(f));
@@ -312,7 +312,7 @@ try {
   await t.page.fill('#pvNombre', 'Almacén La Ceiba');
   for (const [nit, re, que] of [
     ['900000002-9', /termina en -1, no en -9/, '900000002 da 1 (el resto de la suma entre 11 es 1, y entonces el dígito es ese mismo)'],
-    ['901234567-0', /termina en -7, no en -0/, '901234567 da 7 (697 entre 11 deja 4, y 11 - 4 = 7)'],
+    ['900000011-0', /termina en -6, no en -0/, '900000011 da 6 (379 entre 11 deja 5, y 11 - 5 = 6)'],
     ['900000009-5', /termina en -0, no en -5/, '900000009 da 0 (396 entre 11 deja 0, y el dígito es ese mismo)'],
     ['900000001-7', /termina en -2, no en -7/, '900000001 da 2 (372 entre 11 deja 9, y 11 - 9 = 2)'],
     ['900000004', /Falta el dígito de verificación[\s\S]*900000004-4/, 'un NIT sin dígito: dice cuál le toca'],
@@ -327,8 +327,8 @@ try {
   log('un teléfono con letras no pasa', /El teléfono lleva solo números/.test(await errPv()));
   await t.page.fill('#pvTel', '300 111 2233'); await t.page.fill('#pvCorreo', 'sin-arroba');
   log('un correo sin arroba no pasa', /Ese correo no está bien escrito/.test(await errPv()));
-  await t.page.fill('#pvCorreo', 'compras@laceiba.example.com'); await t.page.fill('#pvContacto', 'Elena Ejemplo'); await t.page.click('#acPrimario');
-  log('con todo bien se agrega: queda a nombre de la Jefe, con su NIT y la fecha de hoy', await hasta(t.page, () => { const ps = Object.values(JSON.parse(localStorage.getItem('__fb_datos')).proveedores); const p = ps.find(x => x.nombre === 'Almacén La Ceiba'); return !!p && p.nit === '900000002-1' && p.telefono === '300 111 2233' && p.correo === 'compras@laceiba.example.com' && p.por === 'Carolina Castillo' && p.porRol === 'jefe' && /^\d{4}-\d{2}-\d{2}$/.test(p.en); }));
+  await t.page.fill('#pvCorreo', 'contacto.laceiba@example.com'); await t.page.fill('#pvContacto', 'Elena Ejemplo'); await t.page.click('#acPrimario');
+  log('con todo bien se agrega: queda a nombre de la Jefe, con su NIT y la fecha de hoy', await hasta(t.page, () => { const ps = Object.values(JSON.parse(localStorage.getItem('__fb_datos')).proveedores); const p = ps.find(x => x.nombre === 'Almacén La Ceiba'); return !!p && p.nit === '900000002-1' && p.telefono === '300 111 2233' && p.correo === 'contacto.laceiba@example.com' && p.por === 'Carolina Castillo' && p.porRol === 'jefe' && /^\d{4}-\d{2}-\d{2}$/.test(p.en); }));
   await t.page.click('#invContenido [data-accion="nuevoprov"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
   await t.page.fill('#pvNombre', 'Distribuciones del Cabo'); await t.page.fill('#pvNit', '900.000.002-1');
   log('el mismo NIT en otro proveedor no se acepta (el de La Ceiba)', /Ese NIT ya lo tiene «Almacén La Ceiba»/.test(await errPv()));
@@ -401,7 +401,8 @@ try {
   log('el precio cambió y los demás datos de ese artículo quedaron igual', despBd.articulos['ar-002'].costo === 90000 && despBd.articulos['ar-002'].nombre === antesBd.articulos['ar-002'].nombre && despBd.articulos['ar-002'].cantidad === antesBd.articulos['ar-002'].cantidad);
   log('el conteo ajustó la cantidad a 12 y dejó su movimiento de ajuste (-3, saldo 12)', (() => { const a = despBd.articulos['ar-003'], m = despBd.movimientos[a.ultimoMov]; return a.cantidad === 12 && !!m && m.tipo === 'ajuste' && m.cantidad === -3 && m.saldo === 12 && m.articuloId === 'ar-003'; })());
   log('el artículo nuevo quedó con 7, precio 9500 y su movimiento de cantidad inicial', !!pilas && pilas[1].cantidad === 7 && pilas[1].costo === 9500 && pilas[1].categoria === 'Eléctricos' && despBd.movimientos[pilas[1].ultimoMov].motivo === 'inicial' && despBd.movimientos[pilas[1].ultimoMov].articuloId === pilas[0]);
-  log('se eliminó Papel higiénico y no se borró ningún movimiento (solo se sumaron el ajuste y la cantidad inicial)', !despBd.articulos['ar-015'] && Object.keys(despBd.movimientos).length === Object.keys(antesBd.movimientos).length + 2);
+  log('el cambio de precio dejó su ajuste de valor (cantidad 0, con el precio nuevo) y el artículo apunta a él', (() => { const a = despBd.articulos['ar-002'], m = despBd.movimientos[a.ultimoMov]; return !!m && m.tipo === 'ajuste' && m.motivo === 'precio' && m.cantidad === 0 && m.costoUnit === 90000 && m.articuloId === 'ar-002' && /Cambió el precio/.test(m.nota); })());
+  log('se eliminó Papel higiénico y no se borró ningún movimiento (solo se sumaron el ajuste, la cantidad inicial y el cambio de precio)', !despBd.articulos['ar-015'] && Object.keys(despBd.movimientos).length === Object.keys(antesBd.movimientos).length + 3);
   log('las filas con problema no guardaron nada (sigue 1 sola «Botas de seguridad talla 40» en Riohacha y otra nueva en Guamal, no hay «Cable raro»)', Object.values(despBd.articulos).filter(a => a.nombre === 'Botas de seguridad talla 40' && a.bodega === 'Riohacha').length === 1 && Object.values(despBd.articulos).filter(a => a.nombre === 'Botas de seguridad talla 40' && a.bodega === 'Guamal').length === 1 && !Object.values(despBd.articulos).some(a => /Cable raro|Mal máximo|^=/.test(a.nombre)));
   // Volver a subir el mismo Excel no repite nada. (Se espera un momento a que lleguen los datos nuevos: si la lista se repinta justo mientras se escoge el archivo, el archivo se pierde.)
   await esp(900);
@@ -487,6 +488,10 @@ try {
   log('«Hecho» pide el kilometraje (ya puesto), la fecha de hoy, el costo y una nota', await hasta(t.page, h => /Mantenimiento hecho: Cambio de aceite/.test(document.getElementById('veT').textContent) && document.getElementById('vmKm').value === '62800' && document.getElementById('vmFecha').value === h && !!document.getElementById('vmCosto') && !!document.getElementById('vmNota'), hoyApp));
   await t.page.fill('#vmKm', '70000'); await t.page.click('#vePrimario');
   log('un kilometraje muy alto no deja guardar', await hasta(t.page, () => !document.getElementById('veErr').hidden && /muy alto/.test(document.getElementById('veErr').textContent)));
+  await t.page.fill('#vmKm', '62800'); await t.page.fill('#vmFecha', '2000-01-01'); await t.page.click('#vePrimario');
+  log('una fecha anterior a la última vez que se hizo no deja guardar (el plan no va hacia atrás)', await hasta(t.page, () => !document.getElementById('veErr').hidden && /anterior a la última vez/.test(document.getElementById('veErr').textContent)));
+  await t.page.fill('#vmFecha', hoyApp); await t.page.fill('#vmKm', '10'); await t.page.click('#vePrimario');
+  log('un kilometraje menor que el de la última vez no deja guardar', await hasta(t.page, () => !document.getElementById('veErr').hidden && /menor que el de la última vez/.test(document.getElementById('veErr').textContent)));
   await t.page.fill('#vmKm', '62900'); await t.page.fill('#vmCosto', '210000'); await t.page.fill('#vmNota', 'También se cambió el filtro');
   await t.page.click('#vePrimario');
   log('al guardar, el plan queda al día (último km, fecha y costo), el carro sube de kilometraje y el historial guarda la línea', await hasta(t.page, h => { const v = JSON.parse(localStorage.getItem('__fb_datos')).vehiculos['ve-def456'], m = v.mttos.find(x => x.id === 'mt-aceite'); return v.km === 62900 && m.ultimoKm === 62900 && m.ultimaFecha === h && m.ultimoCosto === 210000 && /Mantenimiento hecho: Cambio de aceite \(62\.900 km/.test(v.historial[v.historial.length - 1].texto) && /costó/.test(v.historial[v.historial.length - 1].texto) && /filtro/.test(v.historial[v.historial.length - 1].texto); }, hoyApp));
@@ -818,6 +823,10 @@ try {
   await t.page.click('#invContenido [data-accion="conteo"]'); await t.page.waitForSelector('#shAccion:not([hidden])');
   await t.page.selectOption('#acBod', 'Bogotá');
   log('al volver avisa «Tienes un conteo sin terminar de Bogotá»', await hasta(t.page, () => /Tienes un conteo sin terminar de Bogotá \(1 cantidad escrita/.test(document.getElementById('acBorrador').textContent)));
+  await t.page.evaluate(() => localStorage.setItem('conteo.Guamal', JSON.stringify({ vals: { x: '5' }, en: new Date(Date.now() - 3 * 86400000).toISOString() })));
+  await t.page.selectOption('#acBod', 'Guamal');
+  log('un borrador de conteo de hace 3 días no se ofrece: se descarta solo', await hasta(t.page, () => !document.getElementById('acBorrador').textContent.trim()) && await t.page.evaluate(() => localStorage.getItem('conteo.Guamal') === null));
+  await t.page.selectOption('#acBod', 'Bogotá');
   await t.page.click('#acPrimario');
   log('y al empezar sigue donde iba: la cantidad escrita está en su lugar', await hasta(t.page, n => !!document.getElementById('cn-ar-017') && document.getElementById('cn-ar-017').value === String(n), vasos0 - 2));
   await t.page.click('#acPrimario');
@@ -1084,6 +1093,11 @@ try {
   await fotoTanq();
   log('con todo bien, el tanqueo se guarda a nombre del Conductor, con los galones en decimales, el tanque lleno y la foto en JPEG pequeña', await guardarVeh() && await (async () => { const d = await dat(); const x = Object.values(d.tanqueos).find(y => y.km === 45500); return !!x && x.vehiculoId === 've-abc123' && x.placa === 'ABC 123' && x.galones === 12.5 && x.valor === 160000 && x.lleno === true && x.porRol === 'conductor' && /^data:image\/jpeg;base64,/.test(x.foto) && x.foto.length < 400000 && Object.keys(d.tanqueos).length === 18; })());
   log('ese tanqueo rinde lo normal (330 km con 12,5 galones = 26,4), así que no manda aviso de consumo raro', Object.values((await dat()).avisos).filter(a => a.titulo === 'Consumo raro en un carro').length === 0);
+  log('dos tanques llenos con el mismo km no cierran tramo y los galones del segundo se suman al siguiente (300 km con 8 + 12 galones = 15 km por galón)', await t.page.evaluate(() => {
+    const ts = [{ id: 'a', km: 1000, galones: 10, valor: 100000, lleno: true }, { id: 'b', km: 1000, galones: 8, valor: 80000, lleno: true }, { id: 'c', km: 1300, galones: 12, valor: 120000, lleno: true }];
+    const x = window.Vehiculos.tramosDe(ts), y = window.Vehiculos.tramosDe([ts[0], ts[2]]);
+    return x.length === 1 && x[0].km === 300 && x[0].galones === 20 && x[0].valor === 200000 && x[0].kmGal === 15 && y.length === 1 && y[0].galones === 12 && y[0].kmGal === 25;
+  }));
   log('un tanqueo que rinde mucho menos (100 km con 20 galones = 5 km por galón) se guarda y avisa a Transporte, Bodega y la Jefe', await nuevoTanq('ve-abc123', 45600, 20, 258000) && await (async () => { const av = Object.values((await dat()).avisos).filter(a => a.titulo === 'Consumo raro en un carro'); return av.length === 3 && ['carros', 'asistente', 'jefe'].every(r => av.some(a => a.para === r)) && av.every(a => /ABC 123 rindió 5,0 km por galón; lo normal es 26,\d/.test(a.texto)); })());
   log('un tanqueo sin llenar el tanque se guarda como parcial (lleno: falso) y no avisa nada', await nuevoTanq('ve-jkl012', 21400, 5, 77500, false) && await (async () => { const d = await dat(), x = Object.values(d.tanqueos).find(y => y.km === 21400); return !!x && x.lleno === false && Object.values(d.avisos).filter(a => a.titulo === 'Consumo raro en un carro').length === 3; })());
   await t.page.click('#vehSecciones [data-sec="tanqueos"]');
@@ -1193,7 +1207,7 @@ try {
   await hasta(t.page, () => /salió del taller/.test(document.getElementById('veT').textContent));
   log('y cuando sale del taller queda disponible', await guardarVeh() && await hasta(t.page, () => JSON.parse(localStorage.getItem('__fb_datos')).vehiculos['ve-def456'].estado === 'disponible'));
   await hasta(t.page, () => !document.getElementById('shVeh').hidden); await t.page.keyboard.press('Escape');
-  log('cambia a Ana (Jefe)', await cambiar(t.page, 'jefe'));
+  log('cambia a Carolina Castillo (Jefe)', await cambiar(t.page, 'jefe'));
   await t.page.click('.tab[data-vista="vehiculos"]'); await t.page.click('#vehSecciones [data-sec="hacer"]');
   await t.page.click('#vehContenido [data-accion="docs"][data-id="ve-def456"]'); await abiertaVeh();
   const tecnoNueva = await t.page.evaluate(() => { const d = new Date(); d.setFullYear(d.getFullYear() + 1); return d.toISOString().slice(0, 10); });
@@ -1667,7 +1681,7 @@ try {
   log('cambia a Marta (Transporte)', await cambiar(t.page, 'carros'));
   await irReu('hacer');
   log('Transporte informa qué carros hay', await informar(nec('carros').id, 'También está libre la DEF 456; Carlos y Rafael pueden manejar.'));
-  log('cambia a Ana (Jefe)', await cambiar(t.page, 'jefe'));
+  log('cambia a Carolina Castillo (Jefe)', await cambiar(t.page, 'jefe'));
   await irReu('hacer');
   log('la Jefe tiene que autorizar la comida y los carros, con lo que informaron a la vista', await hasta(t.page, ids => ids.every(i => document.querySelector(`#reuContenido [data-accion]:is([data-accion="autorizar"],[data-accion="carros"])[data-id="${i}"]`)) && /ABC 123/.test(document.getElementById('reuContenido').textContent), [nec('refrigerios').id, nec('almuerzo').id, nec('carros').id]));
   await tocarReu('autorizar', nec('refrigerios').id); await guardarReu();
@@ -1685,7 +1699,7 @@ try {
   const viajeCarlos = viajeDe('Oscar Farfán').id;
   await tocarReu('nopuedo', viajeCarlos); await t.page.fill('#rcMotivo', 'Tengo una cita médica');
   log('el Conductor no puede: los carros vuelven a la Jefe con el motivo', await guardarReu() && await (async () => { o = await oriente(); const c = o.ns.find(n => n.tipo === 'carros'); return c.estado === 'pendiente' && /cita/.test(c.motivo) && o.ns.find(n => n.id === viajeCarlos).estado === 'no-va'; })());
-  log('cambia a Ana otra vez', await cambiar(t.page, 'jefe'));
+  log('cambia a Carolina Castillo otra vez', await cambiar(t.page, 'jefe'));
   await irReu('hacer');
   await tocarReu('carros', nec('carros').id); await t.page.selectOption('#rcCond0', 'Hernán Brito');
   log('la Jefe escoge otro conductor: Hernán en el ABC 123 y los viajes viejos se cancelan', await guardarReu() && await (async () => { o = await oriente(); const vs = o.ns.filter(n => n.tipo === 'viaje' && n.estado === 'pendiente'); return vs.length === 2 && vs.some(n => n.conductor === 'Hernán Brito' && n.placa === 'ABC 123') && vs.some(n => n.conductor === 'Rafael Ospino' && n.placa === 'JKL 012') && o.ns.filter(n => n.tipo === 'viaje' && n.estado === 'cancelado').length === 1; })());
@@ -1715,7 +1729,7 @@ try {
   await t.page.setInputFiles('#rcFoto', path.join(RAIZ, 'iconos', 'control-512.png'));
   await hasta(t.page, () => !document.getElementById('rcFotoVer').hidden);
   log('el acta se guarda con la foto y la reunión queda realizada', await guardarReu() && await (async () => { const d = await reu(); return d.necesidades['ne-024'].estado === 'listo' && d.necesidades['ne-024'].acta.asistentes === 23 && /^data:image\/jpeg/.test(d.necesidades['ne-024'].acta.foto) && d.reuniones['re-004'].estado === 'realizada'; })());
-  log('cambia a Ana (Jefe)', await cambiar(t.page, 'jefe'));
+  log('cambia a Carolina Castillo (Jefe)', await cambiar(t.page, 'jefe'));
   await irReu('correos');
   await tocarReu('correo', 'reprograma');
   await hasta(t.page, () => !!document.getElementById('rcFecha') && document.getElementById('rcFecha').value !== '');
@@ -1766,7 +1780,7 @@ try {
   await irReu();
   log('el Gerente ve Resumen, Próximas y Realizadas, sin correos ni botones', await hasta(t.page, () => [...document.querySelectorAll('#reuSecciones [data-sec]')].map(b => b.dataset.sec).join(',') === 'resumen,proximas,pasadas' && /Tareas pendientes por persona/.test(document.getElementById('reuContenido').textContent) && !document.querySelector('#reuContenido [data-accion="correo"], #reuContenido [data-accion="autorizar"]')));
   await t.page.screenshot({ path: path.join(CAPTURAS, '11-reuniones-gerente.png'), fullPage: true });
-  log('vuelve a Ana (Jefe)', await cambiar(t.page, 'jefe'));
+  log('vuelve a Carolina Castillo (Jefe)', await cambiar(t.page, 'jefe'));
 
   console.log('6a. Bases de datos en Excel de Equipos, Carros, Reuniones y Compras');
   await cambiar(t.page, 'jefe');
@@ -1965,6 +1979,10 @@ try {
   await t.page.click('#btnNuevoEq'); await abiertaEq();
   await t.page.fill('#ehSerial', 'demo-0100'); await t.page.fill('#ehMarca', 'Lenovo'); await t.page.fill('#ehModelo', 'ThinkPad E14'); await t.page.fill('#ehFCompra', '2026-11-01'); await t.page.fill('#ehGarantia', '2029-11-01'); await t.page.fill('#ehProveedor', 'Equipos del Caribe Ejemplo'); await t.page.fill('#ehCosto', '3100000');
   log('un equipo nuevo se registra con sus datos de compra y garantía', await guardarEq() && await hasta(t.page, () => { const e = Object.values(JSON.parse(localStorage.getItem('__fb_datos')).equipos).find(x => x.serial === 'DEMO-0100'); return !!e && e.estado === 'bodega' && e.fechaCompra === '2026-11-01' && e.garantiaHasta === '2029-11-01' && e.costo === 3100000 && e.proveedor === 'Equipos del Caribe Ejemplo'; }));
+  await t.page.click('#btnNuevoEq'); await abiertaEq();
+  await t.page.fill('#ehSerial', 'demo0100'); await t.page.fill('#ehMarca', 'Lenovo'); await t.page.fill('#ehModelo', 'ThinkPad E14'); await t.page.click('#eqPrimario');
+  log('un serial igual a otro pero sin el guion (DEMO0100 y DEMO-0100) no se registra: el escáner los confundiría', await errEq(/Ya hay un equipo con ese serial/));
+  await t.page.keyboard.press('Escape'); await hasta(t.page, () => !document.getElementById('shConfirmar').hidden); await t.page.click('#cfSi'); await hasta(t.page, () => document.getElementById('shEq').hidden);
 
   log('cambia a Carolina Castillo (Jefe)', await cambiar(t.page, 'jefe'));
   await t.page.click('.tab[data-vista="equipos"]'); await t.page.click('#eqSecciones [data-sec="hacer"]');
