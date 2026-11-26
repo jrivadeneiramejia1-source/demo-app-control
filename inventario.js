@@ -1242,11 +1242,29 @@
       }
     });
   }
-  function entradaSalida(tipo, artId) {
+  /** Primer paso de «Registrar entrada»: ¿qué está entrando? Una devolución o una compra que llegó. */
+  function entradaPaso1(artId) {
+    const idA = artId ? ` data-id="${esH(artId)}"` : '';
+    abrirAccion({
+      titulo: 'Registrar entrada', sub: '¿Qué está entrando a la bodega?',
+      campos: `<div class="list">${boton('entdev', 'Es una devolución', 'importar', idA, 'primary')}${boton('entcompra', 'Llegó una compra', 'caja', '', 'primary')}</div>
+        <p class="meta">Una compra se recibe aparte porque queda atada a su pedido: se suma lo que llegó y se avisa si llegó menos.</p>`
+    });
+  }
+  /** Segundo paso: las compras ya hechas que faltan por recibir; cada una se recibe con su propio formulario. */
+  function entradaCompras() {
+    const lista = D().compras.filter(c => c.estado === 'comprado');
+    abrirAccion({
+      titulo: 'Llegó una compra', sub: lista.length ? 'Escoge la compra que llegó. Ahí escribes cuánto llegó de cada cosa.' : 'Ahora no hay compras por recibir. Cuando alguien registre una compra, aparece aquí.',
+      campos: lista.length ? `<div class="list">${lista.map(c => `<div class="card"><b>${esH(c.que)}</b><span class="meta">${esH(['comprada en ' + (c.proveedor || 'el proveedor'), 'pidió ' + c.pide].join(' · '))}</span>${boton('recibir', 'Recibir', 'caja', ` data-id="${esH(c.id)}"`, 'primary small')}</div>`).join('')}</div>` : ''
+    });
+  }
+  function entradaSalida(tipo, artId, directo) {
     const entrada = tipo === 'entrada';
+    if (entrada && !directo) { entradaPaso1(artId); return; }
     abrirAccion({
       titulo: entrada ? 'Registrar entrada' : 'Registrar salida',
-      sub: entrada ? 'Para lo que vuelve a la bodega (devoluciones). Las compras entran con «Recibir en bodega».' : 'Para lo que sale sin pedido en la app: entrega directa, o algo dañado o perdido.',
+      sub: entrada ? 'Para lo que vuelve a la bodega (devoluciones).' : 'Para lo que sale sin pedido en la app: entrega directa, o algo dañado o perdido.',
       campos: campoSel('acArt', 'Artículo', opsArt(), artId || opsArt()[0][0]) + campoNum('acCant', 'Cantidad', 1, 1, 99999) +
         (entrada ? campoTxt('acPersona', 'Quién lo devolvió', '', 'Nombre', 60)
           : campoSel('acMotivoMov', 'Motivo', [['entrega', 'Entrega a una persona'], ['dano', 'Daño o pérdida']], 'entrega') + campoTxt('acPersona', 'A quién se entregó', '', 'Nombre (si es entrega)', 60)) +
@@ -1837,7 +1855,7 @@
       pedir: () => a && pedirCompra(a.id, Number(b.dataset.cant) || 0), pedirbajo: () => pedirBajo(), autorizar: () => c && autorizar(c), rechazar: () => c && rechazar(c),
       comprar: () => c && registrarCompra(c), imprimirorden: () => c && imprimirOrden(c), recibir: () => c && recibir(c), revisada: () => c && marcarRevisada(c), vercompra: () => c && verCompra(c),
       entregar: () => s && entregar(s), noentregar: () => s && noEntregar(s), sinaut: () => registrarCompra(null, true),
-      entrada: () => entradaSalida('entrada', a ? a.id : ''), salida: () => entradaSalida('salida', a ? a.id : ''),
+      entrada: () => entradaSalida('entrada', a ? a.id : ''), entdev: () => entradaSalida('entrada', a ? a.id : '', true), entcompra: () => (entradaCompras(), true), salida: () => entradaSalida('salida', a ? a.id : ''),
       nuevoart: () => editarArticulo(null), editart: () => a && editarArticulo(a), verart: () => a && verArticulo(a), pedirmat: () => a && pedirMaterial(a.id),
       trasladar: () => a && trasladar(a), conteo: () => conteo(), volverconteo: () => (conteoEst ? conteoContar(conteoEst.bod, conteoEst.cat, conteoEst.solo) : conteo()), contarhoy: () => { const ids = contarHoyDe(b.dataset.bod); if (!ids.length) { A().toast('Ya no queda nada por contar hoy en esa bodega.'); return true; } return conteoContar(b.dataset.bod, '', ids); }, borrarborrador: () => { borrarBorrador(b.dataset.bod); conteo(b.dataset.bod); }, excel: () => descargarExcel(b), bdexcel: () => descargarBase(b), exguardar: () => guardarExcelExistencias(), exdescartar: () => { previaEx = null; errorEx = ''; pintar(); }, monto: () => cambiarMonto(), kardex: () => a && kardex(a), excelkardex: () => a && descargarKardex(b, a),
       escanear: () => escanearArt(), escancodigo: () => escanearParaCampo(),
