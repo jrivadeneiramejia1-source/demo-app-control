@@ -826,6 +826,8 @@
               .concat(['jefe', 'carros', 'asistente', 'gerente'].map(rol => aviso(rol, 'Un carro no debe salir', `${persona().nombre} no sacó el ${v.placa}: ${desc.slice(0, 120)}`)));
           }
         }
+        const sinPapel = salida ? ['soat', 'tecno'].filter(k => !['ok', 'pronto'].includes(estDoc(v[k]))).map(k => k === 'soat' ? 'el SOAT' : 'la técnico-mecánica') : [];
+        if (sinPapel.length) return fallar(`Este carro tiene ${sinPapel.join(' y ')} vencido o sin fecha y no puede salir. Actualiza las fechas en «Documentos» (Transporte, Bodega o la Jefe).`);
         if (salida && reporteSinRevisar(v)) return fallar('Este carro tiene un problema reportado en la revisión y nadie lo ha revisado. Transporte o Bodega lo revisan primero (en Novedades).');
         const kmv = entero('vsKm'), cond = $('vsCond') ? valor('vsCond') : (viaje && viaje.conductor) || persona().nombre, con = valor('vsCon');
         if (!(kmv >= num(v.km))) return fallar(`El kilometraje no puede ser menor que el último registrado (${km(v.km)}).`, 'vsKm');

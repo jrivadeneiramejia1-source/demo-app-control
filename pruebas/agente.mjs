@@ -48,6 +48,9 @@ globalThis.fetch = async (url, op = {}) => {
     if (modoGemini === 'sin-pensar' && cuerpo.generationConfig.thinkingConfig) return new Response(JSON.stringify({ error: { code: 400, message: 'Thinking level is not supported for this model.' } }), { status: 400 });
     if (modoGemini === 'roto') return new Response(JSON.stringify({ error: { code: 500, message: 'Internal error' } }), { status: 500 });
     if (modoGemini === 'cupo') return new Response('{}', { status: 429 });
+    if (modoGemini === 'cupo-primero' && llamadas.length === 1) return new Response(JSON.stringify({ error: { code: 429, message: 'Quota exceeded for this model' } }), { status: 429 });
+    if (modoGemini === 'clave-mala') return new Response(JSON.stringify({ error: { code: 400, status: 'INVALID_ARGUMENT', message: 'API key not valid. Please pass a valid API key.' } }), { status: 400 });
+    if (modoGemini === 'prohibido') return new Response(JSON.stringify({ error: { code: 403, status: 'PERMISSION_DENIED', message: 'Requests from this project are blocked.' } }), { status: 403 });
     const texto = modoGemini === 'cercado' ? '```json\n' + JSON.stringify(respuesta || RESP_BIEN) + '\n```' : JSON.stringify(respuesta || RESP_BIEN);
     return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: texto }] } }] }), { status: 200 });
   }
@@ -111,9 +114,9 @@ llamadas = []; modoGemini = 'bien';
   t('el correo va con su asunto', /Asunto: Convocatoria/.test(c.cuerpo.contents[0].parts[0].text));
 }
 llamadas = []; modoGemini = 'sin-modelo';
-{ const { r, j } = await pedir(); t('si el modelo no existe, prueba el siguiente', r.status === 200 && j.modelo === 'gemini-flash-latest' && llamadas.length === 2, llamadas.map(x => x.url.split('/models/')[1]).join(' ')); }
+{ const { r, j } = await pedir(); t('si el modelo no existe, prueba el siguiente', r.status === 200 && j.modelo === 'gemini-3.5-flash-lite' && llamadas.length === 2, llamadas.map(x => x.url.split('/models/')[1]).join(' ')); }
 llamadas = [];
-{ const { r } = await pedir(); t('la siguiente lectura va directo al modelo que sí respondió (más rápido)', r.status === 200 && llamadas.length === 1 && llamadas[0].url.includes('gemini-flash-latest'), llamadas.map(x => x.url.split('/models/')[1]).join(' ')); }
+{ const { r } = await pedir(); t('la siguiente lectura va directo al modelo que sí respondió (más rápido)', r.status === 200 && llamadas.length === 1 && llamadas[0].url.includes('gemini-3.5-flash-lite'), llamadas.map(x => x.url.split('/models/')[1]).join(' ')); }
 llamadas = []; modoGemini = 'bien';
 { const { r } = await pedir({ entorno: { GEMINI_API_KEY: 'x', MODELO: 'gemini-2.5-flash' } }); t('con un modelo Gemini 2 usa temperatura 0', r.status === 200 && llamadas[0].url.includes('gemini-2.5-flash') && llamadas[0].cuerpo.generationConfig.temperature === 0 && !llamadas[0].cuerpo.generationConfig.thinkingConfig); }
 llamadas = []; modoGemini = 'sin-esquema';
@@ -130,6 +133,14 @@ respuesta = Object.assign({}, RESP_BIEN, { tipo: 'faltantes', reunionId: 're-001
 { const { j } = await pedir(); t('el id de reunión se acepta solo si está en la lista que mandó la app', j.reunion.reunionId === 're-001'); }
 respuesta = null; modoGemini = 'cupo';
 { const { r, j } = await pedir(); t('si Gemini llega al límite gratis: 502 «cupo» (la app usa el respaldo)', r.status === 502 && j.error === 'cupo'); }
+llamadas = []; modoGemini = 'cupo';
+{ const { r, j } = await pedir(); t('si a todos los modelos se les acabó el cupo, prueba uno por uno y dice «cupo»', r.status === 502 && j.error === 'cupo' && llamadas.length === 4, llamadas.length + ' llamadas'); }
+llamadas = []; modoGemini = 'cupo-primero';
+{ const { r, j } = await pedir(); t('si al primer modelo se le acabó el cupo (429), prueba el siguiente en vez de rendirse', r.status === 200 && j.ok && llamadas.length === 2 && llamadas[0].url !== llamadas[1].url && j.modelo === llamadas[1].url.split('/models/')[1].split(':')[0], llamadas.map(x => x.url.split('/models/')[1]).join(' ')); }
+llamadas = []; modoGemini = 'clave-mala';
+{ const { r, j } = await pedir(); t('si la clave de Gemini no sirve (400 «API key»), para en seguida con error «clave» y el motivo, sin gastar los otros modelos', r.status === 502 && j.error === 'clave' && /API key not valid/.test(j.detalle) && llamadas.length === 1 && !JSON.stringify(j).includes('clave-de-prueba'), JSON.stringify(j) + ' ' + llamadas.length); }
+llamadas = []; modoGemini = 'prohibido';
+{ const { r, j } = await pedir(); t('si Gemini dice «prohibido» (403) en todos los modelos, el error es «clave» (la app no reintenta)', r.status === 502 && j.error === 'clave' && /PERMISSION_DENIED|blocked/.test(j.detalle) && llamadas.length === 4, JSON.stringify(j) + ' ' + llamadas.length); }
 modoGemini = 'bien';
 { const { r } = await pedir({ cuerpo: JSON.stringify({ correo: 'x'.repeat(30 * 1024) }) }); t('cuerpo muy grande: 413', r.status === 413); }
 { const { r } = await pedir({ cuerpo: '{no es json' }); t('cuerpo que no es JSON: 400', r.status === 400); }

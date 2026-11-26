@@ -30,7 +30,7 @@
     administrativo: 'administrativo', administrativa: 'administrativo', 'auxiliar administrativo': 'administrativo', 'auxiliar administrativa': 'administrativo',
     // Cargos del organigrama de la empresa
     'gerente de proyectos': 'gerente', 'lider abastecimiento': 'jefe', 'lider abastecimiento y coord seguimiento y control': 'jefe', 'coord seguimiento y control': 'jefe',
-    'asistente ti': 'soporte', 'auxiliar ti': 'equipos', 'coord compras': 'compras', 'auxiliar compras': 'compras', 'auxiliar compras mgc': 'compras', 'coord transporte': 'carros',
+    'asistente ti': 'soporte', 'auxiliar ti': 'equipos', 'coord compras': 'coordcompras', 'coordinador de compras': 'coordcompras', 'coordinadora de compras': 'coordcompras', 'auxiliar compras': 'compras', 'auxiliar compras mgc': 'compras', 'coord transporte': 'carros',
     'profesional logistico hse': 'logistica', 'profesional logistico': 'logistica', 'asistente administrativa': 'administrativo', 'asistente seguimiento y control': 'administrativo',
     'coordinador sgi': 'profesional', 'profesional sgi': 'profesional', 'prof control de gestion': 'profesional', 'profesional control de gestion': 'profesional',
     'lider gestion de contratos': 'profesional', 'coord licitaciones': 'profesional', 'profesional licitaciones': 'profesional',

@@ -696,6 +696,22 @@ await prueba('cuenta propia de Transporte: el Conductor registra una salida (veh
   const fotos = { frente: JPG, atras: JPG, izquierda: JPG, derecha: JPG, llantas: JPG };
   await assertSucceeds(lote(db, b => { b.update(doc(db, 'vehiculos', 've-l'), { estado: 'en-uso', km: 1100, conductor: 'Persona', historial: H2, ultimaEntrega: 'en-l' });
     b.set(doc(db, 'entregas', 'en-l'), { vehiculoId: 've-l', km: 1100, tipo: 'salida', porRol: 'conductor', fotos, revision: REV_OK }); })); });
+await prueba('un carro con el SOAT o la técnico-mecánica vencidos (o sin fecha) no puede salir; el último día todavía sirve', async () => { const cond = await cuenta('lmV2', 'conductor'), tra = await cuenta('lmT2', 'carros');
+  const fotos = { frente: JPG, atras: JPG, izquierda: JPG, derecha: JPG, llantas: JPG };
+  const hoy = new Date(Date.now() - 5 * 3600 * 1000).toISOString().slice(0, 10), ayer = new Date(Date.now() - 29 * 3600 * 1000).toISOString().slice(0, 10);
+  const sale = (db, id, ent) => lote(db, b => { b.update(doc(db, 'vehiculos', id), { estado: 'en-uso', km: 1100, conductor: 'Persona', historial: H2, ultimaEntrega: ent });
+    b.set(doc(db, 'entregas', ent), { vehiculoId: id, km: 1100, tipo: 'salida', porRol: db === cond ? 'conductor' : 'carros', fotos, revision: REV_OK }); });
+  await sembrar(async d => { await setDoc(doc(d, 'vehiculos', 've-p1'), { placa: 'AAA111', estado: 'disponible', km: 1000, conductor: '', historial: H1, soat: ayer, tecno: '2027-01-01' });
+    await setDoc(doc(d, 'vehiculos', 've-p2'), { placa: 'AAA111', estado: 'disponible', km: 1000, conductor: '', historial: H1, soat: '2027-01-01', tecno: ayer });
+    await setDoc(doc(d, 'vehiculos', 've-p3'), { placa: 'AAA111', estado: 'disponible', km: 1000, conductor: '', historial: H1, soat: hoy, tecno: hoy }); });
+  await assertFails(sale(cond, 've-p1', 'en-p1'));
+  await assertFails(sale(cond, 've-p2', 'en-p2'));
+  await assertSucceeds(sale(cond, 've-p3', 'en-p3'));
+  await sembrar(async d => { await setDoc(doc(d, 'vehiculos', 've-p4'), { placa: 'AAA111', estado: 'disponible', km: 1000, conductor: '', historial: H1, soat: ayer, tecno: '2027-01-01' }); });
+  await assertFails(lote(tra, b => { b.update(doc(tra, 'vehiculos', 've-p4'), { estado: 'en-uso', km: 1100, conductor: 'Persona', historial: H2, ultimaEntrega: 'en-p4' });
+    b.set(doc(tra, 'entregas', 'en-p4'), { vehiculoId: 've-p4', km: 1100, tipo: 'salida', porRol: 'carros', fotos, revision: REV_OK }); }));
+  // Poner al día los papeles y recién ahí salir sí se puede; y una llegada con papeles vencidos no se bloquea.
+  await assertSucceeds(updateDoc(doc(tra, 'vehiculos', 've-p4'), { soat: '2027-06-30', historial: H2 })); });
 await prueba('cuenta propia Administrativo: registrar el acta (reunión realizada + acta lista)', async () => { const db = await cuenta('lmA', 'administrativo');
   await sembrar(async d => { await setDoc(doc(d, 'reuniones', 're-l'), { comunidad: 'X', fecha: '2020-01-01', estado: 'programada', historial: H1 });
     await setDoc(doc(d, 'necesidades', 'ne-l'), { reunionId: 're-l', tipo: 'acta', responsableRol: 'administrativo', estado: 'pendiente', fechaReunion: '2020-01-01' }); });

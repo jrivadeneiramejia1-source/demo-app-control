@@ -15,7 +15,8 @@
    Solo datos inventados: en el plan gratis, Google puede usar lo que se le manda para mejorar sus productos. */
 
 const PROYECTO_POR_DEFECTO = 'fir-app-control-d8494';
-const MODELOS = ['gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-3.5-flash', 'gemini-2.5-flash'];
+// Cada modelo tiene su propio cupo gratis: si uno se agota, se prueba el siguiente. (Quitados los que ya no existen: gemini-3.5-flash y gemini-2.5-flash.)
+const MODELOS = ['gemini-3.1-flash-lite', 'gemini-3.5-flash-lite', 'gemini-flash-latest', 'gemini-3.6-flash'];
 const JEFE_DE_PRUEBA = 'jefe.carolina.castillo@example.com';
 const MAX_POR_MINUTO = 8, MAX_POR_DIA = 150;
 const ORIGENES_FIJOS = ['https://jrivadeneiramejia1-source.github.io'];
@@ -143,7 +144,10 @@ async function motivoGemini(r) {
   return `Gemini respondió ${r.status}${m ? ': ' + String(m).replace(/key=[^&\s]+/gi, 'key=…').slice(0, 160) : ''}`;
 }
 /** Llama a Gemini. Por cada modelo prueba tres formas, de la más completa a la más simple, por si el modelo no acepta
-    alguna opción (error 400). Si el modelo no existe o no está disponible (404/403) o falla el servidor (5xx), prueba el siguiente. */
+    alguna opción (error 400). Si el modelo no existe, no está disponible (404/403), se le acabó el cupo (429) o falla el servidor (5xx),
+    prueba el siguiente. Si la clave no sirve (400 «API key», 401), se para en seguida: con otro modelo tampoco servirá.
+    Al final dice por qué falló: «clave» (la clave no sirve o no tiene permiso), «cupo» (se acabó el cupo gratis de todos los modelos),
+    «lento» o «gemini» (otro error). */
 // El último modelo que respondió bien: la próxima vez se prueba primero (así no se pierde tiempo con los que no existen).
 let modeloBueno = '';
 const ESPERA_POR_LLAMADA = 15000, ESPERA_TOTAL = 24000;
@@ -151,7 +155,7 @@ async function preguntarGemini(env, prompt, correo) {
   const base = env.MODELO ? [env.MODELO].concat(MODELOS.filter(m => m !== env.MODELO)) : MODELOS;
   const lista = !env.MODELO && modeloBueno ? [modeloBueno].concat(base.filter(m => m !== modeloBueno)) : base;
   const inicio = Date.now();
-  let ultimo = 'sin respuesta';
+  let ultimo = 'sin respuesta', cupo = false, clave = false;
   for (const modelo of lista) {
     // Gemini 3 pide dejar la temperatura por defecto y pensar poco para responder rápido; Gemini 2 va con temperatura 0.
     const g3 = !/^gemini-2/.test(modelo);
@@ -168,8 +172,13 @@ async function preguntarGemini(env, prompt, correo) {
       try {
         r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY }, body: JSON.stringify(cuerpo), signal: AbortSignal.timeout(Math.min(ESPERA_POR_LLAMADA, ESPERA_TOTAL + 2000 - (Date.now() - inicio))) });
       } catch (e) { ultimo = `${modelo}: no respondió a tiempo`; break; }
-      if (r.status === 429) return { error: 'cupo', detalle: await motivoGemini(r) };
-      if (r.status === 400) { ultimo = `${modelo}: ${await motivoGemini(r)}`; continue; }
+      if (r.status === 429) { cupo = true; ultimo = `${modelo}: ${await motivoGemini(r)}`; break; }
+      if (r.status === 400) {
+        ultimo = `${modelo}: ${await motivoGemini(r)}`;
+        if (/api[ _]key/i.test(ultimo)) return { error: 'clave', detalle: ultimo };
+        continue;
+      }
+      if (r.status === 401 || r.status === 403) { clave = true; ultimo = `${modelo}: ${await motivoGemini(r)}`; if (r.status === 401) return { error: 'clave', detalle: ultimo }; break; }
       if (!r.ok) { ultimo = `${modelo}: ${await motivoGemini(r)}`; break; }
       const j = await r.json().catch(() => null);
       const texto = j && j.candidates && j.candidates[0] && j.candidates[0].content && (j.candidates[0].content.parts || []).map(p => p.text || '').join('');
@@ -178,7 +187,7 @@ async function preguntarGemini(env, prompt, correo) {
       ultimo = `${modelo}: respuesta sin JSON`;
     }
   }
-  return { error: 'gemini', detalle: ultimo };
+  return { error: cupo ? 'cupo' : clave ? 'clave' : 'gemini', detalle: ultimo };
 }
 
 export default {
@@ -209,7 +218,8 @@ export default {
     })).filter(r => r.id);
     try {
       const res = await preguntarGemini(env, instrucciones(hoy, reuniones), correo);
-      if (res.error) return json({ ok: false, error: res.error, detalle: res.detalle }, 502, cab);
+      // El motivo queda en el registro del Worker (Cloudflare > Workers > agente-demo > Logs); la clave nunca se escribe.
+      if (res.error) { console.error('agente-demo: Gemini no sirvió (' + res.error + '): ' + String(res.detalle).slice(0, 300)); return json({ ok: false, error: res.error, detalle: res.detalle }, 502, cab); }
       return json({ ok: true, modelo: res.modelo, reunion: normalizar(res.datos, reuniones.map(r => r.id)) }, 200, cab);
     } catch (e) { return json({ ok: false, error: 'red', detalle: 'No se pudo hablar con Gemini' }, 502, cab); }
   }
