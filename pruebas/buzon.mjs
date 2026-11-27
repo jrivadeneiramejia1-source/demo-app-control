@@ -62,8 +62,26 @@ function escenario({ props, hilos, firestore }) {
   const { ctx, logs, llamadas } = escenario({ props: { CLAVE_ROBOT: 'clave-robot-prueba', REMITENTES: 'x@ejemplo.test' }, hilos: [[a, b], [c]], firestore: url => (url.endsWith('aaa1') ? 409 : url.endsWith('bbb2') ? 403 : 503) });
   ctx.revisarBuzon();
   log('si el correo ya estaba en la app, lo marca leído', !a.isUnread());
-  log('si Firebase lo rechaza (403), lo marca leído con la etiqueta buzon-error para que no tape a los nuevos', !b.isUnread() && llamadas.some(x => x[0] === 'etiqueta' && x[1] === 'buzon-error') && logs.some(l => /403/.test(l)) && /-label:buzon-error/.test(llamadas[0][1]));
+  log('si Firebase lo rechaza (403), lo marca leído con la etiqueta buzon-error (que solo avisa: la búsqueda ya no excluye el hilo, así una respuesta nueva en ese hilo sí pasa)', !b.isUnread() && llamadas.some(x => x[0] === 'etiqueta' && x[1] === 'buzon-error') && logs.some(l => /403/.test(l)) && !/-label:buzon-error/.test(llamadas[0][1]));
   log('si Google falla un rato (503), lo deja sin leer para la próxima vuelta', c.isUnread());
+}
+// 2b. Un token vencido (401) a mitad de la vuelta: entra otra vez y reintenta una vez; el correo pasa.
+{
+  const m = mensaje('ttt1', 'X <x@ejemplo.test>', 'Reunión del sábado', 'Reunión del sábado en la comunidad, con 30 personas y refrigerio.');
+  let intentos = 0;
+  const { ctx, llamadas } = escenario({ props: { CLAVE_ROBOT: 'clave-robot-prueba', REMITENTES: 'x@ejemplo.test' }, hilos: [[m]], firestore: () => (++intentos === 1 ? 401 : 200) });
+  ctx.revisarBuzon();
+  log('si el token vence (401) vuelve a entrar y reintenta: el correo pasa y queda leído', m.leido === true && llamadas.filter(x => x[0] === 'fetch' && x[1].includes('signInWithPassword')).length === 2 && intentos === 2);
+}
+// 2c. Limpiar y tapar: fechas con hora, correos reenviados y frases con «De:».
+{
+  const { ctx } = escenario({ props: {}, hilos: [], firestore: () => 200 });
+  const tapado = ctx.tapar('La reunión es el 2026-11-27 08:30 y también el 27/11/2026. Llama al 300 123 4567 o al +57 (300) 111-2233. Escribe a juan@ejemplo.com');
+  log('tapar() no daña una fecha con hora («2026-11-27 08:30») ni «27/11/2026», pero sí tapa teléfonos y correos', tapado.includes('2026-11-27 08:30') && tapado.includes('27/11/2026') && (tapado.match(/\[teléfono\]/g) || []).length === 2 && tapado.includes('[correo]'), tapado);
+  const reenviado = ctx.limpiar('Mira esto\n---------- Forwarded message ---------\nDe: Ana <ana@ejemplo.com>\nEnviado: lunes\nPara: yo\nAsunto: Reunión\n\nReunión el sábado con 30 personas en la Comunidad Norte\n-- \nFirma');
+  log('un correo reenviado conserva su contenido (la reunión) y solo pierde el rótulo y los encabezados De/Enviado/Para/Asunto', /Reunión el sábado con 30 personas/.test(reenviado) && !/Forwarded|Enviado:|Asunto:/.test(reenviado) && !/Firma/.test(reenviado), reenviado);
+  const de = ctx.limpiar('Hola\nDe: la comunidad Norte, el sábado a las 9\nGracias');
+  log('una frase que empieza con «De:» no corta el correo', /sábado a las 9/.test(de) && /Gracias/.test(de), de);
 }
 // 3. Sin correos no entra a Firebase; sin la clave o con clave mala, avisa claro.
 {

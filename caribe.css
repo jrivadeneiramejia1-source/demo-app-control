@@ -8,7 +8,7 @@
 }
 :root {
   --bg: #F1F4F7; --surface: #FFFFFF; --surface-2: #E8EEF2; --field: #F9FBFC; --line: #DCE3E9; --line-2: #C3CED7;
-  --fg: #102A38; --muted: #50626E;
+  --fg: #102A38; --muted: #50626E; --control-line: #6B7F88;   /* borde de campos y botones: 4:1 sobre blanco (mínimo pedido: 3:1) */
   --accent: #0B5E7E; --accent-ink: #FFFFFF; --accent-soft: #DCEBF2; --accent-txt: #084A63;
   --hero: #0B4058; --hero-2: #156E8E; --hero-ink: #FFFFFF; --hero-suave: rgba(255, 255, 255, .82); --hero-vidrio: rgba(255, 255, 255, .14);
   --f-display: 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -21,7 +21,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0A161D; --surface: #112330; --surface-2: #172D3B; --field: #0E1F29; --line: #22394A; --line-2: #2F4B5E;
-    --fg: #E8F0F4; --muted: #9DB1BD;
+    --fg: #E8F0F4; --muted: #9DB1BD; --control-line: #7A93A5;
     --accent: #62BCDD; --accent-ink: #04202A; --accent-soft: #143A4B; --accent-txt: #8FD2EA;
     --hero: #0A2C3C; --hero-2: #12506A; --hero-ink: #F1F8FB; --hero-vidrio: rgba(255, 255, 255, .1);
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35), 0 2px 6px rgba(0, 0, 0, .25);
@@ -31,7 +31,7 @@
 }
 :root[data-theme="dark"] {
   --bg: #0A161D; --surface: #112330; --surface-2: #172D3B; --field: #0E1F29; --line: #22394A; --line-2: #2F4B5E;
-  --fg: #E8F0F4; --muted: #9DB1BD;
+  --fg: #E8F0F4; --muted: #9DB1BD; --control-line: #7A93A5;
   --accent: #62BCDD; --accent-ink: #04202A; --accent-soft: #143A4B; --accent-txt: #8FD2EA;
   --hero: #0A2C3C; --hero-2: #12506A; --hero-ink: #F1F8FB; --hero-vidrio: rgba(255, 255, 255, .1);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, .35), 0 2px 6px rgba(0, 0, 0, .25);
@@ -76,3 +76,8 @@ button.card, .modulo { transition: box-shadow .18s, transform .18s; }
 /* Botón principal y campos con un relieve leve */
 .btn.primary { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18), 0 2px 6px rgba(11, 94, 126, .25); }
 .field input, .field select, .field textarea { box-shadow: inset 0 1px 2px rgba(16, 42, 56, .06); }
+
+/* Accesibilidad: el borde de campos y botones se ve (3:1 como mínimo) y los textos de ayuda no se aclaran de más */
+.field input, .field select, .field textarea, .search, td input, td select, .con-scan > input, .otro-fila input, .conteo-f input, .linea-extra input, .linea-extra select { border-color: var(--control-line); }
+.btn, .chip, .btn-scan, .check { border-color: var(--control-line); }
+.field input::placeholder, .field textarea::placeholder, .search::placeholder { opacity: 1; }

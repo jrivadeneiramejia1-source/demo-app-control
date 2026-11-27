@@ -165,7 +165,7 @@
 
     // ---------- COMPRAS ----------
     // Rol de quien pide (sirve para que nadie autorice su propio pedido). Mismos nombres de personas.js.
-    // Autoriza la Coordinadora de compras (Mauricio G.); lo que pide ella y lo que vale más de 5 millones lo autoriza el Gerente general (Oscar M.). Compra Fredy y recibe Andrés.
+    // Autorizal Coordinador de compras (Mauricio G.); lo que pide ella y lo que vale más de 5 millones lo autoriza el Gerente general (Oscar M.). Compra Fredy y recibe Andrés.
     const ROL_DE = { 'Oscar Muñoz': 'gerente', 'Carolina Castillo': 'jefe', 'Mauricio Giraldo': 'coordcompras', 'Fredy Torres': 'compras', 'Ángel Ortiz': 'soporte', 'Wilson Muñoz': 'carros', 'Oscar Farfán': 'conductor', 'Andrés Beltrán': 'asistente' };
     function compra(que, cantidad, unidad, categoria, valorAprox, paraQue, pide, autoriza, estado, extra) {
       return Object.assign({

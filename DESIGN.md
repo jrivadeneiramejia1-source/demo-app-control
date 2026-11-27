@@ -83,6 +83,11 @@ y cada tipo de equipo tiene su placa de color con icono.
 - **Peligro en el tablero:** `t-peligro` (rojo) solo para lo que es un problema: compra sin autorizar, documento vencido o por vencer.
 - **Placa del carro:** amarilla con borde oscuro y letra monoespaciada, como la placa real.
 - **Fotos de los carros:** botón «Tomar foto» que abre la cámara (el campo de archivo queda oculto pero accesible); al tomarla sale la miniatura y el botón dice «Cambiar». Salida y llegada en cuadrícula de 5 (frente, atrás, lados y llantas); en la hoja de vida, fila de miniaturas por cada salida o llegada.
+- **Visor de fotos (`.visor`):** tocar la foto de un recibo, una novedad o una salida/llegada la abre a pantalla completa (fondo casi negro, botón de cerrar arriba a la derecha y, en las 5 fotos de una salida, flechas ‹ › con «2 de 5»). Escape y las flechas del teclado son del visor y no mueven lo que hay detrás.
+- **Lector de códigos continuo:** sobre la cámara van el contador («Verificados X · Faltan Y»), una píldora con lo último leído (verde = bien, amarillo = aviso, rojo = no sirvió) y el botón «Terminar (X)». Cada lectura suena y vibra.
+- **Tarjetas que se tocan** (`.card.clic`, con `role="button"` y `tabindex="0"`): borde y sombra al pasar el mouse, aro de foco visible y se activan con Enter o Espacio (por ejemplo, «Cómo está cada bodega»).
+- **Quitar un ítem de una lista de verificados:** botón `×` de 36 px (`.btn-x`) con `aria-label` que dice qué quita.
+- **Impresión:** el acta y la orden de compra se imprimen siempre en negro sobre blanco, aunque el teléfono esté en modo oscuro.
 - **Fases por venir:** nota con borde punteado y fondo transparente, para que no se confunda con un aviso.
 
 

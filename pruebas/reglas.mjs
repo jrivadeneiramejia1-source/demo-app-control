@@ -1024,6 +1024,12 @@ await prueba('Baja: tras no aprobar una solicitud (bajaPedida queda en null), la
   await sembrarEq('eq-d3', { bajaPedida: null }); const jef = await cuenta('bjJef3b', 'jefe');
   await assertFails(updateDoc(doc(jef, 'equipos', 'eq-d3'), { estado: 'baja', bajaPedida: null, bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }));
   await assertSucceeds(updateDoc(doc(jef, 'equipos', 'eq-d3'), { estado: 'baja', bajaPedida: BP({ porRol: 'jefe' }), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 })); });
+await prueba('Actas: al corregir un acta con problema el Encargado deja vacía la nota de la revisión (y no puede dejarle otra)', async () => {
+  await sembrar(db => setDoc(doc(db, 'hojas', 'ac-nota'), { numero: 11, revision: 'problema', notaRevision: 'La cédula no coincide', revisadaPor: 'Ángel', revisadaEn: '2026-11-20', porRol: 'equipos', persona: 'Persona Uno', cedula: '123456', proyecto: 'P', codigoProyecto: 'P1', equipos: [{}], otros: [], devoluciones: [], firmaPersona: PNG }));
+  const enc = await cuenta('encNota', 'equipos');
+  const corr = nota => ({ persona: 'Persona Uno', cedula: '123457', proyecto: 'P', codigoProyecto: 'P1', firmaPersona: PNG, revision: 'pendiente', revisadaPor: '', revisadaEn: '', notaRevision: nota });
+  await assertFails(updateDoc(doc(enc, 'hojas', 'ac-nota'), corr('sigue el problema')));
+  await assertSucceeds(updateDoc(doc(enc, 'hojas', 'ac-nota'), corr(''))); });
 await prueba('Baja: lo pedido o lo dado de baja directo lleva el rol de quien lo hace (nadie se anota como otro rol)', async () => {
   await sembrarEq('eq-g1'); await sembrarEq('eq-g2'); await sembrarEq('eq-g3');
   const enc = await cuenta('bjEnc8', 'equipos'), jef = await cuenta('bjJef6', 'jefe');

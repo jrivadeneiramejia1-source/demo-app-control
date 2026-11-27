@@ -252,7 +252,8 @@ service cloud.firestore {
         || (revisaActas() && antes().revision == 'pendiente' && antes().porRol != rol() && nuevo().revision in ['ok', 'problema']
             && soloCambia(['revision', 'revisadaPor', 'revisadaEn', 'notaRevision']))
         || (esEncargadoEq() && antes().revision == 'problema' && nuevo().revision == 'pendiente'
-            && soloCambia(['persona', 'cedula', 'proyecto', 'codigoProyecto', 'firmaPersona', 'revision', 'revisadaPor', 'revisadaEn'])
+            && soloCambia(['persona', 'cedula', 'proyecto', 'codigoProyecto', 'firmaPersona', 'revision', 'revisadaPor', 'revisadaEn', 'notaRevision'])
+            && nuevo().get('notaRevision', '') == ''
             && nuevo().persona is string && nuevo().persona.size() >= 5 && nuevo().persona.size() <= 80
             && nuevo().cedula is string && nuevo().cedula.matches('^[0-9]{5,12}$') && firmaOk(nuevo().firmaPersona))
         // Devolución: una más al final (las anteriores iguales), con su firma; el acta vuelve a revisión.

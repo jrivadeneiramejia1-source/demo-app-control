@@ -233,18 +233,18 @@ try {
   log('el lector continuo abre la cámara y muestra el contador «Verificados 0 · Faltan N» dentro de la misma pantalla', await hasta(page, () => !!document.querySelector('.cod') && !document.querySelector('.cod-vivo').hidden && /Verificados 0 · Faltan \d+/.test(document.querySelector('.cod-cuenta').textContent), null, 9000), await texto(page, '.cod'));
   log('trae el botón «Terminar» y no «Escribir a mano»', await visible(page, '.cod [data-a="terminar"]') && !(await visible(page, '.cod [data-a="escribir"]')));
   await hasta(page, () => document.querySelector('.cod-estado').textContent.includes('uno tras otro'), null, 9000);
-  await lee('DEMO-0007');
-  log('al leer DEMO-0007 la píldora sale verde («Verificado: DEMO-0007»), el contador sube y el botón dice «Terminar (1)»', await hasta(page, () => document.querySelector('.cod-pildora.ok') && /Verificado: DEMO-0007/.test(document.querySelector('.cod-pildora').textContent) && /Verificados 1 · Faltan/.test(document.querySelector('.cod-cuenta').textContent) && /Terminar \(1\)/.test(document.querySelector('[data-a="terminar"]').textContent)), await pildora());
+  await lee('DEMO-0008');
+  log('al leer DEMO-0008 la píldora sale verde («Verificado: DEMO-0008»), el contador sube y el botón dice «Terminar (1)»', await hasta(page, () => document.querySelector('.cod-pildora.ok') && /Verificado: DEMO-0008/.test(document.querySelector('.cod-pildora').textContent) && /Verificados 1 · Faltan/.test(document.querySelector('.cod-cuenta').textContent) && /Terminar \(1\)/.test(document.querySelector('[data-a="terminar"]').textContent)), await pildora());
   log('cada lectura vibra y suena un pitido', await page.evaluate(() => window.__vib >= 1 && window.__sonidos >= 1), await page.evaluate(() => `vib ${window.__vib} sonidos ${window.__sonidos}`));
   const vib1 = await page.evaluate(() => window.__vib);
-  await lee('DEMO-0007'); await esp(700);
+  await lee('DEMO-0008'); await esp(700);
   log('el mismo serial dentro de 2,5 s no se vuelve a leer: no suma ni vuelve a sonar', await page.evaluate(v => window.__vib === v && /Verificados 1 ·/.test(document.querySelector('.cod-cuenta').textContent), vib1));
   await lee('XYZ-999');
   log('un serial que no existe sale en rojo con su explicación', await hasta(page, () => document.querySelector('.cod-pildora.mal') && /No hay un equipo con el serial XYZ-999/.test(document.querySelector('.cod-pildora').textContent)), await pildora());
   await page.evaluate(() => new Promise(r => setTimeout(r, 2700)));
-  await lee('DEMO-0007');
+  await lee('DEMO-0008');
   log('pasados 2,5 s, repetir el serial avisa en amarillo «ya estaba verificado» y no cuenta otra vez', await hasta(page, () => document.querySelector('.cod-pildora.aviso') && /ya estaba verificado/.test(document.querySelector('.cod-pildora').textContent) && /Verificados 1 ·/.test(document.querySelector('.cod-cuenta').textContent)), await pildora());
-  await lee('DEMO-0010');
+  await lee('DEMO-0009');
   log('otro serial sigue sumando en la misma pantalla de cámara (Terminar (2))', await hasta(page, () => /Terminar \(2\)/.test(document.querySelector('[data-a="terminar"]').textContent)));
   log('la cámara se abrió una sola vez en todo el recorrido (no se reinicia entre lecturas)', await page.evaluate(() => window.__gum === 1), await page.evaluate(() => 'getUserMedia: ' + window.__gum));
   log('la linterna y la cámara no repiten botones: el botón de linterna solo sale si esa lente la tiene (la falsa no)', await page.evaluate(() => document.querySelector('.cod [data-a="linterna"]').hidden === true));
@@ -627,9 +627,275 @@ try {
   await inyectar([['set', 'avisos', 'av-prueba-coord', { para: 'coordcompras', titulo: 'Compra por autorizar (prueba)', texto: 'Aviso para quien coordina', en: new Date().toISOString(), modulo: 'inventario', leido: {}, deUid: 'otro' }]]);
   await refrescar();
   const campana = await page.evaluate(() => (window.App.S.persona.rol === 'logistica') && document.getElementById('badgeAvisos').textContent.trim());
-  log('y la campana le trae los avisos de la Coordinadora de compras (antes solo los recibía quien tenía ese rol)', Number(campana) >= 1, 'campana: ' + campana);
+  log('y la campana le trae los avisos del Coordinador de compras (antes solo los recibía quien tenía ese rol)', Number(campana) >= 1, 'campana: ' + campana);
   await inyectar([['borrar', 'avisos', 'av-prueba-coord']]);
   await nivelInicio('pide');
+
+  /* ================= FASE 4 ================= */
+  console.log('Fase 4: equipos, carros, reuniones y avisos');
+  const cerrarEq = async () => { await page.keyboard.press('Escape'); await hasta(page, () => document.getElementById('shEq').hidden || !document.getElementById('shConfirmar').hidden); if (!(await page.evaluate(() => document.getElementById('shConfirmar').hidden))) await page.click('#cfSi'); await hasta(page, () => document.getElementById('shEq').hidden); };
+  const errEq = () => hasta(page, () => !document.getElementById('eqErr').hidden && document.getElementById('eqErr').textContent.length > 3);
+  // --- Equipos: verificación con avance guardado, ×, fuera de alcance ---
+  log('cambia a la Jefe', await cambiar('jefe'));
+  await page.click('.tab[data-vista="equipos"]'); await page.click('#eqSecciones [data-sec="hacer"]').catch(() => {});
+  await page.evaluate(() => localStorage.removeItem('equipos.verificacion'));
+  await page.click('#eqContenido [data-accion="verificar"]'); await page.waitForSelector('#shEq:not([hidden])');
+  await page.fill('#evSerial', 'DEMO-0007'); await page.click('#eqCampos [data-accion="veragregar"]');
+  await page.fill('#evSerial', 'DEMO-0001'); await page.click('#eqCampos [data-accion="veragregar"]');
+  log('un equipo asignado, cuando se escogió «los de bodega», se anota pero avisa que está fuera de lo que se iba a revisar', await hasta(page, () => /no está en lo que escogiste revisar/.test(document.getElementById('toast').textContent)) && await page.evaluate(() => /fuera de lo que escogiste/.test(document.getElementById('evLista').textContent)));
+  log('el avance queda guardado en el teléfono', await page.evaluate(() => { const j = JSON.parse(localStorage.getItem('equipos.verificacion') || 'null'); return !!j && j.ids.length === 2; }));
+  await cerrarEq();
+  await page.click('#eqContenido [data-accion="verificar"]'); await page.waitForSelector('#shEq:not([hidden])');
+  log('al volver a abrir «Verificar equipos» sigue donde iba (2 verificados) y lo dice', await hasta(page, () => /Sigues donde ibas: ya llevas 2/.test(document.getElementById('eqCampos').textContent) && /Verificados 2 ·/.test(document.getElementById('evLista').textContent)));
+  await page.click('#evLista [data-accion="verquitar"]');
+  log('la × quita un equipo de los verificados (queda 1) y se guarda', await hasta(page, () => /Verificados 1 ·/.test(document.getElementById('evLista').textContent)) && await page.evaluate(() => JSON.parse(localStorage.getItem('equipos.verificacion')).ids.length === 1));
+  await page.click('#eqPrimario');
+  log('al guardar la verificación se borra el avance guardado', await hasta(page, () => document.getElementById('shEq').hidden) && await page.evaluate(() => localStorage.getItem('equipos.verificacion') === null));
+  // Más de 400 equipos se guardan en varios lotes
+  await inyectar(Array.from({ length: 450 }, (_, i) => ['set', 'equipos', 'eq-masivo-' + i, { serial: 'MAS' + String(i).padStart(4, '0'), tipo: 'Portátil', marca: 'X', modelo: 'Y', estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', pendientes: { mtto: false, backup: false }, historial: [] }]));
+  await esp(600);
+  await page.click('#eqContenido [data-accion="verificar"]'); await page.waitForSelector('#shEq:not([hidden])');
+  await page.selectOption('#evAlcance', 'todos');
+  await page.evaluate(() => { const ids = window.App.S.datos.equipos.filter(e => e.id.startsWith('eq-masivo-')).map(e => e.serial); window.__ids = ids; });
+  const ant = await lotesHechos();
+  await page.evaluate(async () => { for (const sr of window.__ids) { const c = document.querySelector('#evSerial'); c.value = sr; document.querySelector('#eqCampos [data-accion="veragregar"]').click(); } });
+  await hasta(page, () => /Verificados 450 ·/.test(document.getElementById('evLista').textContent), null, 9000);
+  await page.click('#eqPrimario');
+  log('verificar 450 equipos de una vez se guarda sin fallar (en 2 lotes de hasta 400)', await hasta(page, () => document.getElementById('shEq').hidden, null, 12000) && (await lotesHechos()) - ant === 2, 'lotes: ' + ((await lotesHechos()) - ant));
+  await inyectar(Array.from({ length: 450 }, (_, i) => ['borrar', 'equipos', 'eq-masivo-' + i]));
+  // --- Equipos: acta con más de 20 equipos, corregir acta ---
+  log('cambia a Daniel (Encargado de equipos)', await cambiar('equipos'));
+  await page.click('.tab[data-vista="equipos"]');
+  await inyectar(Array.from({ length: 22 }, (_, i) => ['set', 'equipos', 'eq-v20-' + i, { serial: 'VEI' + String(i).padStart(4, '0'), tipo: 'Portátil', marca: 'X', modelo: 'Y', estado: 'bodega', asignadoA: '', asignadoCedula: '', proyecto: '', pendientes: { mtto: false, backup: false }, historial: [] }]));
+  await esp(500);
+  await page.click('#btnEntregar'); await page.waitForSelector('#shEq:not([hidden])');
+  await page.fill('#ehPersona', 'Persona Muchos Equipos'); await page.fill('#ehCedula', '1099887766');
+  await page.evaluate(() => { for (let i = 0; i < 21; i++) { const c = document.getElementById('ehEq_eq-v20-' + i); if (c) { c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); } } });
+  await page.evaluate(() => document.querySelector('#ehFirmaP').scrollIntoView({ block: 'center' })); await esp(150);
+  const bb = await page.locator('#ehFirmaP').boundingBox(); await page.mouse.move(bb.x + 20, bb.y + 40); await page.mouse.down(); for (let k = 1; k <= 12; k++) await page.mouse.move(bb.x + 20 + k * 20, bb.y + 40 + Math.sin(k) * 10); await page.mouse.up();
+  await page.click('#eqPrimario');
+  log('un acta con 21 equipos no se guarda: dice que el máximo es 20', await errEq() && /hasta 20 equipos/.test(await texto(page, '#eqErr')), await texto(page, '#eqErr'));
+  await cerrarEq();
+  await inyectar(Array.from({ length: 22 }, (_, i) => ['borrar', 'equipos', 'eq-v20-' + i]));
+  // Corregir acta con proyecto personalizado
+  await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); d.hojas.ac3.proyecto = 'Proyecto Personalizado Z'; d.hojas.ac3.revision = 'problema'; d.hojas.ac3.notaRevision = 'La cédula no coincide'; localStorage.setItem('__fb_datos', JSON.stringify(d)); });
+  await refrescar();
+  await page.click('#eqContenido [data-accion="corregir"][data-id="ac3"]').catch(async () => { await page.click('#eqSecciones [data-sec="hacer"]'); await page.click('#eqContenido [data-accion="corregir"][data-id="ac3"]'); });
+  await page.waitForSelector('#ehProy');
+  log('corregir un acta con un proyecto que no está en la lista lo conserva (no lo cambia por el primero)', await page.evaluate(() => document.getElementById('ehProy').value === 'Proyecto Personalizado Z'));
+  await page.selectOption('#ehProy', 'Proyecto Ruta Alta').catch(() => {});
+  await page.click('#eqPrimario');
+  log('al guardar la corrección: la nota de la revisión queda vacía y el equipo de esa persona cambia de proyecto', await hasta(page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.hojas.ac3.revision === 'pendiente' && d.hojas.ac3.notaRevision === '' && d.equipos['eq-005'].proyecto === d.hojas.ac3.proyecto; }));
+  // Hoja de vida: Pasar a bodega, sin Entregar con baja pedida
+  await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const e = d.equipos['eq-011']; e.estado = 'recibido'; e.pendientes = { mtto: false, backup: false }; delete e.bajaPedida; localStorage.setItem('__fb_datos', JSON.stringify(d)); });
+  await refrescar(); await page.click('#eqSecciones [data-sec="equipos"]').catch(() => {});
+  await page.click('#eqContenido .card[data-id="eq-011"]').catch(async () => { await page.fill('#qEq', 'DEMO-0011'); await esp(500); await page.click('#eqContenido [data-accion="ver"]'); });
+  await page.waitForSelector('#shEq:not([hidden])');
+  log('la hoja de vida de un equipo en Recibidos con todo listo trae «Pasar a bodega»', await visible(page, '#eqCampos [data-accion="abodega"]'));
+  await cerrarEq();
+  // Excel de equipos: el serial de uno dado de baja no se registra otra vez
+  const rutaEq = path.join(TMP, 'mejoras-equipos.xlsx');
+  await xlsxHoja('Equipos', [{ Serial: 'demo-0013', Tipo: 'Portátil', Marca: 'Acer' }, { Serial: 'NUEVO-0001', Tipo: 'Portátil', Marca: 'Acer' }, { Serial: 'NUEVO0001', Tipo: 'Portátil', Marca: 'Acer' }], rutaEq);
+  await page.click('#eqSecciones [data-sec="equipos"]').catch(() => {});
+  await page.setInputFiles('#eqContenido input[data-xbd-archivo="equipos"]', rutaEq);
+  await hasta(page, () => /Esto entendí del Excel/.test(document.getElementById('eqContenido').textContent));
+  const tEq = await texto(page, '#eqContenido');
+  log('el Excel rechaza el serial de un equipo de baja (DEMO-0013) y los seriales repetidos sin importar guiones o espacios', (tEq.match(/ya hay uno con/g) || []).length >= 3, tEq.slice(0, 400));
+  await page.click('#eqContenido [data-xbd="descartar"]').catch(() => {});
+
+  // --- Vehículos ---
+  const JPG = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAAP/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==';
+  const hoyIso = await page.evaluate(() => window.App.hoyISO());
+  const masD = (f, n) => { const d = new Date(f + 'T12:00:00'); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const cerrarVeh = async () => { await page.keyboard.press('Escape'); await hasta(page, () => document.getElementById('shVeh').hidden || !document.getElementById('shConfirmar').hidden); if (!(await page.evaluate(() => document.getElementById('shConfirmar').hidden))) await page.click('#cfSi'); await hasta(page, () => document.getElementById('shVeh').hidden); };
+  const errVeh = () => hasta(page, () => !document.getElementById('veErr').hidden && document.getElementById('veErr').textContent.length > 3);
+  log('cambia a la Jefe', await cambiar('jefe'));
+  await page.click('.tab[data-vista="vehiculos"]');
+  // Visor de fotos
+  await inyectar([['set', 'novedades', 'no-prueba-foto', { vehiculoId: 've-abc123', placa: 'ABC 123', tipo: 'llanta', fecha: new Date().toISOString(), km: 45000, descripcion: 'Llanta con corte (prueba del visor)', foto: JPG, reporta: 'Carlos Pérez', reportaRol: 'conductor', costo: 0, revisada: false, revisadaPor: '', revisadaEn: '', nota: '' }]]);
+  await page.click('#vehSecciones [data-sec="novedades"]'); await esp(400);
+  await page.click('#vehContenido img.nov-foto');
+  log('tocar la foto de una novedad la abre a pantalla completa', await hasta(page, () => !!document.querySelector('.visor .visor-img') && document.querySelector('.visor-pie').textContent.length > 3));
+  await page.keyboard.press('Escape');
+  log('Escape cierra solo el visor', await hasta(page, () => !document.querySelector('.visor')) && await visible(page, '#vehContenido'));
+  // Corregir y borrar un tanqueo (Jefe)
+  const idsT = ['ta-pr-1', 'ta-pr-2', 'ta-pr-3', 'ta-pr-4', 'ta-pr-5', 'ta-pr-6'];
+  const tq = (id, km, gal, valor, extra) => ['set', 'tanqueos', id, Object.assign({ vehiculoId: 've-ghi789', placa: 'GHI 789', fecha: new Date(Date.now() - 86400000 * (20 - km / 1000)).toISOString(), km, galones: gal, valor, lleno: true, foto: JPG, por: 'Prueba', porRol: 'conductor' }, extra || {})];
+  await inyectar([tq('ta-pr-1', 1000, 10, 100000), tq('ta-pr-2', 1300, 10, 100000), tq('ta-pr-3', 1600, 10, 100000), tq('ta-pr-4', 1900, 10, 100000), tq('ta-pr-5', 3100, 10, 100000), tq('ta-pr-6', 3400, 10, 100000)]);
+  await page.click('#vehSecciones [data-sec="tanqueos"]'); await esp(500);
+  const tarjetaTan = km => page.locator('#vehContenido .card.tarea', { hasText: `${km.toLocaleString('es-CO')} km` }).first();
+  log('el tanqueo que rinde muchísimo más que lo normal (1.200 km con 10 galones) avisa «¿falta anotar un tanqueo?»', await hasta(page, () => [...document.querySelectorAll('#vehContenido .card.tarea')].some(c => /3\.100 km/.test(c.textContent) && /falta anotar un tanqueo/.test(c.textContent))));
+  log('y ese tramo no estropea lo «normal»: el tanqueo siguiente (30 km por galón otra vez) NO sale como consumo raro', await page.evaluate(() => { const c = [...document.querySelectorAll('#vehContenido .card.tarea')].find(x => /3\.400 km/.test(x.textContent)); return !!c && !/Consumo raro/.test(c.textContent); }));
+  await page.click('#vehContenido [data-accion="edtan"][data-id="ta-pr-6"]'); await page.waitForSelector('#vqValor');
+  await page.fill('#vqValor', '120000'); await page.fill('#vqGal', '10,5'); await page.click('#vePrimario');
+  log('la Jefe corrige un tanqueo (valor y galones) y queda guardado', await hasta(page, () => { const t = JSON.parse(localStorage.getItem('__fb_datos')).tanqueos['ta-pr-6']; return t && t.valor === 120000 && t.galones === 10.5; }));
+  await page.click('#vehContenido [data-accion="edtan"][data-id="ta-pr-6"]'); await page.waitForSelector('#vqKm');
+  await page.fill('#vqKm', '2000'); await page.click('#vePrimario');
+  log('no deja un kilometraje menor que el del tanqueo anterior', await errVeh() && /menor que el tanqueo anterior/.test(await texto(page, '#veErr')));
+  await cerrarVeh();
+  await page.click('#vehContenido [data-accion="bortan"][data-id="ta-pr-6"]'); await page.waitForSelector('#vePrimario:not([hidden])'); await page.click('#vePrimario');
+  log('la Jefe borra un tanqueo', await hasta(page, () => !JSON.parse(localStorage.getItem('__fb_datos')).tanqueos['ta-pr-6']));
+  await inyectar(['ta-pr-1', 'ta-pr-2', 'ta-pr-3', 'ta-pr-4', 'ta-pr-5'].map(id => ['borrar', 'tanqueos', id]).concat([['borrar', 'novedades', 'no-prueba-foto']]));
+  // Plan de mantenimiento: editar y «Toca ya»
+  const hoyMenos30 = masD(hoyIso, -30);
+  await page.evaluate(([f]) => { const d = JSON.parse(localStorage.getItem('__fb_datos')); const v = d.vehiculos['ve-def456']; v.mttos = [{ id: 'mt-prueba', tarea: 'Revisión de prueba', cadaKm: 0, cadaDias: 30, ultimoKm: 100, ultimaFecha: f, ultimoCosto: 55000, hechos: [{ fecha: f, km: 100, costo: 55000 }] }]; localStorage.setItem('__fb_datos', JSON.stringify(d)); }, [hoyMenos30]);
+  await refrescar();
+  await page.click('#vehSecciones [data-sec="hacer"]').catch(() => {}); await esp(300);
+  log('una tarea del plan que vence HOY dice «Toca ya» (antes decía «Pronto»)', await hasta(page, () => [...document.querySelectorAll('#vehContenido .card')].some(c => /Revisión de prueba/.test(c.textContent) && /Toca ya/.test(c.textContent))));
+  await page.click('#vehSecciones [data-sec="carros"]'); await esp(300);
+  await page.click('#vehContenido [data-accion="ver"][data-id="ve-def456"]'); await page.waitForSelector('#shVeh:not([hidden])');
+  await page.click('#veCampos [data-accion="mttoeditar"][data-mtto="mt-prueba"]'); await page.waitForSelector('#vtTarea');
+  await page.fill('#vtTarea', 'Revisión general'); await page.fill('#vtCadaDias', '60'); await page.click('#vePrimario');
+  log('«Editar tarea» cambia el nombre y cada cuánto, y conserva la última vez y los costos de antes', await hasta(page, () => { const m = JSON.parse(localStorage.getItem('__fb_datos')).vehiculos['ve-def456'].mttos.find(x => x.id === 'mt-prueba'); return m && m.tarea === 'Revisión general' && m.cadaDias === 60 && m.ultimoCosto === 55000 && m.hechos.length === 1 && m.ultimoKm === 100; }));
+  await esp(800); if (!(await page.evaluate(() => document.getElementById('shVeh').hidden))) await cerrarVeh();   // al guardar vuelve a abrir la hoja de vida
+  // SOAT sin fecha: el aviso no dice «null»
+  await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); d.vehiculos['ve-ghi789'].soat = ''; localStorage.setItem('__fb_datos', JSON.stringify(d)); });
+  await refrescar(); await page.click('#vehSecciones [data-sec="resumen"]').catch(() => {}); await page.click('#vehSecciones [data-sec="carros"]'); await esp(1200);
+  const avSoat = await page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos')).avisos);
+  log('un carro sin fecha de SOAT genera el aviso «no tiene anotada la fecha» y nunca «vence en null días»', Object.values(avSoat).some(a => /no tiene anotada la fecha de la SOAT/.test(a.texto)) && !Object.values(avSoat).some(a => /null/.test(a.texto || '')));
+  await page.evaluate(() => { const d = JSON.parse(localStorage.getItem('__fb_datos')); d.vehiculos['ve-ghi789'].soat = new Date(Date.now() + 200 * 86400000).toISOString().slice(0, 10); localStorage.setItem('__fb_datos', JSON.stringify(d)); });
+  await refrescar();
+  // Un carro con una falla grave sin revisar no está libre
+  // Un día en que haya carros libres con los papeles al día (incluido el JKL 012): sirve para esta prueba y para la de reservas.
+  const Fok = await page.evaluate(h => { const mas = n => { const d = new Date(h + 'T12:00:00'); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    for (let i = 1; i <= 12; i++) { const f = mas(i), l = window.Vehiculos.libresPara(f, '').map(v => v.id); if (l.includes('ve-jkl012') && l.length >= 2) return f; } return ''; }, hoyIso);
+  await inyectar([['borrar', 'novedades', 'no-prueba-rev']]); await esp(400);
+  const libAntes = await page.evaluate(f => window.Vehiculos.libresPara(f, '').map(v => v.id), Fok);
+  await inyectar([['set', 'novedades', 'no-prueba-rev', { vehiculoId: 've-jkl012', placa: 'JKL 012', tipo: 'mantenimiento', fecha: new Date().toISOString(), km: 21000, descripcion: 'Revisión antes de salir: frenos mal. Suena raro', foto: JPG, reporta: 'X', reportaRol: 'conductor', costo: 0, revisada: false, revisadaPor: '', revisadaEn: '', nota: '' }]]); await esp(400);
+  const lib = await page.evaluate(f => window.Vehiculos.libresPara(f, '').map(v => v.id), Fok);
+  log('un carro con un problema grave reportado y sin revisar no sale como «libre» para reuniones ni reservas (y sin el reporte sí)', !!Fok && libAntes.includes('ve-jkl012') && !lib.includes('ve-jkl012') && lib.length >= 1, `${Fok} antes: ${libAntes.join()} · después: ${lib.join()}`);
+  await page.click('#vehContenido [data-accion="ver"][data-id="ve-jkl012"]'); await page.waitForSelector('#shVeh:not([hidden])');
+  log('y su hoja de vida lo dice: «Este carro no debe salir»', await hasta(page, () => /Este carro no debe salir/.test(document.getElementById('veCampos').textContent)));
+  await cerrarVeh();
+  await inyectar([['borrar', 'novedades', 'no-prueba-rev']]);
+  // Reservas: próximas en la hoja de vida, el mismo conductor no tiene dos viajes el mismo día, y las vencidas sin respuesta se cierran
+  const F = Fok || masD(hoyIso, 6);
+  await inyectar([
+    ['set', 'reservas', 'rs-prueba-a', { fecha: F, hora: '08:00', destino: 'Fonseca (prueba A)', motivo: 'Prueba de conductor repetido', estado: 'aprobada', por: 'Luis', porRol: 'compras', pideCorreo: 'luis@ejemplo.test', en: hoyIso, vehiculoId: 've-abc123', placa: 'ABC 123', conductor: 'Oscar Farfán', decidePor: 'X', decideEn: hoyIso }],
+    ['set', 'reservas', 'rs-prueba-b', { fecha: F, hora: '14:00', destino: 'Maicao (prueba B)', motivo: 'Segundo viaje del mismo día', estado: 'pedida', por: 'Ana', porRol: 'colaborador', pideCorreo: 'ana@ejemplo.test', en: hoyIso }],
+    ['set', 'reservas', 'rs-prueba-zombi', { fecha: masD(hoyIso, -3), hora: '08:00', destino: 'Viaje que ya pasó (zombi)', motivo: 'Nadie respondió', estado: 'pedida', por: 'Ana', porRol: 'colaborador', pideCorreo: 'ana@ejemplo.test', en: masD(hoyIso, -5) }]]);
+  await refrescar(); await page.click('#vehSecciones [data-sec="hacer"]').catch(() => {}); await esp(900);
+  log('una reserva pedida cuya fecha ya pasó y nadie respondió se cierra sola (queda cancelada)', await hasta(page, () => JSON.parse(localStorage.getItem('__fb_datos')).reservas['rs-prueba-zombi'].estado === 'cancelada'));
+  await page.click('#vehSecciones [data-sec="carros"]'); await page.click('#vehContenido [data-accion="ver"][data-id="ve-abc123"]'); await page.waitForSelector('#shVeh:not([hidden])');
+  log('la hoja de vida del carro muestra sus «Reservas próximas»', await hasta(page, () => /Reservas próximas \(1\)/.test(document.getElementById('veCampos').textContent) && /Fonseca \(prueba A\)/.test(document.getElementById('veCampos').textContent)));
+  await cerrarVeh();
+  log('cambia a Transporte', await cambiar('carros'));
+  await page.click('.tab[data-vista="vehiculos"]'); await page.click('#vehSecciones [data-sec="hacer"]').catch(() => {}); await esp(500);
+  await page.click('#vehContenido [data-accion="aprobares"][data-id="rs-prueba-b"]'); await page.waitForSelector('#vrCond');
+  await page.selectOption('#vrCond', 'Oscar Farfán'); await page.click('#vePrimario');
+  log('aprobar un viaje con un conductor que ya tiene otro viaje ese día no se deja', await errVeh() && /ya tiene otro viaje ese día/.test(await texto(page, '#veErr')), await texto(page, '#veErr'));
+  await cerrarVeh();
+  await inyectar([['borrar', 'reservas', 'rs-prueba-a'], ['borrar', 'reservas', 'rs-prueba-b'], ['borrar', 'reservas', 'rs-prueba-zombi']]);
+  // Excel: hoja Reservas y carro con tanqueos no se borra
+  log('cambia a la Jefe', await cambiar('jefe'));
+  await page.click('.tab[data-vista="vehiculos"]');
+  await inyectar([['set', 'vehiculos', 've-solo-tan', { placa: 'TAN 001', marca: 'X', modelo: 'Y', anio: 2020, color: '', conductor: '', km: 10, soat: masD(hoyIso, 200), tecno: masD(hoyIso, 200), estado: 'disponible', mttos: [], historial: [] }], tq('ta-solo-1', 5, 10, 100000, { vehiculoId: 've-solo-tan', placa: 'TAN 001' })]);
+  await esp(400);
+  const rutaCar = path.join(TMP, 'mejoras-carros-borrar.xlsx');
+  await xlsxHoja('Carros', [{ ID: 've-solo-tan', Acción: 'Eliminar', Placa: 'TAN 001', Marca: 'X', Modelo: 'Y', Año: 2020, Kilometraje: 10, 'SOAT vence': masD(hoyIso, 200), 'Técnico-mecánica vence': masD(hoyIso, 200) }], rutaCar);
+  await page.click('#vehSecciones [data-sec="carros"]');
+  await page.setInputFiles('#vehContenido input[data-xbd-archivo="vehiculos"]', rutaCar);
+  await hasta(page, () => /Esto entendí del Excel/.test(document.getElementById('vehContenido').textContent));
+  log('el Excel no deja eliminar un carro que tiene tanqueos (se guardan como rastro)', /Tiene tanqueos registrados/.test(await texto(page, '#vehContenido')), (await texto(page, '#vehContenido')).slice(0, 300));
+  await page.click('#vehContenido [data-xbd="descartar"]').catch(() => {});
+  await inyectar([['borrar', 'tanqueos', 'ta-solo-1'], ['borrar', 'vehiculos', 've-solo-tan']]);
+  await page.click('#vehSecciones [data-sec="reportes"]'); await esp(400);
+  const [dlR] = await Promise.all([page.waitForEvent('download', { timeout: 20000 }), page.click('#vehContenido [data-accion="excelveh"]')]);
+  const rutaR = path.join(TMP, 'mejoras-reportes-carros.xlsx'); await dlR.saveAs(rutaR);
+  const hojasR = (await leerXlsx(rutaR)).map(h => h.nombre);
+  log('el Excel de reportes de Vehículos trae la hoja «Reservas»', hojasR.includes('Reservas'), hojasR.join());
+  // Revisión antes de salir: contador, foto del problema
+  await page.click('#vehSecciones [data-sec="carros"]'); await page.click('#vehContenido [data-accion="ver"][data-id="ve-def456"]'); await page.waitForSelector('#shVeh:not([hidden])');
+  const haySalida = await visible(page, '#veCampos [data-accion="salida"]');
+  if (haySalida) {
+    await page.click('#veCampos [data-accion="salida"]'); await page.waitForSelector('#vsFalta');
+    log('la salida muestra «Faltan 15 de 15 puntos» con un botón que lleva al primero', await hasta(page, () => /Faltan 15 de 15 puntos/.test(document.getElementById('vsFalta').textContent)));
+    await page.click('#vsFalta [data-accion="irpunto"]');
+    log('«Ir al primero» deja el cursor en el primer punto sin marcar', await page.evaluate(() => document.activeElement && document.activeElement.name === 'vr_frenos'));
+    await page.check('input[name="vr_frenos"][value="bien"]', { force: true });
+    log('al marcar uno baja a «Faltan 14 de 15»', await hasta(page, () => /Faltan 14 de 15 puntos/.test(document.getElementById('vsFalta').textContent)));
+    log('la foto del problema no se ve mientras todo esté bien', await page.evaluate(() => document.getElementById('vsFotoProbBox').hidden));
+    await page.check('input[name="vr_llantas"][value="mal"]', { force: true });
+    log('si un punto importante está mal aparece la foto del problema (aparte de las 5 fotos de la salida)', await hasta(page, () => !document.getElementById('vsFotoProbBox').hidden) && await visible(page, '#vf_problema').then(() => true).catch(() => true));
+    await page.fill('#vsObs', 'La llanta delantera tiene un corte'); await page.click('#vePrimario');
+    log('sin la foto del problema no deja reportar', await errVeh() && /foto del problema/.test(await texto(page, '#veErr')), await texto(page, '#veErr'));
+    await page.setInputFiles('#vf_problema', path.join(RAIZ, 'iconos', 'control-512.png')); await hasta(page, () => !document.getElementById('vf_problemaVer').hidden);
+    await page.click('#vePrimario');
+    log('con la foto del problema el reporte se guarda con esa foto (no con la de «Frente»)', await hasta(page, () => Object.values(JSON.parse(localStorage.getItem('__fb_datos')).novedades).some(n => /Revisión antes de salir/.test(n.descripcion) && n.placa === 'DEF 456' && /^data:image\/jpeg/.test(n.foto))));
+  } else log('el carro DEF 456 está disponible para probar la salida', false);
+
+  await esp(900); if (!(await page.evaluate(() => document.getElementById('shVeh').hidden))) await cerrarVeh();
+  // --- Reuniones: gráfico del resumen, «Solo ver», «¿Salir sin guardar?» ---
+  await page.click('.tab[data-vista="reuniones"]'); await page.click('#reuSecciones [data-sec="resumen"]');
+  await hasta(page, () => !!document.querySelector('#reuContenido .barras .bf'));
+  const bf = await page.evaluate(() => { const f = document.querySelector('#reuContenido .barras .bf'); return f ? { orden: [...f.children].map(c => c.className).join(','), valor: f.querySelector('.bf-v').textContent, nombre: f.querySelector('.bf-n').textContent } : null; });
+  log('el gráfico «Tareas pendientes por persona» pone primero el nombre, luego el número con su unidad («3 tareas») y debajo la barra', !!bf && bf.orden === 'bf-n,bf-v,bf-b' && /^\d+ tareas?$/.test(bf.valor), JSON.stringify(bf));
+  log('cada barra dice a quién le toca (en la demo, la persona y su rol)', !!bf && /·/.test(bf.nombre), bf && bf.nombre);
+  log('cambia a Fredy (Compras)', await cambiar('compras'));
+  await page.click('.tab[data-vista="reuniones"]'); await page.click('#reuSecciones [data-sec="hacer"]').catch(() => {}); await esp(500);
+  const botonesAntes = await page.evaluate(() => document.querySelectorAll('#reuContenido [data-accion="informar"], #reuContenido [data-accion="autorizar"], #reuContenido [data-accion="nopuedo"], #reuContenido [data-accion="voy"], #reuContenido [data-accion="viajeok"]').length);
+  await page.evaluate(() => { const p = window.App.S.persona; window.App.S.persona = Object.assign({}, p, { permisos: Object.assign({}, p.permisos, { reuniones: 'ver' }) }); window.App.pintarTodo(); }); await esp(500);
+  const botonesVer = await page.evaluate(() => document.querySelectorAll('#reuContenido [data-accion="informar"], #reuContenido [data-accion="autorizar"], #reuContenido [data-accion="nopuedo"], #reuContenido [data-accion="voy"], #reuContenido [data-accion="viajeok"]').length);
+  log('con el nivel «Solo ver» en Reuniones no sale ningún botón para informar ni decidir (aunque su rol sí los tenga)', botonesVer === 0 && botonesAntes >= 0, `antes ${botonesAntes} · con «solo ver» ${botonesVer}`);
+  log('cambia a la Jefe', await cambiar('jefe'));
+  await page.click('.tab[data-vista="reuniones"]'); await page.click('#reuSecciones [data-sec="proximas"]').catch(() => {}); await esp(500);
+  // --- Avisos: etiqueta por evento y abrir el módulo al tocar la notificación con la app abierta ---
+  const et = await page.evaluate(() => [window.Push.etiqueta('inventario', 'Compra', 'Luis pidió botas'), window.Push.etiqueta('inventario', 'Compra', 'Luis pidió botas'), window.Push.etiqueta('inventario', 'Compra', 'Ana pidió guantes')]);
+  log('cada aviso tiene su propia etiqueta (el mismo aviso repetido se reemplaza; dos distintos no se pisan)', et[0] === et[1] && et[0] !== et[2] && /^inventario-/.test(et[0]), et.join(' · '));
+  await page.click('.tab[data-vista="inicio"]');
+  await page.evaluate(() => { navigator.serviceWorker.dispatchEvent(new MessageEvent('message', { data: { tipo: 'abrir', url: new URL('./#inventario', location.href).href } })); });
+  log('el mensaje del service worker (tocar la notificación con la app ya abierta) abre Inventario', await hasta(page, () => !document.getElementById('vInventario').hidden));
+  await page.click('.tab[data-vista="inicio"]');
+  await page.evaluate(() => { location.hash = '#reuniones'; });
+  log('y cambiar el # de la dirección (por ejemplo, al abrir la notificación de nuevo) abre Reuniones', await hasta(page, () => !document.getElementById('vReuniones').hidden) && await page.evaluate(() => location.hash === ''));
+  await page.click('.tab[data-vista="inicio"]');
+
+  /* ================= FASE 5 ================= */
+  console.log('Fase 5: rendimiento, móvil, accesibilidad y pulido');
+  log('la barra del teléfono toma el azul Caribe del encabezado (#0B4058), no el verde de antes', await page.evaluate(() => [...document.querySelectorAll('meta[name="theme-color"]')].some(m => /0B4058|0D3B37/i.test(m.getAttribute('content')) && !/0A5A4E/i.test(m.getAttribute('content')))), await page.evaluate(() => [...document.querySelectorAll('meta[name="theme-color"]')].map(m => m.getAttribute('content')).join()));
+  const pesoLogo = await page.evaluate(async () => (await (await fetch('iconos/logo-empresa.png')).arrayBuffer()).byteLength);
+  log('el logo de la empresa pesa menos de 40 KB (antes 142 KB) y sigue viéndose nítido', pesoLogo < 40000, pesoLogo + ' bytes');
+  log('cambia a la Jefe', await cambiar('jefe'));
+  await page.click('.tab[data-vista="vehiculos"]'); await page.click('#vehSecciones [data-sec="tanqueos"]'); await esp(400);
+  log('«Registrar tanqueo» y «Todavía no hay tanqueos» usan el ícono de surtidor (no la chispa)', await page.evaluate(() => { const b = document.querySelector('#vehContenido [data-accion="tanqueo"] [data-ico]'); return !!b && b.dataset.ico === 'gasolina' && !!b.querySelector('svg path'); }));
+  // Fondo inerte con una hoja abierta
+  await page.click('#btnPersona'); await page.waitForSelector('#shPersona:not([hidden])');
+  log('con una hoja abierta, el encabezado, el contenido y las pestañas quedan «inertes» (no reciben foco ni toques ni los lee el lector de pantalla)', await page.evaluate(() => ['header.top', 'main', 'nav.tabs'].every(q => document.querySelector(q).hasAttribute('inert')) && !document.getElementById('shPersona').hasAttribute('inert')));
+  await page.keyboard.press('Escape'); await hasta(page, () => document.getElementById('shPersona').hidden);
+  log('al cerrar la hoja el fondo vuelve a funcionar', await page.evaluate(() => ['header.top', 'main', 'nav.tabs'].every(q => !document.querySelector(q).hasAttribute('inert'))));
+  // aria-invalid
+  log('cambia a Bodega', await cambiar('asistente'));
+  await page.click('.tab[data-vista="inventario"]'); await page.click('#invSecciones [data-sec="existencias"]');
+  await page.click('#invContenido [data-accion="nuevoart"]'); await page.waitForSelector('#acNom');
+  await page.click('#acPrimario');
+  log('un campo con error queda marcado para los lectores de pantalla (aria-invalid y aria-describedby al mensaje)', await page.evaluate(() => { const c = document.getElementById('acNom'); return c.getAttribute('aria-invalid') === 'true' && c.getAttribute('aria-describedby') === 'acErr'; }));
+  await page.fill('#acNom', 'Algo');
+  log('y la marca se quita en cuanto se corrige', await page.evaluate(() => !document.getElementById('acNom').hasAttribute('aria-invalid') && !document.getElementById('acNom').hasAttribute('aria-describedby')));
+  // Contraste y tamaño de letra
+  const estilos = await page.evaluate(() => { const i = document.getElementById('acNom'), cs = getComputedStyle(i); return { borde: cs.borderTopColor }; });
+  log('el borde de los campos usa el color de control con buen contraste (rgb 107, 127, 136 en tema claro)', estilos.borde === 'rgb(107, 127, 136)', estilos.borde);
+  await cerrarHoja();
+  await page.click('#invSecciones [data-sec="conteo"]'); await page.click('#invContenido [data-accion="conteo"]'); await page.waitForSelector('#shAccion:not([hidden])');
+  await page.click('#acPrimario'); await hasta(page, () => !!document.querySelector('#acCampos .conteo-f input'));
+  log('los campos de las tablas y de las filas del conteo miden 16 px (el iPhone no agranda la pantalla al tocarlos)', await page.evaluate(() => getComputedStyle(document.querySelector('#acCampos .conteo-f input')).fontSize === '16px'));
+  await cerrarHoja();
+  // Tablas anchas con desplazamiento
+  await page.click('#invSecciones [data-sec="compras"]'); await page.click('#invContenido .chips.sub [data-val="todas"]').catch(() => {});
+  await page.click('#invContenido [data-accion="vercompra"]').catch(async () => { await page.click('#invContenido .card[data-id]'); });
+  await page.waitForSelector('#shAccion:not([hidden])');
+  log('las tablas de las hojas (compras, kárdex) van dentro de un contenedor que se mueve de lado en el teléfono', await page.evaluate(() => [...document.querySelectorAll('#acCampos table')].every(t => t.parentElement.classList.contains('tabla-scroll'))));
+  await cerrarHoja();
+  // Índices
+  const idx = await page.evaluate(() => { const l = [{ id: 'a', g: 1 }, { id: 'b', g: 1 }, { id: 'c', g: 2 }]; return [window.UI.indice(l).get('b').g, window.UI.agrupar(l, 'g').get(1).length, window.UI.indice(l) === window.UI.indice(l), window.UI.indice([{ id: 'z' }]).get('a') === undefined]; });
+  log('los índices en memoria buscan por id y agrupan, y se reutilizan mientras la lista no cambie', idx[0] === 1 && idx[1] === 2 && idx[2] === true && idx[3] === true, JSON.stringify(idx));
+  // El buscador de Equipos no roba el foco al abrir una hoja
+  log('cambia a Daniel (Encargado de equipos)', await cambiar('equipos'));
+  await page.click('.tab[data-vista="equipos"]'); await page.click('#eqSecciones [data-sec="equipos"]').catch(() => {});
+  await page.fill('#qEq', 'DEMO-000'); await esp(60);
+  await page.click('#eqContenido .card[data-accion="ver"]').catch(() => {});
+  await page.waitForSelector('#shEq:not([hidden])'); await esp(700);
+  log('si se toca un resultado antes de que la lista termine de filtrarse, el buscador no le roba el foco a la hoja que se abrió', await page.evaluate(() => !document.getElementById('shEq').hidden && document.activeElement && document.activeElement.id !== 'qEq'));
+  await cerrarEq();
 
   console.log('\n(sin más fases todavía)');
 } catch (e) {

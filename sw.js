@@ -43,6 +43,8 @@ self.addEventListener('notificationclick', e => {
   e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(ventanas => {
     for (const v of ventanas) {
       if (v.url.startsWith(self.registration.scope)) {
+        // Con la app ya abierta se le avisa por mensaje (cambiar solo el # no recarga la página) y, si se puede, se lleva a esa dirección.
+        try { v.postMessage({ tipo: 'abrir', url }); } catch (x) { /* sin mensaje: igual se navega */ }
         const ir = v.url === url || !v.navigate ? Promise.resolve() : v.navigate(url).catch(() => {});
         return ir.then(() => v.focus());
       }

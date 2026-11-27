@@ -145,6 +145,7 @@
     cfg.columnas.filter(c => c.unico).forEach(col => {
       const quita = new Set(filas.filter(x => x.tipo === 'eliminar' && !x.errores.length).map(x => x.id)), cuenta = new Map(), n = v => (col.normaliza ? col.normaliza(v) : norm(v));
       cfg.filas().filter(f => !quita.has(f.id)).forEach(f => cuenta.set(n(f.v[col.k]), (cuenta.get(n(f.v[col.k])) || 0) + 1));
+      if (col.tambien) col.tambien().forEach(v => cuenta.set(n(v), (cuenta.get(n(v)) || 0) + 1));   // valores que ya no están en la lista pero siguen ocupados (por ejemplo, equipos dados de baja)
       filas.filter(x => x.tipo === 'agregar' && !x.errores.length).forEach(x => cuenta.set(n(x.v[col.k]), (cuenta.get(n(x.v[col.k])) || 0) + 1));
       filas.forEach(x => { if (x.tipo === 'agregar' && !x.errores.length && cuenta.get(n(x.v[col.k])) > 1) x.errores.push(`${col.t}: ya hay uno con «${x.v[col.k]}» (en la app o repetido en el Excel).`); });
     });

@@ -173,13 +173,13 @@ try {
   await t.page.click('#eqSecciones [data-sec="equipos"]');
   await t.page.click('.tab[data-vista="inventario"]');
   log('Inventario: la Jefe empieza en el Panorama (todo el inventario en una pantalla) y no en la lista de tareas', await hasta(t.page, () => document.querySelector('#invSecciones [data-sec="panorama"]').getAttribute('aria-pressed') === 'true' && /Lo urgente/.test(document.getElementById('invContenido').textContent)));
-  log('el Panorama dice lo urgente: agotados, compras que esperan a la Coordinadora y al Gerente general, sin autorización, pedidos viejos', await t.page.evaluate(() => { const x = document.getElementById('invContenido').textContent; return /artículos agotados/.test(x) && /compras esperan a la Coordinadora de compras/.test(x) && /compra hecha sin autorización/.test(x) && /compra espera al Gerente general/.test(x) && /pedido de material espera hace más de 2 días/.test(x) && /Valor de lo que hay en bodega/.test(x) && /Gastado este mes/.test(x) && /por persona que las pidió/.test(x) && /por proyecto/.test(x); }), await texto(t.page, '#invContenido'));
+  log('el Panorama dice lo urgente: agotados, compras que esperan a la Coordinadora y al Gerente general, sin autorización, pedidos viejos', await t.page.evaluate(() => { const x = document.getElementById('invContenido').textContent; return /artículos agotados/.test(x) && /compras esperan al Coordinador de compras/.test(x) && /compra hecha sin autorización/.test(x) && /compra espera al Gerente general/.test(x) && /pedido de material espera hace más de 2 días/.test(x) && /Valor de lo que hay en bodega/.test(x) && /Gastado este mes/.test(x) && /por persona que las pidió/.test(x) && /por proyecto/.test(x); }), await texto(t.page, '#invContenido'));
   await t.page.screenshot({ path: path.join(CAPTURAS, '09-panorama-jefe.png'), fullPage: true });
   await t.page.click('#invContenido [data-accion="ir"][data-sec="existencias"]');
   log('tocar «artículos agotados» lleva a Existencias ya filtradas', await hasta(t.page, () => document.querySelector('#invSecciones [data-sec="existencias"]').getAttribute('aria-pressed') === 'true' && document.querySelectorAll('#invContenido .art').length === 2));
   await t.page.click('#invSecciones [data-sec="hacer"]');
   log('Inventario: la Jefe ve 13 tareas agrupadas por a quién le tocan (la Coordinadora, Compras, Andrés y el Gerente general)', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return document.querySelectorAll('#invContenido .tarea').length === 13 && !/Te toca a ti/.test(x) && /Le toca a Mauricio G\. \(3\)/.test(x) && /Le toca a Andrés B\./.test(x) && /Le toca a Fredy T\./.test(x) && /Le toca a Gerente/.test(x); }), await texto(t.page, '#invContenido'));
-  log('la Jefe puede comprar, recibir y entregar, pero ya NO autoriza compras ni marca revisadas (eso es de la Coordinadora y del Gerente general)', await t.page.evaluate(() => ['comprar', 'recibir', 'entregar'].every(a => document.querySelector(`#invContenido [data-accion="${a}"]`)) && !document.querySelector('#invContenido [data-accion="autorizar"]') && !document.querySelector('#invContenido [data-accion="rechazar"]') && !document.querySelector('#invContenido [data-accion="revisada"]') && /La pidió la Coordinadora|Le toca a Mauricio/.test(document.getElementById('invContenido').textContent)));
+  log('la Jefe puede comprar, recibir y entregar, pero ya NO autoriza compras ni marca revisadas (eso es de la Coordinadora y del Gerente general)', await t.page.evaluate(() => ['comprar', 'recibir', 'entregar'].every(a => document.querySelector(`#invContenido [data-accion="${a}"]`)) && !document.querySelector('#invContenido [data-accion="autorizar"]') && !document.querySelector('#invContenido [data-accion="rechazar"]') && !document.querySelector('#invContenido [data-accion="revisada"]') && /La pidió el Coordinador|Le toca a Mauricio/.test(document.getElementById('invContenido').textContent)));
   log('Inventario: sale la tarea de autorizar las botas (agotadas) y no la de pedirlas', /Autorizar compra: Botas de seguridad talla 40/.test(await texto(t.page, '#invContenido')) && !/Pedir compra: Botas de seguridad talla 40/.test(await texto(t.page, '#invContenido')));
   await esp(900);
   log('Inventario: tablero con 2 agotados y 3 bajos', (await cifra(t.page, 'sumInventario', 0)) === 2 && (await cifra(t.page, 'sumInventario', 1)) === 3);
@@ -358,13 +358,13 @@ try {
   if (descBd) {
     const ruta = path.join(CAPTURAS, 'base-existencias.xlsx'); await descBd.saveAs(ruta); const hs = await excelInfo(ruta), e = hs.find(h => h.nombre === 'Bodega');
     log('trae las hojas Bodega, Ayuda y una de listas oculta', ['Bodega', 'Ayuda', 'Listas'].every(n => hs.some(h => h.nombre === n)) && hs.find(h => h.nombre === 'Listas').oculta && !e.oculta, JSON.stringify(hs.map(h => h.nombre)));
-    log('Bodega tiene el formato (título, negrillas, cuadros, fila fija, filtros) y las columnas de una base de datos', !!e && bienFormado(e) && e.titulos.join() === 'ID,Acción,Bodega,Artículo,Categoría,Unidad,Cantidad hoy,Cantidad real (conteo),Mínimo,Máximo,Ubicación,Precio aprox.,Proveedor,Estado,Valor en bodega', JSON.stringify(e && e.titulos));
+    log('Bodega tiene el formato (título, negrillas, cuadros, fila fija, filtros) y las columnas de una base de datos', !!e && bienFormado(e) && e.titulos.join() === 'ID,Acción,Bodega,Artículo,Código,Categoría,Unidad,Cantidad hoy,Cantidad real (conteo),Mínimo,Máximo,Ubicación,Precio aprox.,Proveedor,Estado,Valor en bodega', JSON.stringify(e && e.titulos));
     log('trae los 20 artículos con su código, una fila de ejemplo y filas vacías para agregar', !!e && e.filas.filter(f => /^ar-\d+$/.test(f[0])).length === 20 && e.filas.filter(f => /^Ejemplo/.test(f[1])).length === 1 && ['Riohacha', 'Guamal', 'Bogotá'].every(b => e.filas.some(f => f[2] === b)) && e.filas.filter(f => f.slice(0, 13).every(x => x === '')).length >= 15, JSON.stringify(e && e.filas.slice(17, 21)));
     log('tiene listas desplegables (acción, bodega, categoría, unidad), solo enteros desde 0 y fórmulas de Estado y Valor', await t.page.evaluate(async b64 => {
       const E = await window.Excel.cargar(), wb = new E.Workbook(); await wb.xlsx.load(Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer);
       const ws = wb.getWorksheet('Bodega'), fila = ws.rowCount, dv = c => (ws.getCell(fila, c).dataValidation || {}).type;
-      const f5 = ws.getCell(5, 14).value, v5 = ws.getCell(5, 15).value;
-      return dv(2) === 'list' && dv(3) === 'list' && dv(5) === 'list' && dv(6) === 'list' && dv(8) === 'whole' && dv(9) === 'whole' && dv(10) === 'whole' && dv(12) === 'whole' && !dv(4) && !!f5 && /IF\(/.test(f5.formula || '') && !!v5 && /\*/.test(v5.formula || '');
+      const f5 = ws.getCell(5, 15).value, v5 = ws.getCell(5, 16).value;
+      return dv(2) === 'list' && dv(3) === 'list' && dv(6) === 'list' && dv(7) === 'list' && dv(9) === 'whole' && dv(10) === 'whole' && dv(11) === 'whole' && dv(13) === 'whole' && !dv(4) && !dv(5) && !!f5 && /IF\(/.test(f5.formula || '') && !!v5 && /\*/.test(v5.formula || '');
     }, fs.readFileSync(ruta).toString('base64')));
   }
   // Un Excel con cambios buenos (precio, conteo, artículo nuevo, eliminar) y filas malas.
@@ -625,7 +625,7 @@ try {
   log('Reportes del Gerente: trae el costo total de los carros y, en cada carro, el combustible, lo que rinde (ABC 123: 26,4 km por galón) y el total', await hasta(t.page, () => { const c = [...document.querySelectorAll('#vehContenido .card[data-accion="ver"]')], abc = c.find(x => /ABC 123/.test(x.textContent)); return /Costo total de los carros/.test(document.getElementById('vehContenido').textContent) && !!abc && /26,4 km por galón/.test(abc.textContent) && /Combustible \$/.test(abc.textContent) && /Total \$/.test(abc.textContent) && c.every(x => /Total \$/.test(x.textContent)); }), await texto(t.page, '#vehContenido'));
   await t.page.screenshot({ path: path.join(CAPTURAS, '06b-reportes-gerente.png'), fullPage: true });
   const [excelVeh] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#vehContenido [data-accion="excelveh"]')]);
-  if (excelVeh) { const ruta = path.join(CAPTURAS, 'excel-vehiculos.xlsx'); await excelVeh.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel de vehículos tiene el mismo formato (título, negrillas, cuadros) en sus 5 hojas', hs.length === 5 && hs.every(bienFormado), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); }
+  if (excelVeh) { const ruta = path.join(CAPTURAS, 'excel-vehiculos.xlsx'); await excelVeh.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel de vehículos tiene el mismo formato (título, negrillas, cuadros) en sus 6 hojas (con la de Reservas)', hs.length === 6 && hs.every(bienFormado), JSON.stringify(hs.map(h => [h.nombre, bienFormado(h)]))); }
   log('el Gerente descarga el Excel de vehículos', !!excelVeh && /^Vehiculos .*\.xlsx$/.test(excelVeh.suggestedFilename()), excelVeh ? excelVeh.suggestedFilename() : 'sin descarga');
   if (excelVeh) { const hs2 = await excelInfo(path.join(CAPTURAS, 'excel-vehiculos.xlsx')); log('el Excel de salidas y llegadas trae la revisión por grupos (críticos y otros, de la salida y de la llegada)', hs2.some(h => ['Críticos (salida)', 'Otros (salida)', 'Críticos (llegada)', 'Otros (llegada)'].every(c => h.titulos.includes(c))), JSON.stringify(hs2.map(h => h.titulos.join('|'))).slice(0, 300)); }
   if (excelVeh) {
@@ -979,7 +979,7 @@ try {
   log('al terminar de imprimir se quita el documento de la pantalla', await hasta(t.page, () => !document.getElementById('impresion') && !document.body.classList.contains('imprimiendo')));
   await t.page.keyboard.press('Escape');
   await abrirCompraInv(cv.id);
-  log('una compra ya recibida no trae el botón de la orden de compra', await hasta(t.page, () => /Taladro percutor/.test(document.getElementById('acT').textContent) && !document.querySelector('#acCampos [data-accion="imprimirorden"]')));
+  log('una compra ya recibida también trae el botón de la orden de compra (se puede reimprimir)', await hasta(t.page, () => /Taladro percutor/.test(document.getElementById('acT').textContent) && !!document.querySelector('#acCampos [data-accion="imprimirorden"]')));
   await t.page.keyboard.press('Escape');
   await t.page.click('#invSecciones [data-sec="existencias"]');
   // Kárdex largo: con 120 movimientos más se muestran de 50 en 50 y «Ver más» agrega los siguientes sin rehacer la lista.
@@ -1109,7 +1109,7 @@ try {
     const x = window.Vehiculos.tramosDe(ts), y = window.Vehiculos.tramosDe([ts[0], ts[2]]);
     return x.length === 1 && x[0].km === 300 && x[0].galones === 20 && x[0].valor === 200000 && x[0].kmGal === 15 && y.length === 1 && y[0].galones === 12 && y[0].kmGal === 25;
   }));
-  log('un tanqueo que rinde mucho menos (100 km con 20 galones = 5 km por galón) se guarda y avisa a Transporte, Bodega y la Jefe', await nuevoTanq('ve-abc123', 45600, 20, 258000) && await (async () => { const av = Object.values((await dat()).avisos).filter(a => a.titulo === 'Consumo raro en un carro'); return av.length === 3 && ['carros', 'asistente', 'jefe'].every(r => av.some(a => a.para === r)) && av.every(a => /ABC 123 rindió 5,0 km por galón; lo normal es 26,\d/.test(a.texto)); })());
+  log('un tanqueo que rinde mucho menos (100 km con 20 galones = 5 km por galón) se guarda y avisa a Transporte, Bodega y la Jefe', await nuevoTanq('ve-abc123', 45600, 20, 258000) && await (async () => { const av = Object.values((await dat()).avisos).filter(a => a.titulo === 'Consumo raro en un carro'); return av.length === 3 && ['carros', 'asistente', 'jefe'].every(r => av.some(a => a.para === r)) && av.every(a => /ABC 123 rindió 5,0 km por galón; lo normal es 28,\d/.test(a.texto)); })());
   log('un tanqueo sin llenar el tanque se guarda como parcial (lleno: falso) y no avisa nada', await nuevoTanq('ve-jkl012', 21400, 5, 77500, false) && await (async () => { const d = await dat(), x = Object.values(d.tanqueos).find(y => y.km === 21400); return !!x && x.lleno === false && Object.values(d.avisos).filter(a => a.titulo === 'Consumo raro en un carro').length === 3; })());
   await t.page.click('#vehSecciones [data-sec="tanqueos"]');
   log('el Conductor ve «Tanqueos» con los 20, el botón para registrar otro, y avisa que hay 2 con consumo raro', await hasta(t.page, () => document.querySelectorAll('#vehContenido .list .card').length === 20 && !!document.querySelector('#vehContenido [data-accion="tanqueo"]') && /2 tanqueos con consumo raro/.test(document.getElementById('vehContenido').textContent)), await texto(t.page, '#vehContenido'));
@@ -1131,8 +1131,8 @@ try {
   log('para reportar pide contar qué falla', await errVeh(/Cuenta qué falla/));
   await t.page.fill('#vsObs', 'Al frenar el pedal baja hasta el fondo');
   await t.page.click('#vePrimario');
-  log('y pide al menos una foto del problema', await errVeh(/al menos una foto/));
-  await t.page.setInputFiles('#vf_frente', IMG); await hasta(t.page, () => !document.getElementById('vf_frenteVer').hidden);
+  log('y pide la foto del problema (aparte de las 5 de la salida)', await errVeh(/foto del problema/));
+  await t.page.setInputFiles('#vf_problema', IMG); await hasta(t.page, () => !document.getElementById('vf_problemaVer').hidden);
   const entregas0 = Object.keys((await dat()).entregas).length;
   log('con una foto y la observación, reporta el problema y la hoja se cierra', await guardarVeh());
   log('el carro NO salió (sigue disponible y no hay salida nueva) y quedó una novedad sin revisar con la foto y lo que falla', await (async () => { const d = await dat(); const n = Object.values(d.novedades).find(x => /Revisión antes de salir: frenos mal/.test(x.descripcion)); return !!n && d.vehiculos['ve-jkl012'].estado === 'disponible' && Object.keys(d.entregas).length === entregas0 && !n.revisada && n.tipo === 'mantenimiento' && /pedal baja/.test(n.descripcion) && /^data:image\/jpeg/.test(n.foto) && n.costo === 0; })());
@@ -1381,7 +1381,7 @@ try {
   const cambiarCorreo = async (correo, rol) => { await t.page.click('#btnPersona'); await t.page.waitForSelector('#shPersona:not([hidden])'); await t.page.evaluate(() => document.querySelectorAll('#personaLista details.grupo-personas').forEach(d => { d.open = true; })); await t.page.click(`#personaLista [data-correo="${correo}"]`); return hasta(t.page, r => document.getElementById('avatarTop').classList.contains('av-' + r) && document.getElementById('shPersona').hidden, rol); };
   log('cambia a Santiago Valencia (Gerente, pero no general)', await cambiarCorreo('gerente.santiago.valencia@example.com', 'gerente'));
   await t.page.click('.tab[data-vista="inventario"]');
-  log('el Gerente que no es general solo ve: sin «Te toca a ti», sin botón de monto y con el aviso de quién autoriza', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return /Solo ves/.test(x) && /Coordinadora de compras/.test(x) && /Gerente general/.test(x) && !/Te toca a ti/.test(x) && !document.querySelector('#invContenido [data-accion="autorizar"], #invContenido [data-accion="monto"]'); }), await texto(t.page, '#invContenido'));
+  log('el Gerente que no es general solo ve: sin «Te toca a ti», sin botón de monto y con el aviso de quién autoriza', await hasta(t.page, () => { const x = document.getElementById('invContenido').textContent; return /Solo ves/.test(x) && /Coordinador de compras/.test(x) && /Gerente general/.test(x) && !/Te toca a ti/.test(x) && !document.querySelector('#invContenido [data-accion="autorizar"], #invContenido [data-accion="monto"]'); }), await texto(t.page, '#invContenido'));
   log('para él el botón dice «Pedir una compra» (no «Hacer»: su compra no nace autorizada)', (await texto(t.page, '#btnPedirCompraTxt')) === 'Pedir una compra');
   await t.page.click('#invSecciones [data-sec="compras"]');
   await abrirHojaInv('#invContenido [data-accion="vercompra"][data-id="co-001"]');
@@ -2045,7 +2045,7 @@ try {
   log('cambia a Carolina Castillo otra vez', await cambiar(t.page, 'jefe'));
   await irReu('hacer');
   await tocarReu('carros', nec('carros').id); await t.page.selectOption('#rcCond0', 'Hernán Brito');
-  log('la Jefe escoge otro conductor: Hernán en el ABC 123 y los viajes viejos se cancelan', await guardarReu() && await (async () => { o = await oriente(); const vs = o.ns.filter(n => n.tipo === 'viaje' && n.estado === 'pendiente'); return vs.length === 2 && vs.some(n => n.conductor === 'Hernán Brito' && n.placa === 'ABC 123') && vs.some(n => n.conductor === 'Rafael Ospino' && n.placa === 'JKL 012') && o.ns.filter(n => n.tipo === 'viaje' && n.estado === 'cancelado').length === 1; })());
+  log('la Jefe escoge otro conductor: Hernán en el ABC 123, y el viaje de Rafael (que ya estaba) sigue vigente, sin cancelarse ni rehacerse', await guardarReu() && await (async () => { o = await oriente(); const vs = o.ns.filter(n => n.tipo === 'viaje' && n.estado === 'pendiente'); return vs.length === 2 && vs.some(n => n.conductor === 'Hernán Brito' && n.placa === 'ABC 123') && vs.some(n => n.conductor === 'Rafael Ospino' && n.placa === 'JKL 012') && o.ns.filter(n => n.tipo === 'viaje' && n.estado === 'cancelado').length === 0; })());
   log('cambia a Pedro (Logística)', await cambiar(t.page, 'logistica'));
   await irReu('hacer');
   await tocarReu('logistica', nec('logistica').id);
@@ -2397,7 +2397,9 @@ try {
   await t.page.click('#acCerrar'); await hasta(t.page, () => document.getElementById('shAccion').hidden);
   await fingirCod('ZZZ999');
   await t.page.click('#invContenido [data-accion="escanear"]');
-  log('escanear un código que no existe lo dice y lo deja escrito en el buscador', await hasta(t.page, () => /No hay un artículo con el código ZZZ999/.test(document.getElementById('toast').textContent) && document.getElementById('qInventario').value === 'ZZZ999'));
+  log('escanear un código que no existe (con permiso de Bodega) ofrece «Agregar artículo con este código»', await hasta(t.page, () => !document.getElementById('shConfirmar').hidden && /No hay un artículo con el código ZZZ999/.test(document.getElementById('shConfirmar').textContent) && /Agregar artículo con este código/.test(document.getElementById('cfSi').textContent)));
+  await t.page.click('#cfNo');
+  log('y si se dice que no, lo dice y lo deja escrito en el buscador', await hasta(t.page, () => /No hay un artículo con el código ZZZ999/.test(document.getElementById('toast').textContent) && document.getElementById('qInventario').value === 'ZZZ999'));
   await t.page.fill('#qInventario', '');
   await t.page.evaluate(() => window.nube.lote([['mezclar', 'articulos', 'ar-017', { codigo: 'BOT042' }]]));
   await fingirCod('BOT042');

@@ -22,7 +22,9 @@
   // Las tareas viejas sin correo las decide cualquiera de ese rol.
   const correoMio = () => (persona() ? String(persona().correo || '').toLowerCase() : '');
   const esDeOtro = n => !!n.responsableCorreo && String(n.responsableCorreo).toLowerCase() !== correoMio();
-  const puedoHacerTarea = n => esJefe() || (miRol() === n.responsableRol && !esDeOtro(n));
+  // Con el nivel «Solo ver» (la Jefe se lo puso a esa persona) no se informa ni se decide nada, aunque su rol sí lo hiciera.
+  const soloVer = () => perm() === 'ver';
+  const puedoHacerTarea = n => !soloVer() && (esJefe() || (miRol() === n.responsableRol && !esDeOtro(n)));
   // Administrativa con el permiso extra «encargada»: ve todas las tareas y la bandeja de correos (sin autorizar).
   const esEncargada = () => miRol() === 'administrativo' && A().tieneExtra('encargada');
   const ahora = () => new Date().toISOString();
@@ -42,8 +44,11 @@
   let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], fotoActa = '';
 
   /* ---------- datos derivados ---------- */
-  const reunionPorId = id => D().reuniones.find(r => r.id === id) || null;
-  const necDe = id => D().necesidades.filter(n => n.reunionId === id);
+  const reunionPorId = id => window.UI.indice(D().reuniones).get(id) || null;
+  /** Un carro de esta reunión salió y todavía no llegó: no se cambia ni se cancela la reunión hasta que llegue (si no, quedaría «en uso» sin viaje). */
+  const carroEnRuta = rId => { const ent = D().entregas || []; return ent.some(e => e.reunionId === rId && e.tipo === 'salida' && !ent.some(l => l.reunionId === rId && l.vehiculoId === e.vehiculoId && l.tipo === 'llegada' && String(l.fecha) >= String(e.fecha))); };
+  const MSG_EN_RUTA = 'Un carro de esta reunión ya salió y todavía no llegó. Primero registren su llegada en Vehículos.';
+  const necDe = id => (window.UI.agrupar(D().necesidades, 'reunionId').get(id) || []).slice();
   const hoy = () => A().hoyISO();
   const yaPaso = r => String(r.fecha) <= hoy();
   const nombreRol = rol => { const p = window.DEMO.porRol(rol), r = window.DEMO.rolDe(rol); return persona() && persona().prueba && p ? p.corto : (r ? r.rolTxt : rol); };
@@ -57,7 +62,7 @@
   const informes = n => (Array.isArray(n.informes) ? n.informes : []).filter(i => i && typeof i === 'object');
   const informantes = n => INFORMAN[n.tipo] || [];
   /** ¿Quien tiene la sesión puede informar en esta tarea? (le toca informar y todavía no lo hizo) */
-  const puedeInformar = n => esTarea(n) && informantes(n).includes(miRol()) && !informes(n).some(i => i.rol === miRol());
+  const puedeInformar = n => !soloVer() && esTarea(n) && informantes(n).includes(miRol()) && !informes(n).some(i => i.rol === miRol());
   const puedeDecidir = n => esTarea(n) && puedoHacerTarea(n);
   /** Tarea de quien tiene la sesión: le toca hacerla o informar. */
   const esMia = n => esTarea(n) && ((n.responsableRol === miRol() && !esDeOtro(n)) || puedeInformar(n));
@@ -253,7 +258,9 @@
     const App = A(), ts = tareas(), rs = D().reuniones, n = resumen();
     const orden = ['jefe', 'compras', 'carros', 'asistente', 'conductor', 'logistica', 'profesional', 'administrativo'];
     const leToca = (t, rol) => t.responsableRol === rol || (informantes(t).includes(rol) && !informes(t).some(i => i.rol === rol));
-    const porRol = orden.map(rol => [nombreRol(rol), ts.filter(t => leToca(t, rol)).length]).filter(x => x[1] > 0);
+    // Cada barra dice quién es (en la demo, la persona y su rol; con cuentas propias, el rol) y cuántas tareas le tocan.
+    const quien = rol => { const p = window.DEMO.porRol(rol), r = window.DEMO.rolDe(rol); return persona() && persona().prueba && p && r ? `${p.corto} · ${r.rolTxt}` : nombreRol(rol); };
+    const porRol = orden.map(rol => [quien(rol), ts.filter(t => leToca(t, rol)).length]).filter(x => x[1] > 0);
     const max = Math.max(1, ...porRol.map(x => x[1]));
     const delMes = rs.filter(r => r.estado === 'realizada' && String(r.fecha).slice(0, 7) === hoy().slice(0, 7));
     const asistentes = delMes.reduce((s, r) => { const a = necDe(r.id).find(x => x.tipo === 'acta'); return s + num(a && a.acta && a.acta.asistentes); }, 0);
@@ -262,7 +269,7 @@
       <div class="card"><span class="meta">Realizadas este mes</span><span class="rm-n">${delMes.length}</span><span class="meta">${asistentes} asistentes en las actas</span></div>
       <div class="card"><span class="meta">Actas por registrar</span><span class="rm-n">${n.actas}</span>${n.actas ? App.pill('Le toca a ' + nombreRol('administrativo'), 's-peligro', 'aviso') : App.pill('Al día', 's-disco', 'check')}</div>
     </div>`;
-    h += `<div class="section-label">Tareas pendientes por persona</div><div class="card">${porRol.length ? `<div class="barras">${porRol.map(([t, v]) => `<div class="bf"><span class="bf-n">${esH(t)}</span><span class="bf-b"><i style="width:${Math.max(4, Math.round(v / max * 100))}%"></i></span><span class="bf-v">${v}</span></div>`).join('')}</div>` : '<p class="meta">Nadie tiene tareas pendientes.</p>'}</div>`;
+    h += `<div class="section-label">Tareas pendientes por persona (cada una espera que esa persona responda o informe)</div><div class="card">${porRol.length ? `<div class="barras">${porRol.map(([t, v]) => `<div class="bf"><span class="bf-n">${esH(t)}</span><span class="bf-v">${v} ${v === 1 ? 'tarea' : 'tareas'}</span><span class="bf-b" role="img" aria-label="${esH(t)}: ${v} ${v === 1 ? 'tarea' : 'tareas'} de un máximo de ${max}"><i style="width:${Math.max(4, Math.round(v / max * 100))}%"></i></span></div>`).join('')}</div>` : '<p class="meta">Nadie tiene tareas pendientes.</p>'}</div>`;
     h += `<div class="section-label">Próximas reuniones</div>` + htmlLista(true);
     return h;
   }
@@ -274,7 +281,7 @@
   const marca = (id, lbl, ok) => `<label class="marca-fila"><input type="checkbox" id="${id}"${ok ? ' checked' : ''}><span>${esH(lbl)}</span></label>`;
   const valor = id => ($(id) ? $(id).value.trim() : '');
   const entero = id => { const v = valor(id); return /^\d+$/.test(v) ? Number(v) : NaN; };
-  function fallar(msg, id) { const e = $('reErr'); e.textContent = msg; e.hidden = false; if (id && $(id)) $(id).focus(); return false; }
+  function fallar(msg, id) { const e = $('reErr'); e.textContent = msg; e.hidden = false; window.UI.marcarInvalido(id ? $(id) : null, 'reErr'); if (id && $(id)) $(id).focus(); return false; }
   function abrir(o) {
     accion = o;
     $('reT').textContent = o.titulo; $('reSub').textContent = o.sub || '';
@@ -286,6 +293,8 @@
     $('reCerrar').textContent = o.primario ? 'Cancelar' : 'Cerrar';
     $('reErr').hidden = true;
     A().abrirHoja('shReu');
+    // Con formulario (botón de guardar): si se escribió algo y se cierra, pregunta «¿Salir sin guardar?».
+    if (o.primario) A().vigilar('shReu', () => $('reForm'), () => fotoActa.length); else A().vigilar('shReu', () => null);
     const sh = $('shReu').querySelector('.sheet'); if (sh) sh.scrollTop = 0;
   }
   function aviso(para, titulo, txt) {
@@ -296,9 +305,11 @@
   const historial = r => (Array.isArray(r.historial) ? r.historial : []).filter(x => x && typeof x === 'object');
   const paso = (r, texto, por) => historial(r).concat([{ fecha: ahora(), texto, por: por || persona().nombre }]);
   const hecho = extra => Object.assign({ por: persona().nombre, en: ahora() }, extra || {});
+  let preparandoFoto = 0;   // mientras una foto se achica no se guarda (si no, el acta se guardaría sin ella)
   async function guardar() {
     if (guardando || !accion || !accion.ops) return;
     $('reErr').hidden = true;
+    if (preparandoFoto) return fallar('Espera un momento: todavía se está preparando la foto.');
     // Si la tarea o la reunión cambió mientras la hoja estaba abierta (otra persona actuó), no se escribe encima.
     if (accion.base) {
       const act = necPorId(accion.base.id);
@@ -327,7 +338,7 @@
   }
   function notificar(envios) {
     if (!window.Push || !envios.length) return;
-    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#reuniones', etiqueta: 'reuniones' })).catch(() => {}));
+    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#reuniones', etiqueta: window.Push.etiqueta('reuniones', e.titulo, e.texto) })).catch(() => {}));
   }
 
   /* ---------- el agente ---------- */
@@ -528,7 +539,7 @@
         const ops = [['mezclar', 'reuniones', r.id, { lugar, asistentes: asis, faltan, correos: (Array.isArray(r.correos) ? r.correos : []).concat([c.id]), historial: paso(r, `Datos nuevos del correo (${cambios})`, persona().nombre) }]];
         const comida = necDe(r.id).filter(n => ['refrigerios', 'almuerzo'].includes(n.tipo) && n.estado !== 'cancelado');
         if (asis !== num(r.asistentes)) comida.forEach(n => ops.push(['mezclar', 'necesidades', n.id, Object.assign({ cantidad: asis, detalle: `${(TIPO[n.tipo] || [''])[0]} para ${plural(asis, 'persona', 'personas')}` },
-          n.estado === 'autorizado' || n.estado === 'rechazado' ? { estado: 'pendiente', motivo: `Cambió el número de personas a ${asis}: revísalo otra vez` } : {})]));
+          n.estado === 'autorizado' || n.estado === 'rechazado' ? { estado: 'pendiente', informes: [], por: '', en: '', motivo: `Cambió el número de personas a ${asis}: revísalo otra vez` } : {})]));
         necDe(r.id).filter(n => n.tipo === 'logistica' && n.estado !== 'cancelado').forEach(n => ops.push(['mezclar', 'necesidades', n.id, { detalle: `Alistar ${lugar || 'el lugar'} para ${plural(asis, 'persona', 'personas')}` }]));
         if (asis !== num(r.asistentes) && comida.length) ['compras', 'asistente'].forEach(rol => ops.push(aviso(rol, 'Cambió la comida de una reunión', `${r.comunidad}: ahora son ${asis} personas. Informa otra vez lo que hay.`)));
         ops.push(aviso('logistica', 'Datos nuevos de una reunión', `${r.comunidad}: ${cambios}.`));
@@ -549,14 +560,17 @@
         const fecha = valor('rcFecha'), hora = valor('rcHora'), motivo = valor('rcMotivo');
         if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || fecha < hoy()) return fallar('Escribe una fecha nueva que no haya pasado.', 'rcFecha');
         if (!/^\d{2}:\d{2}$/.test(hora)) return fallar('Escribe la hora.', 'rcHora');
+        if (carroEnRuta(r.id)) return fallar(MSG_EN_RUTA);
+        if (D().reuniones.some(x => x.id !== r.id && ACTIVA.includes(x.estado) && normal(x.comunidad) === normal(r.comunidad) && x.fecha === fecha)) return fallar('Ya hay otra reunión de esa comunidad ese día.', 'rcFecha');
         const antes = `${A().fechaCorta(r.fecha)} ${hora12(r.hora)}`, despues = `${A().fechaCorta(fecha)} ${hora12(hora)}`;
         const ops = [['mezclar', 'reuniones', r.id, { fecha, hora, estado: 'reprogramada', correos: (Array.isArray(r.correos) ? r.correos : []).concat([c.id]), historial: paso(r, `Cambió del ${antes} al ${despues}${motivo ? ': ' + motivo : ''}`, persona().nombre) }]];
         const roles = new Set();
         necDe(r.id).filter(n => n.estado !== 'cancelado').forEach(n => {
           let cambio = { fechaReunion: fecha };
           if (n.tipo === 'viaje') cambio = Object.assign(cambio, { estado: 'cancelado', motivo: 'La reunión cambió de fecha' });
-          else if (n.tipo === 'carros') cambio = Object.assign(cambio, { estado: 'pendiente', conductor: '', motivo: `La reunión cambió al ${despues}: revisa otra vez` });
-          else if (['refrigerios', 'almuerzo', 'asistencia'].includes(n.tipo) && n.estado !== 'pendiente') cambio = Object.assign(cambio, { estado: 'pendiente', motivo: `La reunión cambió al ${despues}: revisa otra vez` });
+          // Al volver a pendiente se borra lo que ya se había informado y quién decidió: así pueden volver a informar para la fecha nueva.
+          else if (n.tipo === 'carros') cambio = Object.assign(cambio, { estado: 'pendiente', conductor: '', vehiculos: [], informes: [], por: '', en: '', motivo: `La reunión cambió al ${despues}: revisa otra vez` });
+          else if (['refrigerios', 'almuerzo', 'asistencia'].includes(n.tipo) && n.estado !== 'pendiente') cambio = Object.assign(cambio, { estado: 'pendiente', informes: [], por: '', en: '', motivo: `La reunión cambió al ${despues}: revisa otra vez` });
           ops.push(['mezclar', 'necesidades', n.id, cambio]);
           roles.add(n.responsableRol); informantes(n).forEach(x => roles.add(x));
         });
@@ -573,6 +587,7 @@
       primario: 'Cancelar la reunión y avisar', icono: 'x', listo: 'Listo: reunión cancelada y avisos enviados.',
       ops: () => {
         const motivo = valor('rcMotivo') || 'Sin motivo';
+        if (carroEnRuta(r.id)) return fallar(MSG_EN_RUTA);
         const ops = [['mezclar', 'reuniones', r.id, { estado: 'cancelada', motivo, correos: (Array.isArray(r.correos) ? r.correos : []).concat([c.id]), historial: paso(r, `Reunión cancelada: ${motivo}`, persona().nombre) }]];
         const roles = new Set();
         necDe(r.id).filter(n => n.estado !== 'cancelado').forEach(n => { ops.push(['mezclar', 'necesidades', n.id, { estado: 'cancelado', motivo: 'La reunión se canceló' }]); roles.add(n.responsableRol); informantes(n).forEach(x => roles.add(x)); });
@@ -609,12 +624,16 @@
     // Si un carro de esta reunión ya salió, primero se registra su llegada (si no, quedaría en uso sin viaje).
     const ent = (A().S.datos.entregas || []);
     const yaSalio = necDe(n.reunionId).some(x => x.tipo === 'viaje' && ['pendiente', 'listo'].includes(x.estado) && ent.some(e => e.reunionId === n.reunionId && e.vehiculoId === x.vehiculoId && e.tipo === 'salida') && !ent.some(e => e.reunionId === n.reunionId && e.vehiculoId === x.vehiculoId && e.tipo === 'llegada'));
-    const libres = yaSalio ? [] : window.Vehiculos ? window.Vehiculos.libresPara(n.fechaReunion, n.reunionId) : [];
-    const cant = Math.min(pedidos, libres.length, CONDUCTORES.length);
+    // Los viajes que siguen vigentes (por ejemplo, el otro conductor ya confirmó cuando uno dijo «no puedo») se respetan: solo se reponen los que faltan.
+    const mantenidos = necDe(n.reunionId).filter(x => x.tipo === 'viaje' && x.carrosId === n.id && ['pendiente', 'listo'].includes(x.estado) && x.vehiculoId);
+    const kv = new Set(mantenidos.map(x => x.vehiculoId)), kc = new Set(mantenidos.map(x => x.conductor));
+    const libresDe = () => (window.Vehiculos ? window.Vehiculos.libresPara(n.fechaReunion, n.reunionId) : []).filter(v => !kv.has(v.id));
+    const libres = yaSalio ? [] : libresDe(), condsLibres = CONDUCTORES.filter(c => !kc.has(c)), faltan = mantenidos.length ? Math.max(0, pedidos - mantenidos.length) : pedidos;
+    const cant = Math.min(faltan, libres.length, condsLibres.length);
     const opcVeh = libres.map(v => [v.id, `${v.placa} · ${v.marca} ${v.modelo}${v.estado === 'en-uso' ? ' (hoy en uso)' : ''}`]);
-    const filas = Array.from({ length: cant }, (_, k) => `<div class="fields cols">${campoSel('rcVeh' + k, `Camioneta ${cant > 1 ? k + 1 : ''}`.trim(), opcVeh, (opcVeh[k] || opcVeh[0] || [''])[0])}${campoSel('rcCond' + k, 'Conductor', CONDUCTORES.map(x => [x, x]), CONDUCTORES[k % CONDUCTORES.length])}</div>`).join('');
+    const filas = Array.from({ length: cant }, (_, k) => `<div class="fields cols">${campoSel('rcVeh' + k, `Camioneta ${cant > 1 ? k + 1 : ''}`.trim(), opcVeh, (opcVeh[k] || opcVeh[0] || [''])[0])}${campoSel('rcCond' + k, 'Conductor', condsLibres.map(x => [x, x]), condsLibres[k % condsLibres.length])}</div>`).join('');
     abrir({ titulo: 'Autorizar carros y escoger conductor', sub: `${n.detalle}. ${r ? r.comunidad + ', ' + fechaTxt(r) : ''}`,
-      campos: htmlInformes(n) + (yaSalio ? '<div class="note">Un carro de esta reunión ya salió. Primero registren su llegada en Vehículos.</div>'
+      campos: htmlInformes(n) + (mantenidos.length ? `<div class="note">Siguen vigentes: ${esH(mantenidos.map(x => `${x.placa} con ${x.conductor}`).join('; '))}. Solo falta${faltan === 1 ? '' : 'n'} ${faltan} ${faltan === 1 ? 'carro' : 'carros'}.</div>` : '') + (yaSalio ? '<div class="note">Un carro de esta reunión ya salió. Primero registren su llegada en Vehículos.</div>'
         : opcVeh.length ? (cant < pedidos ? `<div class="note">Pidieron ${pedidos} camionetas, pero ese día solo hay ${cant} con carro y conductor libres.</div>` : '') + filas + '<p class="meta">Solo salen los carros que no están en el taller, tienen el SOAT y la técnico-mecánica al día ese día y no van a otra reunión.</p>'
         : '<div class="note">No hay carros libres con los papeles al día para esa fecha. Revisa Vehículos.</div>'),
       primario: opcVeh.length ? 'Autorizar y avisar' : '', icono: 'carro', listo: 'Listo: carros autorizados. Los conductores ya tienen el aviso.',
@@ -623,11 +642,14 @@
         const ids = asign.map(a => a.vehiculoId), conds = asign.map(a => a.conductor);
         if (new Set(ids).size !== ids.length) return fallar('Escogiste el mismo carro dos veces.');
         if (new Set(conds).size !== conds.length) return fallar('Escogiste el mismo conductor dos veces.');
-        const vs = asign.map(a => Object.assign({}, a, { placa: (libres.find(v => v.id === a.vehiculoId) || {}).placa || '' }));
+        // Se vuelve a mirar qué carros están libres AHORA (otra persona pudo reservarlos mientras esta hoja estaba abierta).
+        const libresAhora = libresDe();
+        const vs = asign.map(a => Object.assign({}, a, { placa: (libresAhora.find(v => v.id === a.vehiculoId) || {}).placa || '' }));
         if (vs.some(a => !a.placa)) return fallar('Ese carro ya no está libre. Cierra y abre otra vez.');
-        // Si había viajes viejos de esta reunión (por ejemplo, un conductor dijo que no podía), se cancelan.
-        const ops = necDe(n.reunionId).filter(x => x.tipo === 'viaje' && ['pendiente', 'listo'].includes(x.estado)).map(x => ['mezclar', 'necesidades', x.id, { estado: 'cancelado', motivo: 'La Jefe volvió a asignar los carros' }]);
-        ops.push(['mezclar', 'necesidades', n.id, hecho({ estado: 'autorizado', conductor: conds.join(', '), vehiculos: vs, motivo: '' })]);
+        // Los viajes vigentes de ESTA autorización se respetan; los de una autorización anterior (otra versión) se cancelan.
+        const ops = necDe(n.reunionId).filter(x => x.tipo === 'viaje' && ['pendiente', 'listo'].includes(x.estado) && x.carrosId !== n.id).map(x => ['mezclar', 'necesidades', x.id, { estado: 'cancelado', motivo: 'La Jefe volvió a asignar los carros' }]);
+        const todos = mantenidos.map(x => ({ vehiculoId: x.vehiculoId, placa: x.placa, conductor: x.conductor })).concat(vs);
+        ops.push(['mezclar', 'necesidades', n.id, hecho({ estado: 'autorizado', conductor: todos.map(a => a.conductor).join(', '), vehiculos: todos, motivo: '' })]);
         vs.forEach(a => {
           ops.push(['set', 'necesidades', window.nube.idNuevo('ne'), { reunionId: n.reunionId, comunidad: n.comunidad, fechaReunion: n.fechaReunion, tipo: 'viaje', detalle: `Llevar al equipo a la ${n.comunidad} en el ${a.placa}`, cantidad: 1,
             responsableRol: 'conductor', estado: 'pendiente', por: '', en: '', motivo: '', conductor: a.conductor, items: [], acta: null, informes: [], vehiculoId: a.vehiculoId, placa: a.placa, carrosId: n.id,
@@ -666,7 +688,11 @@
         if (viaje) {
           const carro = necDe(n.reunionId).find(x => x.tipo === 'carros' && x.estado === 'autorizado');
           const carro2 = (n.carrosId && necDe(n.reunionId).find(x => x.id === n.carrosId && x.estado === 'autorizado')) || carro;
-          if (carro2) ops.push(['mezclar', 'necesidades', carro2.id, { estado: 'pendiente', conductor: '', motivo: `${n.conductor} no puede: ${valor('rcMotivo')}`, devuelto: n.id }]);
+          // Solo se suelta el carro y el conductor de ESTE viaje; el del otro conductor (ya confirmado o por confirmar) sigue vigente.
+          if (carro2) {
+            const resto = (Array.isArray(carro2.vehiculos) ? carro2.vehiculos : []).filter(a => a && a.vehiculoId !== n.vehiculoId);
+            ops.push(['mezclar', 'necesidades', carro2.id, { estado: 'pendiente', conductor: resto.map(a => a.conductor).join(', '), vehiculos: resto, motivo: `${n.conductor} no puede: ${valor('rcMotivo')}`, devuelto: n.id }]);
+          }
           ['jefe', 'carros'].forEach(rol => ops.push(aviso(rol, 'El conductor no puede', `${n.comunidad}: ${n.conductor} no puede (${valor('rcMotivo')}). Hay que escoger otro conductor.`)));
         } else ops.push(aviso('jefe', 'Alguien no va a una reunión', `${persona().nombre} no va a la ${n.comunidad}: ${valor('rcMotivo')}.`));
         return ops;
@@ -711,8 +737,10 @@
     $('rcFoto').addEventListener('change', async e => {
       const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
       $('rcFotoTxt').textContent = 'Preparando la foto…';
+      preparandoFoto++; $('rePrimario').disabled = true;
       try { fotoActa = await window.Inventario.leerFoto(f); const v = $('rcFotoVer'); v.src = fotoActa; v.hidden = false; $('rcFotoTxt').textContent = 'Cambiar foto'; $('reErr').hidden = true; }
       catch (er) { fotoActa = ''; $('rcFotoTxt').textContent = 'Tomar o escoger foto'; fallar(er.message === 'grande' ? 'La foto es muy pesada. Toma otra más de cerca.' : 'Ese archivo no es una foto. Escoge una imagen.'); }
+      finally { preparandoFoto = Math.max(0, preparandoFoto - 1); if (!preparandoFoto && !guardando && $('rePrimario')) $('rePrimario').disabled = false; }
     });
     return true;
   }
@@ -805,6 +833,10 @@
     revisarTodo: filas => { const n = {}; filas.filter(x => x.tipo === 'agregar' && !x.errores.length).forEach(x => { n[normal(x.v.comunidad)] = (n[normal(x.v.comunidad)] || 0) + 1; });
       filas.forEach(x => { if (x.tipo === 'agregar' && !x.errores.length && n[normal(x.v.comunidad)] > 1) x.errores.push('Esa comunidad está repetida en el Excel (una reunión activa por comunidad).'); }); },
     resumenNuevo: v => [`${v.fecha} a las ${v.hora}`, v.lugar || 'falta el lugar', v.asis ? plural(v.asis, 'persona', 'personas') : 'faltan las personas', v.carros ? plural(v.carros, 'camioneta', 'camionetas') : '', v.ref === 'Sí' ? 'refrigerio' : '', v.alm === 'Sí' ? 'almuerzo' : ''].filter(Boolean).join(' · '),
+    despues: () => {   // las reuniones creadas desde el Excel avisan también al teléfono (como al confirmar un correo)
+      const vistos = new Set(), envios = pushPendientes.filter(e => { const k = e.para + '|' + e.titulo + '|' + e.texto; if (vistos.has(k)) return false; vistos.add(k); return true; });
+      pushPendientes = []; notificar(envios);
+    },
     opsAgregar: x => opsReunionNueva({ com: x.v.comunidad, fecha: x.v.fecha, hora: x.v.hora, lugar: x.v.lugar, asis: x.v.asis || 0, carros: x.v.carros || 0, ref: x.v.ref === 'Sí', alm: x.v.alm === 'Sí', items: [], inv: invitables(), invitados: invitables(), correoTxt: '', correoId: '', fuente: 'excel',
       historial: [{ fecha: ahora(), texto: 'Se creó desde un Excel', por: persona().nombre }, { fecha: ahora(), texto: 'La Jefe la revisó y repartió las tareas', por: persona().nombre }] })
   });

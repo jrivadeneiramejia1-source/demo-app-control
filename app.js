@@ -114,7 +114,7 @@
     if (S.entrando) return;
     const err = $('ctErr'), crear = modoCuenta === 'crear';
     const nombre = $('ctNombre').value.trim(), correo = $('ctCorreo').value.trim(), clave = $('ctClave').value, codigo = nube.limpiarCodigo($('ctCodigo').value);
-    const falla = (msg, id) => { err.textContent = msg; err.hidden = false; if (id) $(id).focus(); };
+    const falla = (msg, id) => { err.textContent = msg; err.hidden = false; UI.marcarInvalido(id ? $(id) : null, 'ctErr'); if (id) $(id).focus(); };
     err.hidden = true;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return falla('Escribe tu correo.', 'ctCorreo');
     if (!clave) return falla('Escribe la clave.', 'ctClave');
@@ -348,6 +348,17 @@
     pintarTodo();
   }
   const cargando = col => S.suscritas.has(col) && !S.llegaron.has(col);
+  /** Tocar una notificación con la app ya abierta (llega por mensaje del sw.js o porque cambió el # de la dirección): abre ese módulo. */
+  function abrirDesdeAviso(url) {
+    if (!S.persona) return;
+    let pedida;
+    try { pedida = (new URL(url || location.href, location.href).hash || '').slice(1); } catch (e) { return; }
+    if (!VISTAS[pedida] || !puedeVer(pedida)) return;
+    irA(pedida);
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* sin limpiar la dirección */ }
+  }
+  window.addEventListener('hashchange', () => abrirDesdeAviso(location.href));
+  try { if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.tipo === 'abrir') abrirDesdeAviso(e.data.url); }); } catch (e) { /* sin service worker */ }
 
   // Cuenta lo pendiente de cada módulo para la persona que tiene la sesión.
   function pendientes() {
@@ -420,7 +431,7 @@
     // Los avisos del inventario van a la función de cada quien (bodega, compras, jefe, gerente), que sale de su nivel y no solo de su rol.
     const fn = window.Inventario ? window.Inventario.funcion() : '';
     // Bodega con el permiso extra «compra» también recibe los avisos de Compras.
-    // La función «coordina» recibe lo que se avisa a la Coordinadora de compras (rol «coordcompras»), aunque la persona tenga otro rol.
+    // La función «coordina» recibe lo que se avisa al Coordinador de compras (rol «coordcompras»), aunque la persona tenga otro rol.
     const paraFn = fn === 'coordina' ? 'coordcompras' : fn;
     return S.datos.avisos.filter(a => a.para === rol || a.para === 'todos' || (paraFn && a.para === paraFn) || (a.para === 'compras' && permiso('inventario') === 'bodega' && tieneExtra('compra'))).sort((a, b) => String(b.en).localeCompare(String(a.en)));
   };

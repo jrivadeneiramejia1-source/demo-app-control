@@ -326,6 +326,10 @@ button.card .card-title { text-align: left; }
   body.imprimiendo > *:not(#impresion) { display: none !important; }
   body.imprimiendo #impresion { display: block; }
   #impresion .acta-doc { border: 0; font-size: 10pt; }
+  /* En el papel siempre se imprime negro sobre blanco, aunque el teléfono esté en modo oscuro. */
+  body.imprimiendo, body.imprimiendo #impresion { background: #fff !important; color: #000 !important; color-scheme: light; }
+  body.imprimiendo #impresion *, body.imprimiendo #impresion { color: #000 !important; background-color: transparent !important; border-color: #444 !important; }
+  body.imprimiendo #impresion img { background: #fff !important; }
 }
 
 /* Equipos: línea «Filtro: …» con su botón Quitar, y las tareas atrasadas de la Agenda */
@@ -404,3 +408,35 @@ main:has(> #vInventario.ancha:not([hidden])) { max-width: min(1240px, 100%); }
 .card.clic { cursor: pointer; transition: box-shadow .2s, border-color .15s; }
 .card.clic:hover { border-color: var(--control-line, #6b7f88); box-shadow: 0 2px 8px rgba(11, 64, 88, .12); }
 .card.clic:focus-visible { outline: 3px solid var(--focus, #1c6e93); outline-offset: 2px; }
+
+/* Quitar un equipo de la lista de verificados */
+.ver-lista li { display: flex; align-items: center; gap: 6px; }
+.ver-lista li .meta { flex: 1; min-width: 0; }
+.btn-x { min-width: 36px; min-height: 36px; border: 1px solid var(--control-line, #6b7f88); background: transparent; color: inherit; border-radius: 10px; font-size: 1.1rem; line-height: 1; cursor: pointer; }
+.btn-x:focus-visible { outline: 3px solid var(--focus, #1c6e93); outline-offset: 2px; }
+
+/* Visor de fotos a pantalla completa */
+.nov-foto, .ent-foto, img.factura { cursor: zoom-in; }
+.visor { position: fixed; inset: 0; z-index: 97; background: rgba(0, 0, 0, .94); display: grid; place-items: center; padding: 56px 12px 48px; }
+.visor-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; }
+.visor-pie { position: absolute; left: 0; right: 0; bottom: max(12px, env(safe-area-inset-bottom)); margin: 0; text-align: center; color: #e8f0ee; font-size: .9rem; padding: 0 56px; }
+.visor-x, .visor-n { position: absolute; min-width: 44px; min-height: 44px; border: 1px solid rgba(255, 255, 255, .45); background: rgba(255, 255, 255, .12); color: #fff; border-radius: 12px; font-size: 1.6rem; line-height: 1; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.visor-x { top: max(10px, env(safe-area-inset-top)); right: 10px; }
+.visor-x .ph { width: 22px; height: 22px; }
+.visor-n { top: 50%; transform: translateY(-50%); }
+.visor-ant { left: 8px; }
+.visor-sig { right: 8px; }
+.visor button:focus-visible { outline: 3px solid #ffd27a; outline-offset: 2px; }
+
+/* Móvil y accesibilidad */
+/* Tablas anchas dentro de las hojas: se mueven de lado con el dedo (no ensanchan la hoja) */
+.tabla-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+/* En el iPhone un campo con letra menor de 16 px hace que la pantalla se agrande sola al tocarlo */
+.tabla-inv input, .tabla-inv select, .lineas-tabla input, .lineas-tabla select, td input, td select, .otro-fila input, .otros input, .conteo-f input, .linea-extra input, .linea-extra select { font-size: 16px; }
+/* Con pantalla táctil, lo que se toca mide al menos 44 px */
+@media (pointer: coarse) {
+  .btn.small, .chip, .btn-scan, .btn-x, .th-orden, .fila-nombre, .check, .tabs .tab { min-height: 44px; }
+  .btn.small, .btn-x, .btn-scan { min-width: 44px; }
+}
+/* Quien tiene la sesión (debajo del nombre) se lee bien sobre el encabezado */
+.persona-txt small { font-size: .74rem; color: var(--hero-ink); opacity: .92; }

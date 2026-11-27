@@ -22,7 +22,9 @@ const API_KEY = 'AIzaSyAo58h-I2Ejfa_fINZtXpwTe4iEjBbCxLg';
 const ROBOT = 'buzon.demo@example.com';
 // Solo correos sin leer de los últimos 7 días, de los REMITENTES, que hablen de una reunión.
 // Los demás correos del buzón ni se miran ni se tocan.
-const BUSQUEDA = 'in:inbox is:unread newer_than:7d -label:buzon-error (reunion OR reunión OR reuniones)';
+// (La etiqueta «buzon-error» solo avisa: ya no excluye el hilo, porque así una respuesta nueva en un hilo con un correo rechazado quedaba tapada para siempre.
+// Lo ya rechazado queda leído, así que no se vuelve a intentar.)
+const BUSQUEDA = 'in:inbox is:unread newer_than:7d (reunion OR reunión OR reuniones)';
 const conRemitentes = lista => BUSQUEDA + ' from:(' + lista.join(' OR ') + ')';
 const MAX_TEXTO = 7000;
 const ETIQUETA_ERROR = 'buzon-error';
@@ -43,7 +45,8 @@ function revisarBuzon() {
     const de = correoDe(m.getFrom());
     if (permitidos.indexOf(de) < 0) return;   // otro correo del mismo hilo que no es de los REMITENTES: no se toca
     if (!token) token = entrar(clave);
-    const r = subir(token, m);
+    let r = subir(token, m);
+    if (r === 'expirado') { token = entrar(clave); r = subir(token, m); }   // el token venció a mitad de la vuelta: se entra otra vez y se reintenta una vez
     if (r === 'ok') m.markRead();
     else if (r === 'rechazado') { m.markRead(); hilo.addLabel(GmailApp.getUserLabelByName(ETIQUETA_ERROR) || GmailApp.createLabel(ETIQUETA_ERROR)); }
     // 'despues' (sin internet, cupo o error de Google): queda sin leer y se intenta en la próxima vuelta.
@@ -61,8 +64,8 @@ function entrar(clave) {
   return j.idToken;
 }
 
-/** Guarda un correo en buzon/<id del correo>. Devuelve 'ok' (o ya estaba: 409), 'rechazado' (4xx: no se arregla solo)
-    o 'despues' (429 o error del servidor: se reintenta). */
+/** Guarda un correo en buzon/<id del correo>. Devuelve 'ok' (o ya estaba: 409), 'rechazado' (4xx: no se arregla solo),
+    'expirado' (401: el token venció) o 'despues' (408, 429 o error del servidor: se reintenta en la próxima vuelta). */
 function subir(token, m) {
   const id = String(m.getId()).replace(/[^A-Za-z0-9]/g, '').slice(0, 40);
   const texto = Array.from(tapar(limpiar(m.getPlainBody()))).slice(0, MAX_TEXTO).join('');   // por letras completas (no parte emojis)
@@ -77,21 +80,34 @@ function subir(token, m) {
   const codigo = r.getResponseCode();
   if (codigo === 200 || codigo === 409) return 'ok';
   console.log('No se guardó el correo «' + m.getSubject() + '»: ' + codigo + ' ' + r.getContentText().slice(0, 300));
-  return codigo >= 400 && codigo < 500 && codigo !== 429 ? 'rechazado' : 'despues';
+  if (codigo === 401) return 'expirado';
+  return codigo >= 400 && codigo < 500 && codigo !== 429 && codigo !== 408 ? 'rechazado' : 'despues';
 }
 
-/** Quita la firma («-- »), lo citado o reenviado de correos anteriores (Gmail y Outlook) y espacios de más. */
+/** Quita la firma («-- ») y lo citado de correos anteriores («El … escribió:», «On … wrote:», líneas con «>») y espacios de más.
+    Un correo REENVIADO conserva su contenido (que es justo lo que trae los datos de la reunión): solo se le quitan el rótulo
+    («---- Mensaje reenviado ----») y las líneas de encabezado (De/Para/Fecha/Asunto) del correo original. Una frase que empiece con «De: …»
+    no es un encabezado: solo se quita «De:» o «From:» cuando trae un correo (nombre <correo@…>). */
 function limpiar(t) {
   let s = '\n' + String(t || '').replace(/\r/g, '');
-  const corte = s.search(/\n-- ?\n|\nEl .{5,160} escribió:|\nOn .{5,160} wrote:|\n-{5,} ?(Forwarded message|Mensaje reenviado|Original Message|Mensaje original)|\n_{10,}|\n\*?(De|From):\*? .{0,200}\n/i);
+  const corte = s.search(/\n-- ?\n|\nEl .{5,160} escribió:|\nOn .{5,160} wrote:/);
   if (corte > 0) s = s.slice(0, corte);
-  return s.split('\n').filter(l => !/^\s*>/.test(l)).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  const sal = []; let enCabecera = false;
+  s.split('\n').forEach(l => {
+    if (/^\s*>/.test(l)) return;
+    if (/^\s*-{5,} ?(Forwarded message|Mensaje reenviado|Original Message|Mensaje original)[ -]*$/i.test(l) || /^\s*_{10,}\s*$/.test(l)) { enCabecera = false; return; }
+    if (/^\s*\*?(De|From):\*? .*(<[^>\s]*@[^>\s]*>|\S+@\S+)/i.test(l)) { enCabecera = true; return; }
+    if (enCabecera && /^\s*\*?(Enviado|Sent|Fecha|Date|Para|To|Cc|Asunto|Subject):\*? /i.test(l)) return;
+    enCabecera = false; sal.push(l);
+  });
+  return sal.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** Tapa correos y números de teléfono que aparezcan en el texto (la demo es pública). */
 function tapar(t) {
   return String(t || '').replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, '[correo]')
-    .replace(/\+?\d[\d\s().-]{8,}\d/g, m => (m.replace(/\D/g, '').length >= 10 ? '[teléfono]' : m));   // 10 dígitos o más (no tapa fechas)
+    // 10 dígitos o más seguidos son un teléfono. Una fecha («2026-11-27», «27/11/2026») o una fecha con hora («2026-11-27 08:30») NO se tapa.
+    .replace(/\+?\d[\d\s().-]{8,}\d(?!:)/g, m => (/^\d{4}-\d{2}-\d{2}/.test(m) || /^\d{1,2}[./-]\d{1,2}[./-]\d{2,4}/.test(m) || m.replace(/\D/g, '').length < 10 ? m : '[teléfono]'));
 }
 
 const correoDe = desde => { const m = /<([^>]+)>/.exec(String(desde || '')); return (m ? m[1] : String(desde || '')).trim().toLowerCase(); };

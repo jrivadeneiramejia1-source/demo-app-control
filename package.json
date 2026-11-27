@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "lint": "eslint .",
-    "pruebas": "npm run reglas && node pruebas/falso-prueba.mjs && node pruebas/worker.mjs && node pruebas/agente.mjs && node pruebas/buzon.mjs && node pruebas/push.mjs && node pruebas/prueba.mjs",
+    "pruebas": "npm run reglas && node pruebas/falso-prueba.mjs && node pruebas/worker.mjs && node pruebas/agente.mjs && node pruebas/buzon.mjs && node pruebas/push.mjs && node pruebas/prueba.mjs && node pruebas/mejoras.mjs",
     "reglas": "firebase emulators:exec --only firestore --project demo-reglas \"node pruebas/reglas.mjs\""
   },
   "devDependencies": {
