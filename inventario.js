@@ -134,7 +134,7 @@
   const ancho = () => { try { return window.matchMedia('(min-width: 900px)').matches; } catch (e) { return false; } };
   const leerVista = () => { try { return localStorage.getItem(LS_VISTA) === 'tabla' ? 'tabla' : 'tarjetas'; } catch (e) { return 'tarjetas'; } };
   const guardarVista = v => { try { localStorage.setItem(LS_VISTA, v === 'tabla' ? 'tabla' : 'tarjetas'); } catch (e) { /* sin guardar: igual se ve */ } };
-  const vistaTabla = () => ancho() && leerVista() === 'tabla';
+  const vistaTabla = () => leerVista() === 'tabla';   // en el teléfono la tabla se mueve de lado con el dedo
   let ordenT = { col: '', dir: 1 };
   const verAbc = () => perm() !== 'pide';       // la clase sale de los movimientos, que quien solo pide no ve
   /** Clase ABC con lo que salió de la bodega en 90 días (entregas y daños; los traslados no), valorizado: A = lo que suma el 80 % del valor,
@@ -333,7 +333,7 @@
     q.placeholder = seccion === 'movimientos' ? 'Buscar artículo, persona o proyecto' : seccion === 'compras' ? 'Buscar compra, proveedor o persona' : seccion === 'proveedores' ? 'Buscar proveedor, NIT o contacto' : 'Buscar artículo, categoría o ubicación';
     const c = $('invContenido');
     if (['articulos', 'compras', 'solicitudes', 'movimientos'].some(App.cargando) || (seccion === 'proveedores' && App.cargando('proveedores'))) { UI.poner(c, UI.esqueleto(seccion === 'movimientos' ? 5 : 3, true, seccion === 'movimientos' ? 'fila' : undefined)); return; }
-    $('vInventario').classList.toggle('ancha', seccion === 'existencias' && vistaTabla());
+    $('vInventario').classList.toggle('ancha', seccion === 'existencias' && vistaTabla() && ancho());
     const html = { panorama: htmlPanorama, hacer: perm() === 'pide' ? htmlMios : () => htmlTareas(f), existencias: () => htmlExistencias(f), movimientos: htmlMovimientos, solicitudes: htmlSolicitudes, compras: htmlCompras, proveedores: htmlProveedores, conteo: htmlConteo, resumen: htmlResumen }[seccion];
     if (UI.poner(c, html())) window.llenarIconos(c);
   }
@@ -497,7 +497,7 @@
     const todos = articulos().slice().sort((a, b) => (orden[estadoArt(a)] - orden[estadoArt(b)]) || String(a.nombre).localeCompare(String(b.nombre)));
     const vis = todos.filter(a => (!['agotado', 'bajo'].includes(f) || f === estadoArt(a)) && (sub.bodega === 'todas' || bodegaDe(a) === sub.bodega) && (!q || texto(a.nombre, a.categoria, bodegaDe(a), a.ubicacion, a.proveedor, a.codigo).includes(q)));
     const tabla = vistaTabla();
-    let h = `<div class="row acciones-inv barra-vista">${boton('escanear', 'Escanear código', 'codigo', ' data-id=""')}${ancho() ? vistaToggle(tabla) : ''}</div>`;
+    let h = `<div class="row acciones-inv barra-vista">${boton('escanear', 'Escanear código', 'codigo', ' data-id=""')}${vistaToggle(tabla)}</div>`;
     h += barraBotones(esBodega() ? [boton('nuevoart', 'Agregar artículo', 'mas'), boton('entrada', 'Registrar entrada', 'importar'), boton('salida', 'Registrar salida', 'entrega'),
       boton('bdexcel', 'Descargar base de datos', 'excel'), `<label class="btn small foto-btn"><span data-ico="importar"></span>Subir Excel<input id="invArchivo" class="archivo-oculto" type="file" accept=".xlsx,.xls,.csv"></label>`] : []);
     if (esBodega() && errorEx) h += `<div class="err" role="alert">${esH(errorEx)}</div>`;
@@ -894,7 +894,8 @@
   let cotizaciones = [], extrasN = 0;
   const MAX_EXTRA = 4, optionsHtml = (ops, v) => ops.map(([val, txt]) => `<option value="${esH(val)}"${val === v ? ' selected' : ''}>${esH(txt)}</option>`).join('');
   const filaExtra = n => `<div class="linea-extra" data-n="${n}"><b>Artículo ${n + 2}</b>
-    <div class="field"><label for="lxArt${n}">¿Es para la bodega?</label><select id="lxArt${n}" data-lx="art">${optionsHtml(opsArt('No va a bodega'), '')}</select></div>
+    <div class="field"><label for="lxVa${n}">¿Va a la bodega?</label><select id="lxVa${n}" data-lx="va">${optionsHtml([['no', 'No va a la bodega'], ['si', 'Sí, va a la bodega']], 'no')}</select></div>
+    <div class="field" id="lxBox${n}" hidden><label for="lxArt${n}">¿Cuál artículo de la bodega?</label><select id="lxArt${n}" data-lx="art">${optionsHtml(opsArt(''), '')}</select></div>
     <div class="field"><label for="lxQue${n}">Qué se va a comprar</label><input id="lxQue${n}" data-lx="que" type="text" maxlength="100" autocomplete="off"></div>
     <div class="fields cols"><div class="field"><label for="lxCant${n}">Cantidad</label><input id="lxCant${n}" data-lx="cant" type="number" inputmode="numeric" min="1" step="1" value="1"></div>
       <div class="field"><label for="lxVal${n}">Valor total (pesos)</label><input id="lxVal${n}" data-lx="val" type="number" inputmode="numeric" min="0" step="1"></div></div>
@@ -910,7 +911,8 @@
       sub: general ? `Como Gerente general no necesitas que nadie la autorice: queda autorizada y le llega el aviso a ${nombreRol('compras')} para comprarla.`
         : hagoCompras() ? `Escribe qué vas a comprar. Antes de comprar, ${quienAut} la autoriza (le llega el aviso)${aut === 'coordina' ? `; si vale más de ${A().cop(monto)}, después la autoriza el Gerente general` : ''}.`
         : `Escribe qué se va a comprar. Le llega el aviso a ${quienAut} para que la autorice${aut === 'coordina' ? `; si vale más de ${A().cop(monto)}, después la autoriza el Gerente general` : ''}.`,
-      campos: campoSel('acArt', '¿Es para la bodega?', opsArt('No va a bodega'), a ? a.id : '') +
+      campos: campoSel('acVa', '¿Va a la bodega?', [['no', 'No va a la bodega: se entrega a quien la pide'], ['si', 'Sí, va a la bodega: se suma a un artículo']], a ? 'si' : 'no') +
+        `<div id="acArtBox"${a ? '' : ' hidden'}>${campoSel('acArt', '¿Cuál artículo de la bodega?', opsArt(''), a ? a.id : '')}<span class="meta">Si el artículo todavía no existe en la bodega, primero agrégalo en Bodega con «Agregar artículo».</span></div>` +
         campoTxt('acQue', 'Qué se va a comprar', a ? a.nombre : '', 'Ej: botas de seguridad talla 40', 100) +
         `<div class="fields cols">${campoNum('acCant', 'Cantidad', sug, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), a ? a.unidad : 'unidades')}</div>` +
         `<div class="fields cols">${campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), a && CATEGORIAS.includes(a.categoria) ? a.categoria : 'Otro')}${campoNum('acValor', 'Valor total de este artículo (pesos)', a ? num(a.costo) * sug : '', 0, null)}</div>` +
@@ -922,14 +924,14 @@
       primario: hagoCompras() ? 'Enviar para autorizar' : 'Pedir la compra', icono: 'enviar',
       listo: general ? `Listo: compra autorizada. Le llegó el aviso a ${nombreRol('compras')} para comprarla.` : hagoCompras() ? `Listo: le llegó el aviso a ${quienAut}. Cuando la autorice, haces la compra y la registras.` : `Listo: compra pedida. Le llegó el aviso a ${quienAut} para autorizarla.`,
       ops: () => {
-        const art = artPorId(valor('acArt')), n = entero('acCant'), v = entero('acValor');
+        const art = valor('acVa') === 'si' ? artPorId(valor('acArt')) : null, n = entero('acCant'), v = entero('acValor');
         if (!valor('acQue')) return fallar('Escribe qué se va a comprar.', 'acQue');
         if (!(n > 0)) return fallar('Escribe una cantidad entera mayor que 0.', 'acCant');
         if (!(v > 0)) return fallar('Escribe el valor de este artículo en pesos, sin puntos ni comas.', 'acValor');
         if (!valor('acPara')) return fallar('Escribe para qué es la compra.', 'acPara');
         const lineas = [{ que: valor('acQue'), cantidad: n, unidad: valor('acUni'), valor: v, articuloId: art ? art.id : '', bodega: art ? bodegaDe(art) : '' }];
         for (const f of document.querySelectorAll('#acExtra .linea-extra')) {
-          const g = k => f.querySelector(`[data-lx="${k}"]`), q = g('que').value.trim(), c = Number(g('cant').value), val = Number(g('val').value), ar = artPorId(g('art').value);
+          const g = k => f.querySelector(`[data-lx="${k}"]`), q = g('que').value.trim(), c = Number(g('cant').value), val = Number(g('val').value), ar = g('va').value === 'si' ? artPorId(g('art').value) : null;
           if (!q) return fallar('Escribe qué se va a comprar en cada artículo que agregaste.', g('que').id);
           if (!(Number.isInteger(c) && c > 0)) return fallar('La cantidad de cada artículo debe ser un número entero mayor que 0.', g('cant').id);
           if (!(Number.isInteger(val) && val > 0)) return fallar('Escribe el valor total de cada artículo en pesos, sin puntos ni comas.', g('val').id);
@@ -959,17 +961,19 @@
       otros.slice(0, MAX_EXTRA).forEach(x => {
         masLinea();
         const k = extrasN - 1, n = Math.max(1, num(x.maximo) - num(x.cantidad));
-        $('lxArt' + k).value = x.id; $('lxQue' + k).value = x.nombre; $('lxCant' + k).value = n; $('lxVal' + k).value = num(x.costo) * n;
+        $('lxVa' + k).value = 'si'; $('lxBox' + k).hidden = false; $('lxArt' + k).value = x.id; $('lxQue' + k).value = x.nombre; $('lxCant' + k).value = n; $('lxVal' + k).value = num(x.costo) * n;
       });
     }
     // Al escoger un artículo de bodega se llenan solos el nombre, la unidad, la categoría y el valor.
-    $('acArt').addEventListener('change', () => {
+    $('acVa').addEventListener('change', () => { $('acArtBox').hidden = valor('acVa') !== 'si'; if (valor('acVa') === 'si') llenarDelArticulo(); });
+    $('acArt').addEventListener('change', llenarDelArticulo);
+    function llenarDelArticulo() {
       const x = artPorId(valor('acArt')); if (!x) return;
       $('acQue').value = x.nombre; $('acUni').value = x.unidad; $('acCat').value = CATEGORIAS.includes(x.categoria) ? x.categoria : 'Otro';
       const n = Math.max(1, num(x.maximo) - num(x.cantidad)); $('acCant').value = n; $('acValor').value = num(x.costo) * n;
       if (!valor('acPara')) $('acPara').value = 'Reponer la bodega';
       if (!valor('acProvSug')) $('acProvSug').value = x.proveedor || '';
-    });
+    }
     $('acCot').addEventListener('change', async e => {
       const fs = [...(e.target.files || [])].slice(0, 3); if (!fs.length) return;
       $('acCotTxt').textContent = 'Preparando las fotos…';
@@ -2238,7 +2242,9 @@
 
   // Los selectores de las líneas extra de una compra llenan solos el nombre y el valor, como el primero.
   $('acCampos').addEventListener('change', e => {
-    const sel = e.target.closest('select[data-lx="art"]'); if (!sel) return;
+    const va = e.target.closest('select[data-lx="va"]');
+    if (va) { const f0 = va.closest('.linea-extra'); f0.querySelector('[id^="lxBox"]').hidden = va.value !== 'si'; if (va.value !== 'si') return; }
+    const sel = va ? va.closest('.linea-extra').querySelector('select[data-lx="art"]') : e.target.closest('select[data-lx="art"]'); if (!sel) return;
     const f = sel.closest('.linea-extra'), x = artPorId(sel.value); if (!f || !x) return;
     const n = Math.max(1, num(x.maximo) - num(x.cantidad));
     f.querySelector('[data-lx="que"]').value = x.nombre; f.querySelector('[data-lx="cant"]').value = n; f.querySelector('[data-lx="val"]').value = num(x.costo) * n;
