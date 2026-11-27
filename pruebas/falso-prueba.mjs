@@ -303,6 +303,38 @@ await pag2.waitForTimeout(150);
 const reg2 = await pag2.evaluate(() => window.__reg);
 mostrar(reg2.col.length === 2 && JSON.stringify(reg2.doc) === '["DESDE-1"]', 'pestanas: cambio de otro documento solo dispara la coleccion', JSON.stringify(reg2));
 
+// ===== runTransaction y perfil nuevo solo con el correo confirmado =====
+const tx = await pag.evaluate(async () => {
+  const F = await import('/firebase-firestore.js'), db = F.getFirestore();
+  await F.setDoc(F.doc(db, 'articulos', 'tx1'), { cantidad: 5 });
+  await F.runTransaction(db, async (t) => {
+    const s = await t.get(F.doc(db, 'articulos', 'tx1'));
+    t.update(F.doc(db, 'articulos', 'tx1'), { cantidad: F.increment(2) });
+    t.set(F.doc(db, 'movimientos', 'tx-m1'), { vio: s.data().cantidad });
+  });
+  const a = (await F.getDoc(F.doc(db, 'articulos', 'tx1'))).data(), m = (await F.getDoc(F.doc(db, 'movimientos', 'tx-m1'))).data();
+  let cod = 'sin error';
+  try { await F.runTransaction(db, async (t) => { t.set(F.doc(db, 'articulos', 'tx2'), { a: 1 }); throw Object.assign(new Error('x'), { code: 'mio' }); }); } catch (e) { cod = e.code; }
+  const t2 = await F.getDoc(F.doc(db, 'articulos', 'tx2'));
+  return { a, m, cod, existe: t2.exists() };
+});
+mostrar(tx.a.cantidad === 7 && tx.m.vio === 5, 'runTransaction: lee, suma con increment y escribe todo junto', JSON.stringify(tx));
+mostrar(tx.cod === 'mio' && !tx.existe, 'runTransaction: si la función falla no se guarda nada y el error sale tal cual', JSON.stringify(tx));
+const perfil = await pag.evaluate(async () => {
+  const A = await import('/firebase-auth.js'), F = await import('/firebase-firestore.js'), db = F.getFirestore();
+  const codigo = async (p) => { try { await p; return 'sin error'; } catch (e) { return e.code || e.message; } };
+  await A.createUserWithEmailAndPassword(A.getAuth(), 'nuevo.perfil@demo.co', 'clave-larga-123');
+  const uid = A.getAuth().currentUser.uid;
+  await F.setDoc(F.doc(db, 'codigos', 'LOG-AAAA-BBBB'), { rol: 'logistica', activo: true });
+  const datos = { nombre: 'Persona Nueva', correo: 'nuevo.perfil@demo.co', rol: 'logistica', codigo: 'LOG-AAAA-BBBB', activo: true, en: new Date().toISOString() };
+  const antes = await codigo(F.setDoc(F.doc(db, 'usuarios', uid), datos));
+  window.__fbConfirmar('nuevo.perfil@demo.co');
+  const despues = await codigo(F.setDoc(F.doc(db, 'usuarios', uid), datos));
+  return { antes, despues };
+});
+mostrar(perfil.antes === 'permission-denied', 'perfil: con el correo sin confirmar no se crea (como las reglas: email_verified)', JSON.stringify(perfil));
+mostrar(perfil.despues === 'sin error', 'perfil: con el correo confirmado y un código válido sí se crea', JSON.stringify(perfil));
+
 await navegador.close();
 servidor.close();
 console.log(fallas ? '\n' + fallas + ' caso(s) con FALLA' : '\nTodo OK');

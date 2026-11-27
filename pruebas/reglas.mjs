@@ -1020,6 +1020,10 @@ await prueba('Baja: la Jefe también la da directa (sin solicitud) con motivo y 
   await assertFails(updateDoc(doc(jef, 'equipos', 'eq-d1'), { estado: 'baja', bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }));
   await assertFails(updateDoc(doc(jef, 'equipos', 'eq-d1'), { estado: 'baja', bajaPedida: BP({ nota: 'ok' }), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }));
   await assertSucceeds(updateDoc(doc(jef, 'equipos', 'eq-d2'), { estado: 'baja', bajaPedida: BP({ porRol: 'jefe' }), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 })); });
+await prueba('Baja: tras no aprobar una solicitud (bajaPedida queda en null), la Jefe sí puede darla de baja directa', async () => {
+  await sembrarEq('eq-d3', { bajaPedida: null }); const jef = await cuenta('bjJef3b', 'jefe');
+  await assertFails(updateDoc(doc(jef, 'equipos', 'eq-d3'), { estado: 'baja', bajaPedida: null, bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 }));
+  await assertSucceeds(updateDoc(doc(jef, 'equipos', 'eq-d3'), { estado: 'baja', bajaPedida: BP({ porRol: 'jefe' }), bajaPor: 'Persona Jefe', bajaEn: '2026-11-25', historial: H2 })); });
 await prueba('Baja: lo pedido o lo dado de baja directo lleva el rol de quien lo hace (nadie se anota como otro rol)', async () => {
   await sembrarEq('eq-g1'); await sembrarEq('eq-g2'); await sembrarEq('eq-g3');
   const enc = await cuenta('bjEnc8', 'equipos'), jef = await cuenta('bjJef6', 'jefe');

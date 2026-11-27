@@ -223,7 +223,7 @@ service cloud.firestore {
             && bajaOk(nuevo().bajaPedida) && nuevo().bajaPedida.porRol == rol() && historialEqSigue() && esEncargadoEq())
         // Solo la Jefe da de baja: aprueba lo pedido (sin cambiarlo) o la hace directa. El equipo pasa a «baja» con la fecha y quién la aprobó.
         || (soloCambia(['estado', 'bajaPedida', 'bajaPor', 'bajaEn', 'historial']) && nuevo().estado == 'baja' && antes().estado in ['bodega', 'recibido']
-            && bajaOk(nuevo().bajaPedida) && nuevo().bajaPedida == antes().get('bajaPedida', nuevo().bajaPedida)
+            && bajaOk(nuevo().bajaPedida) && nuevo().bajaPedida == (antes().get('bajaPedida', null) == null ? nuevo().bajaPedida : antes().bajaPedida)
             && (antes().get('bajaPedida', null) != null || nuevo().bajaPedida.porRol == rol()) && nuevo().bajaPor is string && esFecha(nuevo().bajaEn)
             && historialEqSigue() && esJefe())
         // La Jefe también puede no aprobar lo pedido: la solicitud se quita y el equipo sigue igual.

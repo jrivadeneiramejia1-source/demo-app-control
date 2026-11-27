@@ -15,6 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
+    quien: '',
     datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], tanqueos: [], reservas: [], proveedores: [], reuniones: [], necesidades: [], avisos: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [], ajustesApp: [], invitaciones: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     suscritas: new Set(),  // colecciones a las que esta persona se suscribió (las demás no las puede leer y nunca «cargan»)
@@ -125,13 +126,22 @@
     S.entrando = true; $('ctBoton').disabled = true;
     try {
       if (!crear) { await nube.entrarCuenta(correo, clave); return; }
-      if (!conCodigo) { await nube.crearCuenta(correo, clave); return; }   // sigue la pantalla de confirmar el correo
-      S.registrando = { nombre, codigo };
-      await nube.crearCuenta(correo, clave);
-      try { await nube.usarCodigo(nombre, codigo); }
-      catch (e) { S.registrando = null; $('cuNombre').value = nombre; $('cuCodigo').value = $('ctCodigo').value; mostrarCuenta({ sinPerfil: true, correo }, nube.explicar(e)); }
-    } catch (e) { S.registrando = null; falla(nube.explicar(e)); }
+      // Con código: se guardan el nombre y el código en la memoria y se aplican solos cuando el correo quede confirmado
+      // (Firebase solo deja crear el perfil con el correo confirmado: hacerlo antes daba un falso «Ese código no sirve»).
+      S.pendienteCodigo = conCodigo ? { nombre, codigo, correo: correo.toLowerCase() } : null;
+      await nube.crearCuenta(correo, clave);   // sigue la pantalla de confirmar el correo
+    } catch (e) { S.pendienteCodigo = null; falla(nube.explicar(e)); }
     finally { S.entrando = false; $('ctBoton').disabled = false; $('ctClave').value = ''; }
+  }
+  async function aplicarCodigoPendiente(p, pend, mia) {
+    S.pendienteCodigo = null; S.registrando = true;
+    try { await nube.usarCodigo(pend.nombre, pend.codigo); }
+    catch (e) {
+      S.registrando = null;
+      if (mia !== S.sesion) return;
+      $('cuNombre').value = pend.nombre; $('cuCodigo').value = pend.codigo;
+      mostrarCuenta({ sinPerfil: true, correo: p.correo }, nube.explicar(e));
+    }
   }
   // Cuenta sin rol todavía (código malo o sin escribir) o con el acceso quitado por el Jefe.
   function mostrarCuenta(p, msg) {
@@ -182,12 +192,22 @@
     const mia = ++S.sesion;
     dejarDeEscuchar();
     cerrarHoja('shPersona');
+    // Otra persona en el mismo teléfono (o cerró sesión): se borran los datos de la anterior y lo que tenía a medias (vistas previas de Excel, fotos).
+    const quien = p ? String(p.correo || '').toLowerCase() : '';
+    if (quien !== S.quien) {
+      S.quien = quien;
+      Object.keys(S.datos).forEach(k => { S.datos[k] = []; });
+      window.dispatchEvent(new CustomEvent('app:persona-cambio'));
+    }
     if (!p || !(p.sinPerfil || p.sinAcceso || p.sinConfirmar)) S.errCuenta = '';
     if (!p) { $('cuNombre').value = ''; $('cuCodigo').value = ''; $('ctNombre').value = ''; $('ctCodigo').value = ''; $('ctCodigoD').open = false; }
-    if (!p) { S.persona = null; S.registrando = null; error(S.motivoSalida || ''); S.motivoSalida = ''; pintarEntrada(); mostrar('vEntrada'); return; }
+    if (!p) { S.persona = null; S.registrando = null; S.pendienteCodigo = null; error(S.motivoSalida || ''); S.motivoSalida = ''; pintarEntrada(); mostrar('vEntrada'); return; }
     if (p.sinPerfil || p.sinAcceso || p.sinConfirmar) {
       S.persona = null;
       if (p.sinPerfil && S.registrando) return;   // se está guardando el código recién escrito: espera el perfil
+      // Correo ya confirmado y había un código guardado al crear la cuenta: se aplica ahora.
+      const pend = S.pendienteCodigo;
+      if (p.sinPerfil && pend && String(p.correo || '').toLowerCase() === pend.correo) { aplicarCodigoPendiente(p, pend, mia); return; }
       mostrarCuenta(p, p.error || ''); return;
     }
     S.registrando = null;
@@ -510,7 +530,7 @@
     $('btnAvisos').onclick = abrirAvisos;
     $('btnSalir').onclick = async () => { cerrarHoja('shPersona'); await nube.salir(); };
     // «Personas y permisos» (gente.js, 34 KB) solo lo usa la Jefe: se descarga la primera vez que lo abre.
-    $('btnGente').onclick = () => { cerrarHoja('shPersona'); UI.cargarScript('gente.js?v=9').then(() => window.Gente.abrir(), () => toast('No se pudo abrir el panel. Revisa la conexión y vuelve a intentar.')); };
+    $('btnGente').onclick = () => { cerrarHoja('shPersona'); UI.cargarScript('gente.js?v=10').then(() => window.Gente.abrir(), () => toast('No se pudo abrir el panel. Revisa la conexión y vuelve a intentar.')); };
     $('entradaModo').addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return; modoEntrada = b.dataset.modo; $('entradaErr').hidden = true; pintarModoEntrada(); });
     $('ctCambiar').onclick = () => { modoCuenta = modoCuenta === 'crear' ? 'entrar' : 'crear'; $('ctErr').hidden = true; pintarModoEntrada(); };
     $('ctForm').addEventListener('submit', e => { e.preventDefault(); enviarCuenta(); });

@@ -106,8 +106,8 @@ try {
   await esp(900); // las cifras cuentan hasta su valor
   const sem = await t.page.evaluate(() => JSON.parse(localStorage.getItem('__fb_datos') || '{}'));
   const COLS = ['equipos', 'hojas', 'tareasEq', 'compras', 'proveedores', 'articulos', 'movimientos', 'solicitudes', 'vehiculos', 'novedades', 'entregas', 'reuniones', 'necesidades', 'avisos'];
-  log('sembró 13 equipos (12 en uso y 1 de baja), 6 actas, 3 tareas de equipos, 14 compras, 5 proveedores, 20 artículos, 16 movimientos, 7 pedidos, 4 carros, 3 novedades, 3 salidas/llegadas, 4 reuniones, 25 tareas de reuniones y 12 avisos',
-    COLS.map(c => Object.keys(sem[c] || {}).length).join(',') === '13,6,3,14,5,20,16,7,4,3,3,4,25,12', COLS.map(c => c + ':' + Object.keys(sem[c] || {}).length).join(' '));
+  log('sembró 13 equipos (12 en uso y 1 de baja), 9 actas, 3 tareas de equipos, 14 compras, 5 proveedores, 20 artículos, 16 movimientos, 7 pedidos, 4 carros, 3 novedades, 3 salidas/llegadas, 4 reuniones, 25 tareas de reuniones y 12 avisos',
+    COLS.map(c => Object.keys(sem[c] || {}).length).join(',') === '13,9,3,14,5,20,16,7,4,3,3,4,25,12', COLS.map(c => c + ':' + Object.keys(sem[c] || {}).length).join(' '));
   log('el saludo dice Hola, Carolina', (await texto(t.page, '#tInicio')) === 'Hola, Carolina');
   log('Jefe ve 9 cifras de pendientes (ya no autoriza compras)', (await t.page.locator('#sumInicio .sum').count()) === 9);
   log('bodega: 5 agotados o bajos y 4 pedidos por entregar', (await cifra(t.page, 'sumInicio', 0)) === 5 && (await cifra(t.page, 'sumInicio', 1)) === 4);
@@ -1326,7 +1326,7 @@ try {
   log('sin la firma de quien recibe no deja guardar el acta', await errEq(/firma de quien recibe/));
   await firmar('#ehFirmaP');
   await t.page.screenshot({ path: path.join(CAPTURAS, '13-acta-virtual.png'), fullPage: true });
-  log('el acta se guarda como AC-0007 con sus datos, otros y la firma; el equipo queda asignado y Soporte recibe el aviso', await guardarEq() && await (async () => { const d = await dat(); const h = Object.values(d.hojas).find(x => x.persona === 'Rosa Prueba Gómez'); const e = d.equipos['eq-007']; const hid = Object.keys(d.hojas).find(k => d.hojas[k] === h); return !!h && hid === 'ac7' && h.numero === 7 && h.codigoProyecto === 'PCN-01' && h.equipos[0].obs === 'ThinkPad con su funda' && JSON.stringify(h.otros) === '[{"nombre":"Morral","cantidad":1},{"nombre":"Cargador","cantidad":1}]' && /^data:image\/png;base64,/.test(h.firmaPersona) && h.firmaPersona.length < 80000 && h.revision === 'pendiente' && Array.isArray(h.devoluciones) && !h.devoluciones.length && !h.foto && e.asignadoCedula === '1060708090' && e.estado === 'asignado' && e.asignadoA === 'Rosa Prueba Gómez' && e.historial[e.historial.length - 1].hojaId && Object.values(d.avisos).some(a => a.para === 'soporte' && /Acta de entrega/.test(a.titulo)); })());
+  log('el acta se guarda como AC-0010 con sus datos, otros y la firma; el equipo queda asignado y Soporte recibe el aviso', await guardarEq() && await (async () => { const d = await dat(); const h = Object.values(d.hojas).find(x => x.persona === 'Rosa Prueba Gómez'); const e = d.equipos['eq-007']; const hid = Object.keys(d.hojas).find(k => d.hojas[k] === h); return !!h && hid === 'ac10' && h.numero === 10 && h.codigoProyecto === 'PCN-01' && h.equipos[0].obs === 'ThinkPad con su funda' && JSON.stringify(h.otros) === '[{"nombre":"Morral","cantidad":1},{"nombre":"Cargador","cantidad":1}]' && /^data:image\/png;base64,/.test(h.firmaPersona) && h.firmaPersona.length < 80000 && h.revision === 'pendiente' && Array.isArray(h.devoluciones) && !h.devoluciones.length && !h.foto && e.asignadoCedula === '1060708090' && e.estado === 'asignado' && e.asignadoA === 'Rosa Prueba Gómez' && e.historial[e.historial.length - 1].hojaId && Object.values(d.avisos).some(a => a.para === 'soporte' && /Acta de entrega/.test(a.titulo)); })());
   await t.page.click('#btnDevolver'); await abiertaEq();
   await t.page.selectOption('#ehQuien', '1020304050');
   log('en la devolución salen los equipos de esa persona por acta, ya marcados, y su cédula', await hasta(t.page, () => !!document.querySelector('#ehEqD_eq-001') && document.querySelector('#ehEqD_eq-001').checked && document.querySelector('#ehEqD_eq-001').dataset.hoja === 'ac1' && document.getElementById('ehFirmaPCC').textContent === '1020304050' && /AC-0001/.test(document.getElementById('ehLista').textContent)));
@@ -2357,7 +2357,7 @@ try {
   await t.page.click('#eqSecciones [data-sec="equipos"]'); await t.page.click('#eqContenido .card[data-id="eq-007"]'); await abiertaEq();
   log('en la hoja de vida de Soporte no hay botones de baja ni de compra', await hasta(t.page, () => !document.querySelector('#eqCampos [data-accion="pedirbaja"], #eqCampos [data-accion="datoscompra"], #eqCampos [data-accion="aprobarbaja"]') && /Última verificación/.test(document.getElementById('eqCampos').textContent)));
   await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shEq').hidden);
-  await t.page.evaluate(async () => { await window.UI.cargarScript('codigos.js?v=1'); });
+  await t.page.evaluate(async () => { await window.UI.cargarScript('codigos.js?v=2'); });
   await t.page.click('#eqContenido [data-accion="verificar"]'); await abiertaEq();
   const faltanVer = alc => t.page.evaluate(a => Object.values(window.App.S.datos.equipos).filter(e => e.estado !== 'baja' && (a === 'todos' || (a === 'asignado' ? e.estado === 'asignado' : e.estado !== 'asignado'))).length, alc);
   const nBod0 = await faltanVer('bodega');
@@ -2387,7 +2387,7 @@ try {
   const hoy13 = await t.page.evaluate(() => window.App.hoyISO());
   const errAc = re => hasta(t.page, r => !document.getElementById('acErr').hidden && new RegExp(r).test(document.getElementById('acErr').textContent), re.source);
   await t.page.click('.tab[data-vista="inventario"]'); await t.page.click('#invSecciones [data-sec="existencias"]'); await t.page.fill('#qInventario', '');
-  await t.page.evaluate(async () => { await window.UI.cargarScript('codigos.js?v=1'); });
+  await t.page.evaluate(async () => { await window.UI.cargarScript('codigos.js?v=2'); });
   const fingirCod = c => t.page.evaluate(s => { window.Codigos.leer = async () => s; }, c);
   await fingirCod('bot-042');
   await t.page.click('#invContenido [data-accion="escanear"]'); await t.page.waitForSelector('#shAccion:not([hidden])');

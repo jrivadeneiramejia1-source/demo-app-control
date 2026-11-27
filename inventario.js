@@ -50,6 +50,9 @@
   // Qué clave de filtro de bodega tiene cada parte (el Panorama la reinicia al llevar a una parte).
   const BOD_DE_SEC = { hacer: 'bodHacer', movimientos: 'bodMov', solicitudes: 'bodSol', compras: 'bodCom', conteo: 'bodCon', resumen: 'bodRes' };
   let guardando = false, accion = null, pushPendientes = [], rolPintado = '';
+  // Lo que la persona tenía en pantalla de cada artículo que se mueve (cantidad y costo): al guardar se revisa que nadie lo haya cambiado.
+  let vistos = {};
+  const verArt = a => { if (a && a.id && !vistos[a.id]) vistos[a.id] = { cantidad: num(a.cantidad), costo: num(a.costo) }; };
 
   /* ---------- datos derivados ---------- */
   const num = v => Number(v) || 0;
@@ -507,7 +510,8 @@
     const q = $('qInventario').value.trim().toLowerCase();
     const orden = { agotado: 0, bajo: 1, bien: 2 };
     const todos = articulos().slice().sort((a, b) => (orden[estadoArt(a)] - orden[estadoArt(b)]) || String(a.nombre).localeCompare(String(b.nombre)));
-    const vis = todos.filter(a => (!['agotado', 'bajo'].includes(f) || f === estadoArt(a)) && (sub.bodega === 'todas' || bodegaDe(a) === sub.bodega) && (!q || texto(a.nombre, a.categoria, bodegaDe(a), a.ubicacion, a.proveedor, a.codigo).includes(q)));
+    const nq = normCod(q);   // «BOT-040» o «bot 040» también encuentran el código BOT040
+    const vis = todos.filter(a => (!['agotado', 'bajo'].includes(f) || f === estadoArt(a)) && (sub.bodega === 'todas' || bodegaDe(a) === sub.bodega) && (!q || texto(a.nombre, a.categoria, bodegaDe(a), a.ubicacion, a.proveedor, a.codigo).includes(q) || (nq.length >= 3 && a.codigo && normCod(a.codigo).includes(nq))));
     const tabla = vistaTabla();
     let h = `<div class="row acciones-inv barra-vista">${boton('escanear', 'Escanear código', 'codigo', ' data-id=""')}${vistaToggle(tabla)}</div>`;
     h += barraBotones(esBodega() ? [boton('nuevoart', 'Agregar artículo', 'mas'), boton('entrada', 'Registrar entrada', 'importar'), boton('salida', 'Registrar salida', 'entrega'),
@@ -871,6 +875,7 @@
       `mover()` pone `bodega` sola (la del artículo). Quien llama a `movimiento()` directo debe pasar `bodega` (la bodega cuya cantidad cambió): aquí no se inventa ninguna. */
   const mover = (a, delta, o) => {
     const id = window.nube.idNuevo('mo'), cu = o.costoUnit == null ? num(a.costo) : num(o.costoUnit), prom = o.costoNuevo == null ? num(a.costo) : num(o.costoNuevo);
+    verArt(a);
     const resto = Object.assign({}, o, { costoUnit: cu, costoProm: prom, bodega: bodegaDe(a) }); delete resto.costoNuevo;   // el movimiento queda en la bodega de ese artículo
     const datos = { cantidad: window.nube.incremento(delta), ultimoMov: id };
     if (o.costoNuevo != null) datos.costo = prom;
@@ -880,23 +885,57 @@
   const historial = c => (Array.isArray(c.historial) ? c.historial : []).filter(h => h && typeof h === 'object');
   const paso = (c, txt) => historial(c).concat([{ fecha: ahora(), texto: txt, por: persona().nombre }]);
 
+  /** Parte las escrituras en lotes de máximo `max` artículos con movimiento (cada actualización de artículo va con su movimiento).
+      Así Firebase no se pasa de su límite de lecturas al revisar las reglas de cada lote. */
+  function partirLotes(lista, max) {
+    const movs = new Map(lista.filter(o => o[1] === 'movimientos').map(o => [o[2], o]));
+    const usados = new Set(), grupos = [];
+    lista.forEach(o => {
+      if (usados.has(o)) return;
+      const m = o[1] === 'articulos' && o[3] && o[3].ultimoMov ? movs.get(o[3].ultimoMov) : null;
+      if (m) { usados.add(m); grupos.push({ ops: [o, m], pesado: true }); } else if (o[1] === 'movimientos' && !usados.has(o)) grupos.push({ ops: [o], pesado: true }); else grupos.push({ ops: [o], pesado: false });
+    });
+    const lotes = []; let cur = [], pesados = 0;
+    grupos.forEach(g => {
+      if (cur.length && (pesados + (g.pesado ? 1 : 0) > max || cur.length + g.ops.length > 400)) { lotes.push(cur); cur = []; pesados = 0; }
+      cur.push(...g.ops); if (g.pesado) pesados++;
+    });
+    if (cur.length) lotes.push(cur);
+    return lotes;
+  }
+  /** Guarda en un lote (o en varios, si son muchos artículos). Si se tocó la cantidad de algún artículo, se revisa antes que nadie más la haya cambiado. */
+  async function guardarEscrituras(lista, max) {
+    const lotes = partirLotes(lista, max || 5), v = vistos;
+    let hechos = 0;
+    try {
+      for (const l of lotes) {
+        const ids = Object.keys(v).filter(id => l.some(o => o[1] === 'articulos' && o[2] === id && o[0] === 'update'));
+        await window.nube.loteSeguro(l, Object.fromEntries(ids.map(id => [id, v[id]])));
+        hechos++;
+      }
+    } catch (e) { e.hechos = hechos; e.total = lotes.length; throw e; }
+  }
+
   async function guardar() {
     if (guardando || !accion || !accion.ops) return;
     $('acErr').hidden = true;
-    pushPendientes = [];
-    const ops = accion.ops();
+    pushPendientes = []; vistos = {};
+    const act = accion, ops = act.ops();
     if (!ops) return;
     const lista = ops.filter(Boolean), envios = pushPendientes.slice();
     guardando = true; $('acPrimario').disabled = true; $('acSecundario').disabled = true;
     try {
-      if (lista.length) await window.nube.lote(lista);
-      A().cerrarHoja('shAccion');
-      try { $('invContenido').focus({ preventScroll: true }); } catch (e) {}
-      A().toast(accion.listo);
-      if (accion.alGuardar) accion.alGuardar();
-      accion = null;
+      if (lista.length) await guardarEscrituras(lista, act.porLotes ? 5 : 1000);
+      // Si mientras tanto la persona cerró esta hoja y abrió otra, no se le cierra la nueva.
+      if (accion === act) {
+        A().cerrarHoja('shAccion');
+        try { $('invContenido').focus({ preventScroll: true }); } catch (e) {}
+      }
+      A().toast(act.listo);
+      if (act.alGuardar) act.alGuardar();
+      if (accion === act) accion = null;
       notificar(envios);
-    } catch (e) { fallar(window.nube.explicar(e)); }
+    } catch (e) { if (accion === act) fallar(window.nube.explicar(e) + (e && e.hechos ? ' Una parte del conteo ya se guardó: revisa y vuelve a contar lo que falte.' : '')); else A().toast(window.nube.explicar(e)); }
     finally { guardando = false; $('acPrimario').disabled = false; $('acSecundario').disabled = false; }
   }
   // Manda las notificaciones al teléfono (si hay teléfonos con avisos activados para ese rol). Nunca frena la app.
@@ -1011,7 +1050,7 @@
       const fs = [...(e.target.files || [])].slice(0, 3); if (!fs.length) return;
       $('acCotTxt').textContent = 'Preparando las fotos…';
       try {
-        cotizaciones = await Promise.all(fs.map(f => leerFoto(f, 1000, 130000)));
+        cotizaciones = await Promise.all(fs.map(f => leerFoto(f, 1000, 110000)));
         $('acCotVer').innerHTML = cotizaciones.map((c, i) => `<img src="${esH(c)}" alt="Cotización ${i + 1}">`).join('');
         $('acCotTxt').textContent = `Cambiar fotos (${cotizaciones.length})`; $('acErr').hidden = true;
       } catch (er) { cotizaciones = []; $('acCotVer').innerHTML = ''; $('acCotTxt').textContent = 'Adjuntar fotos de cotizaciones'; fallar(er.message === 'grande' ? 'Una foto es muy pesada. Toma otra más de cerca.' : 'Ese archivo no es una foto. Escoge imágenes.'); }
@@ -1176,13 +1215,19 @@
       if (!archivo || !/^image\//.test(archivo.type) || /svg/i.test(archivo.type)) { rej(new Error('tipo')); return; }
       const url = URL.createObjectURL(archivo), img = new Image();
       img.onload = () => { try {
-        const esc = Math.min(1, L / Math.max(img.width, img.height)), cv = document.createElement('canvas');
-        cv.width = Math.round(img.width * esc); cv.height = Math.round(img.height * esc);
-        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        // Primero baja la calidad; si aun así pesa de más, también achica la medida. Nunca pasa de `maximo` (Firebase solo guarda 1 MB por documento).
+        let esc = Math.min(1, L / Math.max(img.width, img.height)), dato = '';
+        for (let vuelta = 0; vuelta < 5; vuelta++) {
+          const cv = document.createElement('canvas');
+          cv.width = Math.max(1, Math.round(img.width * esc)); cv.height = Math.max(1, Math.round(img.height * esc));
+          cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+          let q = 0.62; dato = cv.toDataURL('image/jpeg', q);
+          while (dato.length > M && q > 0.25) { q -= 0.08; dato = cv.toDataURL('image/jpeg', q); }
+          if (dato.length <= M) break;
+          esc *= 0.75;
+        }
         URL.revokeObjectURL(url);
-        let q = 0.62, dato = cv.toDataURL('image/jpeg', q);
-        while (dato.length > M && q > 0.25) { q -= 0.08; dato = cv.toDataURL('image/jpeg', q); }
-        if (dato.length > M * 1.25) rej(new Error('grande')); else res(dato);
+        if (dato.length > M) rej(new Error('grande')); else res(dato);
       } catch (e) { URL.revokeObjectURL(url); rej(new Error('tipo')); } };
       img.onerror = () => { URL.revokeObjectURL(url); rej(new Error('tipo')); };
       img.src = url;
@@ -1236,7 +1281,7 @@
       const f = e.target.files && e.target.files[0]; if (!f) return;
       $('acFotoTxt').textContent = 'Preparando la foto…';
       try {
-        fotoFactura = await leerFoto(f);
+        fotoFactura = await leerFoto(f, 1280, 250000);
         const ver = $('acFotoVer'); ver.src = fotoFactura; ver.hidden = false; $('acFotoTxt').textContent = 'Cambiar foto';
         $('acErr').hidden = true;
       } catch (er) { fotoFactura = ''; $('acFotoTxt').textContent = 'Tomar o escoger foto'; fallar(er.message === 'grande' ? 'La foto es muy pesada. Toma otra más de cerca.' : 'Ese archivo no es una foto. Escoge una imagen.'); }
@@ -1586,7 +1631,7 @@
     abrirAccion({
       titulo: 'Pedir material de bodega', sub: `Le llega el aviso a ${nombreRol('asistente')} y te avisa cuando lo entregue.`,
       campos: campoSel('acBod', '¿Para qué bodega?', BODEGAS.map(b => [b, b]), bod0) +
-        `<div class="field"><label for="acArt">Artículo</label><select id="acArt">${htmlOpcionesPedido(bod0, a0 ? a0.id : primero(bod0))}</select><span class="meta" id="acArtAy"></span></div>` +
+        `<div class="field"><label for="acArt">Artículo</label><select id="acArt">${htmlOpcionesPedido(bod0, a0 ? a0.id : primero(bod0))}</select><span class="meta" id="acArtAy"></span></div>` + botonEscanear('art') +
         campoNum('acCant', 'Cantidad', 1, 1, 999) +
         campoTxt('acPara', 'Para qué', '', 'Ej: viaje a la Comunidad Ejemplo Norte', 120) + campoSel('acProy', 'Proyecto', PROYECTOS.map(p => [p, p]), PROYECTOS[0]),
       primario: 'Pedir', icono: 'enviar', listo: `Listo: pedido enviado. Le llegó el aviso a ${nombreRol('asistente')}.`,
@@ -1638,7 +1683,7 @@
     abrirAccion({
       titulo: entrada ? 'Registrar entrada' : 'Registrar salida',
       sub: entrada ? 'Para lo que vuelve a la bodega (devoluciones).' : 'Para lo que sale sin pedido en la app: entrega directa, o algo dañado o perdido.',
-      campos: campoSel('acBod', 'Bodega', BODEGAS.map(b => [b, b]), bod0) + campoSel('acArt', 'Artículo', opsArtBod(bod0), a0 ? a0.id : (opsArtBod(bod0)[0] || [''])[0]) + campoNum('acCant', 'Cantidad', 1, 1, 99999) +
+      campos: campoSel('acBod', 'Bodega', BODEGAS.map(b => [b, b]), bod0) + campoSel('acArt', 'Artículo', opsArtBod(bod0), a0 ? a0.id : (opsArtBod(bod0)[0] || [''])[0]) + botonEscanear('art') + campoNum('acCant', 'Cantidad', 1, 1, 99999) +
         (entrada ? campoTxt('acPersona', 'Quién lo devolvió', '', 'Nombre', 60)
           : campoSel('acMotivoMov', 'Motivo', [['entrega', 'Entrega a una persona'], ['dano', 'Daño o pérdida']], 'entrega') + campoTxt('acPersona', 'A quién se entregó', '', 'Nombre (si es entrega)', 60)) +
         campoSel('acProy', 'Proyecto', [['', 'Sin proyecto']].concat(PROYECTOS.map(p => [p, p])), '') + campoTxt('acNota', entrada ? 'Nota (opcional)' : 'Nota (obligatoria si es daño o pérdida)', '', 'Ej: llegó con la caja rota', 160),
@@ -1663,13 +1708,13 @@
     // Al cambiar de bodega, la lista de artículos pasa a ser la de esa bodega.
     $('acBod').addEventListener('change', () => { $('acArt').innerHTML = optionsHtml(opsArtBod(valor('acBod')), ''); });
   }
-  function editarArticulo(a) {
+  function editarArticulo(a, codigoInicial) {
     const nuevo = !a;
     abrirAccion({
       titulo: nuevo ? 'Agregar artículo' : 'Editar artículo', sub: nuevo ? 'Un artículo nuevo para una de las 3 bodegas.' : `Cambia los datos de ${a.nombre} (bodega ${bodegaDe(a)}). La cantidad se cambia con entradas, salidas o conteo, y de bodega con un traslado.`,
       campos: (nuevo ? campoSel('acBod', 'Bodega', BODEGAS.map(b => [b, b]), BODEGAS.includes(sub.bodega) ? sub.bodega : BODEGAS[0]) : '') +
         campoTxt('acNom', 'Nombre', a ? a.nombre : '', 'Ej: guantes de nitrilo talla M', 80) +
-        `<div class="field"><label for="acCodigo">Código de barras o el que tú uses (opcional)</label><div class="con-scan"><input id="acCodigo" type="text" maxlength="30" autocomplete="off" value="${esH(a ? a.codigo || '' : '')}" placeholder="Ej: BOT042 o el de la etiqueta"><button type="button" class="btn-scan" data-accion="escancodigo" data-id="" aria-label="Escanear el código con la cámara" title="Escanear el código"><span data-ico="codigo"></span></button></div><span class="meta">De 3 a 30 letras o números, sin espacios ni guiones. Con él se encuentra el artículo escaneándolo.</span></div>` +
+        `<div class="field"><label for="acCodigo">Código de barras o el que tú uses (opcional)</label><div class="con-scan"><input id="acCodigo" type="text" maxlength="30" autocomplete="off" value="${esH(a ? a.codigo || '' : codigoInicial || '')}" placeholder="Ej: BOT042 o el de la etiqueta"><button type="button" class="btn-scan" data-accion="escancodigo" data-id="" aria-label="Escanear el código con la cámara" title="Escanear el código"><span data-ico="codigo"></span></button></div><span class="meta">De 3 a 30 letras o números, sin espacios ni guiones. Con él se encuentra el artículo escaneándolo.</span></div>` +
         `<div class="fields cols">${campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), a && CATEGORIAS.includes(a.categoria) ? a.categoria : 'EPP')}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), a ? a.unidad : 'unidades')}</div>` +
         (nuevo ? campoNum('acCantIni', 'Cantidad que hay ahora', 0, 0, 99999) : '') +
         `<div class="fields cols">${campoNum('acMin', 'Mínimo (avisa al bajar de aquí)', a ? a.minimo : 2, 0, 99999)}${campoNum('acMax', 'Máximo (hasta dónde se compra)', a ? a.maximo : 10, 1, 99999)}</div>` +
@@ -1865,7 +1910,7 @@
     conteoEst = { bod, cat, solo: solo || null, ids: arts.map(a => a.id), conteos: {}, revisado: '' };
     abrirAccion({
       titulo: `Conteo físico: ${bod}${cat ? ' · ' + cat : ''}${solo ? ' · los de hoy' : ''}`, sub: 'Cuenta en los estantes y escribe cuánto hay de verdad. La app no dice cuánto cree que hay, para que cuentes sin pistas. Deja en blanco lo que no contaste. Lo que escribes se guarda en este teléfono.',
-      campos: (deBorrador ? `<div class="note">Estas cantidades vienen de un conteo sin terminar${br.en ? ' (' + esH(A().hace(br.en)) + ')' : ''}. Revísalas antes de guardar.</div>` : '') + `<div class="conteo">${arts.map(a => `<div class="conteo-f"><label for="cn-${esH(a.id)}">${esH(a.nombre)}<span class="meta">${esH([a.categoria, a.ubicacion, a.unidad].filter(Boolean).join(' · '))}</span></label><input id="cn-${esH(a.id)}" data-art="${esH(a.id)}" type="number" inputmode="numeric" min="0" step="1" placeholder="Contado" value="${esH(vals[a.id] == null ? '' : vals[a.id])}"></div>`).join('')}</div>`,
+      campos: botonEscanear('conteo') + (deBorrador ? `<div class="note">Estas cantidades vienen de un conteo sin terminar${br.en ? ' (' + esH(A().hace(br.en)) + ')' : ''}. Revísalas antes de guardar.</div>` : '') + `<div class="conteo">${arts.map(a => `<div class="conteo-f"><label for="cn-${esH(a.id)}">${esH(a.nombre)}<span class="meta">${esH([a.categoria, a.ubicacion, a.unidad].filter(Boolean).join(' · '))}</span></label><input id="cn-${esH(a.id)}" data-art="${esH(a.id)}" type="number" inputmode="numeric" min="0" step="1" placeholder="Contado" value="${esH(vals[a.id] == null ? '' : vals[a.id])}"></div>`).join('')}</div>`,
       primario: 'Revisar', icono: 'check',
       ops: () => {
         const filas = Array.from($('acCampos').querySelectorAll('input[data-art]')).filter(i => i.value.trim() !== '');
@@ -1891,7 +1936,7 @@
       titulo: `Revisar el conteo: ${e.bod}`, sub: difs.length ? `Contaste ${filas.length} ${filas.length === 1 ? 'artículo' : 'artículos'}: ${difs.length} no ${difs.length === 1 ? 'cuadra' : 'cuadran'} con la app.` : `Contaste ${filas.length} ${filas.length === 1 ? 'artículo' : 'artículos'}: todo cuadra con la app.`,
       campos: `<div class="conteo-rev">${filas.slice().sort((a, b) => (b.dif !== 0) - (a.dif !== 0)).map(fila).join('')}</div>` + (sin ? `<p class="meta">Sin contar: ${sin}. Esos no se cambian.</p>` : '') +
         (difs.length ? campoTxt('acMotivo', 'Motivo de las diferencias', '', 'Ej: se usaron sin registrar en la reunión', 160) : '') + `<div class="acc-rap">${boton('volverconteo', 'Volver a contar', 'atras', '', 'ghost small')}</div>`,
-      primario: 'Guardar conteo', icono: 'check', listo: 'Listo: conteo guardado.', alGuardar: () => (e.solo ? quitarDeBorrador(e.bod, e.ids) : borrarBorrador(e.bod)),
+      primario: 'Guardar conteo', icono: 'check', porLotes: true, listo: 'Listo: conteo guardado.', alGuardar: () => (e.solo ? quitarDeBorrador(e.bod, e.ids) : borrarBorrador(e.bod)),
       ops: () => {
         const ahora = difsDeConteo().filter(x => x.dif !== 0);
         if (JSON.stringify(ahora.map(x => [x.a.id, x.antes])) !== e.revisado) { conteoRevisar(); fallar('Mientras revisabas cambió la cantidad de algún artículo. Revisa otra vez.'); return null; }
@@ -1961,6 +2006,7 @@
     return /^\d+$/.test(t) ? Number(t) : NaN;
   }
   const ETIQ_EX = { nombre: 'Nombre', categoria: 'Categoría', unidad: 'Unidad', minimo: 'Mínimo', maximo: 'Máximo', ubicacion: 'Ubicación', costo: 'Precio', proveedor: 'Proveedor' };
+  window.addEventListener('app:persona-cambio', () => { previaEx = null; errorEx = ''; accion = null; cotizaciones = []; fotoFactura = ''; conteoEst = null; vistos = {}; });
   let previaEx = null, errorEx = '', aplicandoEx = false;   // previaEx: { crudas } = las filas del Excel, esperando el «Guardar»
 
   /** Convierte las filas del Excel en filas ya revisadas: cada una trae lo que se haría o lo que está mal. Se vuelve a calcular con los datos de ahora. */
@@ -2120,6 +2166,7 @@
       return [['mezclar', 'articulos', a.id, Object.assign({ ultimoMov: idP }, x.datos)],
         movimiento({ bodega: bodegaDe(a), costoUnit: num(x.datos.costo), articuloId: a.id, articulo: x.datos.nombre || a.nombre, tipo: 'ajuste', motivo: 'precio', cantidad: 0, saldo: num(a.cantidad), nota: `Cambió el precio de ${A().cop(num(a.costo))} a ${A().cop(num(x.datos.costo))} (desde el Excel)` }, idP)];
     }
+    verArt(a);
     const dif = x.real - num(a.cantidad), movId = window.nube.idNuevo('mo');
     return [['update', 'articulos', a.id, Object.assign({}, x.datos, { cantidad: window.nube.incremento(dif), ultimoMov: movId, ultimoConteo: A().hoyISO() })],
       movimiento({ bodega: bodegaDe(a), costoUnit: num(x.datos.costo != null ? x.datos.costo : a.costo), articuloId: a.id, articulo: x.datos.nombre || a.nombre, tipo: 'ajuste', motivo: 'conteo', cantidad: dif, saldo: x.real, nota: 'Ajuste desde el Excel' }, movId)];
@@ -2135,13 +2182,13 @@
       if (!ok) return;
       buenas = entenderEx(previaEx.crudas).filter(x => !x.omitida && !x.errores.length);   // los datos pudieron cambiar mientras se pensaba
     }
-    aplicandoEx = true; errorEx = ''; pushPendientes = [];
+    aplicandoEx = true; errorEx = ''; pushPendientes = []; vistos = {};
     const cuenta = t => buenas.filter(x => x.tipo === t).length, ajustes = buenas.filter(x => x.real !== null && x.tipo === 'cambiar').length;
     const lotes = []; let cur = [], pesados = 0;
     const cerrar = () => { if (cur.length) lotes.push(cur); cur = []; pesados = 0; };
     buenas.forEach(x => {   // pocos artículos con movimiento por lote: así Firebase no se pasa de su límite al revisar las reglas
-      const ops = opsEx(x), pesado = x.tipo !== 'eliminar' && x.real !== null;
-      if (pesados + (pesado ? 1 : 0) > 6 || cur.length + ops.length > 150) cerrar();
+      const ops = opsEx(x), pesado = ops.length > 1;   // artículo con movimiento (cantidad, artículo nuevo con existencias o cambio de precio)
+      if (pesados + (pesado ? 1 : 0) > 5 || cur.length + ops.length > 150) cerrar();
       cur.push(...ops); if (pesado) pesados++;
     });
     cerrar();
@@ -2150,7 +2197,7 @@
     try {
       for (let k = 0; k < lotes.length; k++) {
         if (k === lotes.length - 1 && (ajustes || cuenta('eliminar'))) lotes[k].push(aviso('jefe', 'Excel de la bodega', `${persona().nombre} subió un Excel de la bodega: ${resumen}${ajustes ? `; ${pl(ajustes, 'artículo ajustado', 'artículos ajustados')} por conteo` : ''}.`));
-        await window.nube.lote(lotes[k].filter(Boolean)); hechos += lotes[k].length;
+        await guardarEscrituras(lotes[k].filter(Boolean), 5); hechos += lotes[k].length;
       }
       previaEx = null;
       A().toast(`Listo: ${resumen}.`);
@@ -2220,28 +2267,62 @@
   $('btnPedirMaterial').addEventListener('click', () => pedirMaterial());
   $('btnPedirCompra').addEventListener('click', () => pedirCompra());
   /* ---------- escanear el código de un artículo ---------- */
-  async function leerCodigoArt(titulo) {
-    try { await UI.cargarScript('codigos.js?v=1'); }
+  /** Abre el lector. `conocidos`: los códigos que ya existen (así lee más rápido); en «artículo nuevo» no se pasan, porque ese código no existe todavía. */
+  async function leerCodigoArt(titulo, conocidos) {
+    try { await UI.cargarScript('codigos.js?v=2'); }
     catch (e) { A().toast('No se pudo abrir el lector de códigos. Revisa la conexión o escribe el código.'); return null; }
-    return window.Codigos.leer({ titulo, conocidos: articulos().map(a => a.codigo).filter(Boolean) });
+    return window.Codigos.leer({ titulo, conocidos: conocidos || articulos().map(a => a.codigo).filter(Boolean) });
   }
-  /** Escanea y abre el artículo con ese código; si no hay (o hay uno en cada bodega) deja el código en el buscador. */
+  const codigosDe = lista => lista.map(a => a.codigo).filter(Boolean);
+  /** Escanea y abre el artículo con ese código (respeta la bodega que tienes filtrada). Si no existe y eres de Bodega, ofrece agregarlo con ese código. */
   async function escanearArt() {
     const s = await leerCodigoArt('Escanear el código del artículo');
     if (!s) return true;
-    const c = normCod(s), hay = articulos().filter(a => a.codigo && normCod(a.codigo) === c);
-    if (hay.length === 1) { verArticulo(hay[0]); return true; }
+    const c = normCod(s), todos = articulos().filter(a => a.codigo && normCod(a.codigo) === c);
+    const aqui = sub.bodega === 'todas' ? todos : todos.filter(a => bodegaDe(a) === sub.bodega);
+    if (aqui.length === 1) { verArticulo(aqui[0]); return true; }
+    if (!aqui.length && todos.length === 1) { A().toast(`Ese código es de la bodega de ${bodegaDe(todos[0])} (tenías filtrada otra).`); verArticulo(todos[0]); return true; }
+    if (!todos.length && esBodega()) {
+      if (normCod(s).length > 30) { A().toast(`El código leído tiene ${normCod(s).length} caracteres y el máximo es 30: escríbelo a mano o usa uno más corto.`); return true; }
+      const ok = await A().confirmar(`No hay un artículo con el código ${s}`, 'Puedes agregarlo ahora: el código ya queda escrito.', 'Agregar artículo con este código');
+      if (ok) editarArticulo(null, normCod(s));
+      return true;
+    }
     $('qInventario').value = s; sub.bodega = 'todas'; A().S.filtro.inventario = ''; pintar();
-    A().toast(hay.length ? `Hay ${hay.length} artículos con el código ${s}: escoge el de tu bodega.` : `No hay un artículo con el código ${s}`);
+    A().toast(todos.length ? `Hay ${todos.length} artículos con el código ${s}: escoge el de tu bodega.` : `No hay un artículo con el código ${s}`);
     return true;
   }
-  /** En el formulario del artículo: escanea y escribe el código en su campo. */
+  /** En el formulario del artículo: escanea y escribe el código en su campo (sin recortarlo: si es muy largo, se avisa). */
   async function escanearParaCampo() {
-    const s = await leerCodigoArt('Escanear el código del artículo');
+    const s = await leerCodigoArt('Escanear el código del artículo', []);
     if (!s || !accion || $('shAccion').hidden || !$('acCodigo')) return true;
-    $('acCodigo').value = normCod(s).slice(0, 30);
+    const c = normCod(s);
+    if (c.length > 30) { A().toast(`El código leído tiene ${c.length} caracteres y el máximo es 30. No se escribió: usa uno más corto o escríbelo a mano.`); return true; }
+    $('acCodigo').value = c;
     return true;
   }
+  /** Dentro de un formulario (conteo, entrada, salida, pedir material): el código leído escoge el artículo o salta a su campo. */
+  async function escanearEnForm(modo) {
+    const s = await leerCodigoArt('Escanear el código del artículo', codigosDe(modo === 'conteo' && conteoEst ? conteoEst.ids.map(artPorId).filter(Boolean) : articulos()));
+    if (!s || !accion || $('shAccion').hidden) return true;
+    const c = normCod(s), con = articulos().filter(a => a.codigo && normCod(a.codigo) === c);
+    if (!con.length) { A().toast(`No hay un artículo con el código ${s}`); return true; }
+    if (modo === 'conteo') {
+      const a = con.find(x => conteoEst && conteoEst.ids.includes(x.id)), inp = a && $('cn-' + a.id);
+      if (!inp) { A().toast(`${con[0].nombre} no está en este conteo (bodega de ${bodegaDe(con[0])}).`); return true; }
+      try { inp.scrollIntoView({ block: 'center' }); } catch (e) {}
+      inp.focus(); A().toast(`${a.nombre}: escribe lo que contaste.`);
+      return true;
+    }
+    const sel = $('acArt'); if (!sel) return true;
+    // Con la bodega que tiene escogida; si el artículo está en otra, se dice (no se cambia la bodega sin avisar).
+    const op = con.find(x => [...sel.options].some(o => o.value === x.id));
+    if (!op) { A().toast(`El ${con[0].nombre} está en la bodega de ${bodegaDe(con[0])}: cambia la bodega de arriba.`); return true; }
+    sel.value = op.id; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    A().toast(`Escogido: ${op.nombre}`);
+    return true;
+  }
+  const botonEscanear = modo => `<div class="acc-rap">${boton('escanearform', 'Escanear código del artículo', 'codigo', ` data-modo="${modo}" data-id=""`)}</div>`;
   function alTocar(e) {
     const sb = e.target.closest('[data-sub]');
     if (sb) { sub[sb.dataset.sub] = sb.dataset.val; pintar(); return; }
@@ -2256,7 +2337,7 @@
       nuevoart: () => editarArticulo(null), editart: () => a && editarArticulo(a), verart: () => a && verArticulo(a), pedirmat: () => a && pedirMaterial(a.id),
       historden: () => a && (histOrden = b.dataset.val === 'viejo' ? 'viejo' : 'nuevo', repintarHist(a)), histotras: () => a && (histOtras = !histOtras, repintarHist(a)),
       trasladar: () => a && trasladar(a), conteo: () => conteo(), volverconteo: () => (conteoEst ? conteoContar(conteoEst.bod, conteoEst.cat, conteoEst.solo) : conteo()), contarhoy: () => { const ids = contarHoyDe(b.dataset.bod); if (!ids.length) { A().toast('Ya no queda nada por contar hoy en esa bodega.'); return true; } return conteoContar(b.dataset.bod, '', ids); }, borrarborrador: () => { borrarBorrador(b.dataset.bod); conteo(b.dataset.bod); }, excel: () => descargarExcel(b), bdexcel: () => descargarBase(b), exguardar: () => guardarExcelExistencias(), exdescartar: () => { previaEx = null; errorEx = ''; pintar(); }, monto: () => cambiarMonto(), kardex: () => a && kardex(a), excelkardex: () => a && descargarKardex(b, a),
-      escanear: () => escanearArt(), escancodigo: () => escanearParaCampo(),
+      escanear: () => escanearArt(), escancodigo: () => escanearParaCampo(), escanearform: () => escanearEnForm(b.dataset.modo || ''),
       verprov: () => pv && verProv(pv), nuevoprov: () => gestionaProv() && (formProv(null), true), editprov: () => pv && gestionaProv() && (formProv(pv), true), borrarprov: () => pv && esJefe() && (borrarProv(pv), true),
       quitarq: () => { $('qInventario').value = ''; pintar(); return true; },
       vista: () => { guardarVista(id); pintar(); return true; },

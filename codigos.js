@@ -3,7 +3,11 @@
    el mismo lector hecho con ZXing (paquete barcode-detector), que viene dentro de la app en lib/codigos/ (sin internet).
    La cámara se abre al instante, mientras el lector se prepara. Si la cámara falla, dice por qué y cómo arreglarlo,
    y siempre queda "Tomar foto" (la cámara del teléfono) o "Escribir a mano".
-   Uso: const serial = await Codigos.leer({ titulo, conocidos: [seriales] }) → texto o null si se cancela. */
+   Uso: const serial = await Codigos.leer({ titulo, conocidos: [seriales] }) → texto o null si se cancela.
+   Modo continuo (verificar muchos equipos o artículos sin cerrar la cámara):
+        await Codigos.leer({ continuo: true, titulo, conocidos, alLeer: texto => ({ estado: 'ok'|'repetido'|'fuera'|'no', texto: 'DEMO-0007 verificado' }),
+                             resumen: () => ({ linea: 'Verificados 3 · Faltan 5', n: 3 }) }) → null al tocar «Terminar».
+   Cada lectura suena (pitido corto) y vibra. */
 (function () {
   'use strict';
   // Lector propio: primero el que viene con la app; si no carga, el mismo desde internet (jsDelivr).
@@ -20,13 +24,14 @@
     let t = String(v || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim();
     if (/^https?:\/\//i.test(t)) {
       try {
-        const u = new URL(t);
-        for (const k of ['servicetag', 'st', 'serial', 'serialnumber', 'sn', 's', 'tag']) { const x = u.searchParams.get(k); if (x) return x.trim().toUpperCase(); }
+        const u = new URL(t), params = new Map([...u.searchParams.entries()].map(([k, v]) => [k.toLowerCase(), v]));
+        for (const k of ['servicetag', 'st', 'serial', 'serialnumber', 'sn', 's', 'tag']) { const x = params.get(k); if (x && x.trim()) return x.trim().toUpperCase(); }
         const ult = u.pathname.split('/').filter(Boolean).pop() || ''; if (/^[A-Z0-9-]{5,30}$/i.test(ult)) return ult.toUpperCase();
       } catch (e) {}
       return t;
     }
-    t = t.replace(/^(s\/?n|serial(\s*(no|number|n°|nº))?|n[°º]\s*de\s*serie)\s*[:#.]?\s*/i, '');
+    // «S/N: 123», «SN 123» o «Serial No. 123» pierden el rótulo; un serial real que empieza con SN (SN8472910) se queda tal cual.
+    t = t.replace(/^(?:s\/n|sn|serial(?:\s*(?:no|number|n°|nº))?|n[°º]\s*de\s*serie)(?:\s*[:#.]\s*|\s+)/i, '');
     return t.replace(/\s+/g, ' ').toUpperCase();
   }
 
@@ -49,12 +54,20 @@
         try { await cargarScript(LOCAL + 'ponyfill.js'); } catch (e) { await cargarScript(POLY); wasm = WASM; }
       }
       const api = window.BarcodeDetectionAPI;
-      api.setZXingModuleOverrides({ locateFile: (p, pre) => (p.endsWith('.wasm') ? wasm : pre) + p });
-      const det = new api.BarcodeDetector({ formats: FORMATOS });
-      // El motor (wasm) se baja y arranca en la primera lectura: se hace ya con una imagen vacía para no perder ese tiempo.
-      const c = document.createElement('canvas'); c.width = c.height = 8;
-      await det.detect(c);
-      return det;
+      const arrancar = async base => {
+        api.setZXingModuleOverrides({ locateFile: (p, pre) => (p.endsWith('.wasm') ? base : pre) + p });
+        const det = new api.BarcodeDetector({ formats: FORMATOS });
+        // El motor (wasm) se baja y arranca en la primera lectura: se hace ya con una imagen vacía para no perder ese tiempo.
+        const c = document.createElement('canvas'); c.width = c.height = 8;
+        await det.detect(c);
+        return det;
+      };
+      try { return await arrancar(wasm); }
+      catch (e) {
+        // Si el motor (zxing_reader.wasm) no cargó desde la app, se intenta una vez desde internet.
+        if (wasm !== LOCAL) throw e;
+        return arrancar(WASM);
+      }
     })().then(d => (detector = d), e => { cargando = null; throw e; });
     return cargando;
   }
@@ -69,6 +82,12 @@
     x.drawImage(fuente, Math.round((w - cw) / 2), Math.round((h - ch) / 2), cw, ch, 0, 0, c.width, c.height);
     return c;
   }
+  function reducir(bm, max) {
+    const k = max / Math.max(bm.width, bm.height), c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(bm.width * k)); c.height = Math.max(1, Math.round(bm.height * k));
+    c.getContext('2d').drawImage(bm, 0, 0, c.width, c.height);
+    return c;
+  }
   const textos = r => [...new Set(r.map(x => limpiar(x.rawValue)).filter(Boolean))];
   // Busca códigos en una foto (archivo o Blob). Si no encuentra en la foto completa, prueba con el centro agrandado
   // (código pequeño en una foto grande). Devuelve los textos ya limpios, sin repetir.
@@ -76,10 +95,30 @@
     const det = await obtener();
     const bm = await createImageBitmap(blob);
     try {
-      let r = await det.detect(bm);
+      // Una foto de 12 megapíxeles tarda mucho y gasta la memoria del teléfono: la imagen completa se lee a 1800 puntos como máximo
+      // (los recortes del centro, que sirven para códigos pequeños, se siguen sacando de la foto original).
+      const mayor = Math.max(bm.width, bm.height);
+      const completa = mayor > 1800 ? reducir(bm, 1800) : bm;
+      let r = await det.detect(completa);
       for (const f of [0.5, 0.3]) { if (r.length) break; r = await det.detect(centro(bm, bm.width, bm.height, f, f)); }
       return textos(r);
     } finally { if (bm.close) bm.close(); }
+  }
+
+  /* ---------------- pitido y vibración ---------------- */
+  let audio = null;
+  /** Pitido corto al leer (agudo = bien, grave = no sirvió) y una vibración. Sin archivos de sonido: lo genera el navegador. */
+  function pitido(bien) {
+    try { if (navigator.vibrate) navigator.vibrate(bien === false ? [40, 50, 40] : 60); } catch (e) {}
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+      audio = audio || new AC();
+      if (audio.state === 'suspended') audio.resume();
+      const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime, dur = bien === false ? 0.16 : 0.09;
+      o.type = 'sine'; o.frequency.value = bien === false ? 300 : 1250;
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + dur + 0.02);
+    } catch (e) {}
   }
 
   /* ---------------- pantalla ---------------- */
@@ -113,15 +152,27 @@
   .cod-ayuda b { color: #fff; }
   .cod-pie { display: flex; gap: 8px; padding: 8px 12px; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
   .cod-pie .cod-btn { flex: 1 1 0; min-width: 0; }
+  .cod-vivo { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px; padding: 2px 12px 6px; }
+  .cod-cuenta { font-weight: 700; font-size: .95rem; }
+  .cod-pildora { display: inline-flex; align-items: center; min-height: 32px; padding: 4px 12px; border-radius: 999px; font-size: .88rem; font-weight: 700; background: rgba(255,255,255,.1); color: #f1f5f4; max-width: 100%; }
+  .cod-pildora.ok { background: #46c2a6; color: #062019; }
+  .cod-pildora.aviso { background: #ffd27a; color: #2b1d00; }
+  .cod-pildora.mal { background: #ff8a7a; color: #2b0a05; }
   .cod-oculto { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
   .cod [hidden] { display: none !important; }
   @media (prefers-reduced-motion: reduce) { .cod-marco::after { animation: none; } }`;
   let estilo = false;
   function ponerEstilo() { if (estilo) return; const st = document.createElement('style'); st.textContent = css; document.head.appendChild(st); estilo = true; }
 
+  // Registra sw.js (sin pedir permiso de avisos) para que guarde el lector y el escáner abra aunque no haya internet la próxima vez.
+  let swPedido = false;
+  function guardarLectorSinInternet() {
+    if (swPedido) return; swPedido = true;
+    try { if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
+  }
   function leer(opc) {
     opc = opc || {};
-    ponerEstilo();
+    ponerEstilo(); guardarLectorSinInternet();
     const conocidos = new Map((opc.conocidos || []).filter(Boolean).map(s => [norm(s), String(s)]));
     return new Promise(resolver => {
       const antes = document.activeElement;
@@ -131,9 +182,10 @@
         <div class="cod-escena"><video playsinline muted aria-hidden="true"></video><div class="cod-marco" aria-hidden="true"></div><div class="cod-sin" role="alert" hidden></div></div>
         <div class="cod-ctrl" hidden><div class="cod-zoom" role="group" aria-label="Acercar la imagen" hidden></div><button class="cod-btn" type="button" data-a="cerca" aria-pressed="false" hidden>${icono('lupaMas')}<span>Enfocar de cerca</span></button><button class="cod-btn" type="button" data-a="otra" hidden>${icono('girar')}<span>Cambiar cámara</span></button></div>
         <div class="cod-estado" role="status" aria-live="polite">Abriendo la cámara…</div>
+        <div class="cod-vivo" hidden><span class="cod-cuenta"></span><span class="cod-pildora" role="status" aria-live="polite"></span></div>
         <p class="cod-ayuda" hidden></p>
         <div class="cod-elegir" role="group" aria-label="Códigos encontrados" hidden></div>
-        <div class="cod-pie"><button class="cod-btn" type="button" data-a="foto">${icono('camara')}<span>Tomar foto</span></button><button class="cod-btn" type="button" data-a="escribir">${icono('lapiz')}<span>Escribir a mano</span></button></div>
+        <div class="cod-pie"><button class="cod-btn si" type="button" data-a="terminar" hidden><span>Terminar</span></button><button class="cod-btn" type="button" data-a="foto">${icono('camara')}<span>Tomar foto</span></button><button class="cod-btn" type="button" data-a="escribir">${icono('lapiz')}<span>Escribir a mano</span></button></div>
         <input class="cod-oculto" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">`;
       document.body.appendChild(caja); document.body.classList.add('con-cod');
       const $ = s => caja.querySelector(s), video = $('video'), estado = $('.cod-estado'), elegir = $('.cod-elegir'), sin = $('.cod-sin'), inFoto = $('input[type=file]');
@@ -147,6 +199,7 @@
         if (flujo) flujo.getTracks().forEach(t => t.stop());
         window.removeEventListener('popstate', alAtras);
         document.removeEventListener('visibilitychange', alVisibilidad);
+        document.removeEventListener('keydown', alEscape, true);
         caja.remove(); document.body.classList.remove('con-cod');
         if (empujado) { empujado = false; try { history.back(); } catch (e) {} }
         if (antes && antes.isConnected) try { antes.focus({ preventScroll: true }); } catch (e) {}
@@ -161,24 +214,61 @@
         else if (!document.hidden && pausada) { pausada = false; arrancar(); }
       };
       document.addEventListener('visibilitychange', alVisibilidad);
+      // Escape se atrapa en todo el documento: si el foco quedó fuera del lector, no debe cerrar la hoja que hay detrás.
+      function alEscape(ev) { if (ev.key === 'Escape' && !fin) { ev.preventDefault(); ev.stopPropagation(); cerrar(null); } }
+      document.addEventListener('keydown', alEscape, true);
       try { history.pushState({ codigos: 1 }, ''); empujado = true; window.addEventListener('popstate', alAtras); } catch (e) {}
+      // Modo continuo: cada código leído se le entrega a quien llamó (alLeer), que dice si sirvió. El mismo código no se vuelve a
+      // leer hasta 2,5 s después (así no suena ni se cuenta dos veces mientras sigue frente a la cámara).
+      const continuo = !!opc.continuo, pausas = new Map(), PAUSA = 2500;
+      const pildora = (t, clase) => { const x = $('.cod-pildora'); x.textContent = t; x.className = 'cod-pildora ' + (clase || ''); };
+      function pintarCuenta() {
+        const r = typeof opc.resumen === 'function' ? opc.resumen() : null;
+        if (r && r.linea != null) $('.cod-cuenta').textContent = r.linea;
+        $('[data-a=terminar] span').textContent = r && r.n != null ? `Terminar (${r.n})` : 'Terminar';
+      }
+      function leyoContinuo(valores) {
+        const ahora = Date.now();
+        // De una etiqueta con varios códigos solo cuentan los que la app conoce; si no conoce ninguno, solo se usa cuando hay uno solo.
+        let utiles = valores.filter(v => conocidos.has(norm(v)));
+        if (!utiles.length && valores.length === 1) utiles = valores;
+        utiles.forEach(v => {
+          const k = norm(v); if ((pausas.get(k) || 0) > ahora) return;
+          pausas.set(k, ahora + PAUSA);
+          let r;
+          try { r = typeof opc.alLeer === 'function' ? opc.alLeer(conocidos.get(k) || v) : null; } catch (e) { r = { estado: 'no', texto: 'No se pudo revisar ' + v }; }
+          if (typeof r === 'string') r = { estado: 'ok', texto: r };
+          r = r || { estado: 'ok', texto: v };
+          const clase = r.estado === 'ok' ? 'ok' : r.estado === 'repetido' || r.estado === 'fuera' ? 'aviso' : 'mal';
+          pildora(r.texto || v, clase); pitido(r.estado === 'ok' ? true : r.estado === 'repetido' ? true : false); pintarCuenta();
+        });
+      }
       // Varios códigos en la etiqueta (serial, número de producto…): la persona escoge. Uno solo que se lee dos veces seguidas: se usa.
+      let ofrecidos = '';
       function revisar(valores) {
+        if (continuo) return leyoContinuo(valores);
         const conocido = valores.find(v => conocidos.has(norm(v)));
-        if (conocido) return cerrar(conocidos.get(norm(conocido)));
+        if (conocido) { pitido(true); return cerrar(conocidos.get(norm(conocido))); }
         valores.forEach(v => vistos.set(v, (vistos.get(v) || 0) + 1));
         const firmes = [...vistos.entries()].filter(([, n]) => n >= 2).map(([v]) => v);
-        if (valores.length === 1 && firmes.includes(valores[0]) && vistos.size === 1) return cerrar(valores[0]);
+        // Un solo código firme: se usa (a la 2.ª lectura si es el único visto; a la 3.ª si había otro que aparecía de vez en cuando).
+        if (firmes.length === 1 && (vistos.size === 1 || vistos.get(firmes[0]) >= 3)) { pitido(true); return cerrar(firmes[0]); }
         if (firmes.length) {
-          elegir.hidden = false;
-          elegir.innerHTML = firmes.slice(0, 6).map(v => `<button class="cod-btn" type="button" data-usar="${esc(v)}">${esc(v)}</button>`).join('');
-          ponerEstado(firmes.length > 1 ? 'Hay varios códigos: toca el del serial.' : 'Toca el código para usarlo, o sigue apuntando al serial.');
+          // Los botones solo se vuelven a dibujar si cambió la lista (antes se reescribían 8 veces por segundo y se perdía el toque).
+          const lista = firmes.slice(0, 6), clave = lista.join('\n');
+          if (clave !== ofrecidos) {
+            ofrecidos = clave; elegir.hidden = false;
+            elegir.innerHTML = lista.map(v => `<button class="cod-btn" type="button" data-usar="${esc(v)}">${esc(v)}</button>`).join('');
+            ponerEstado(firmes.length > 1 ? 'Hay varios códigos: toca el del serial.' : 'Toca el código para usarlo, o sigue apuntando al serial.');
+            pitido(true);
+          }
         }
       }
       // Se turnan tres vistas: la imagen completa, el centro agrandado (el recuadro) y el centro muy agrandado.
       // Con un código pequeño la imagen completa casi nunca alcanza; agrandado 2,5 a 3 veces sí se lee (se midió con un
       // código de 230 puntos de ancho en un video de 1280).
       const VISTAS = [null, [0.6, 0.35], [0.35, 0.25]];
+      const textoApunta = () => (continuo ? 'Apunta a cada código, uno tras otro. Toca Terminar cuando acabes.' : 'Apunta al código de barras o QR del serial, dentro del recuadro.');
       let fallas = 0, avisoFalla = false;
       async function ciclo() {
         if (fin) return;
@@ -203,26 +293,31 @@
          y el código se ve grande. Cada opción aparece solo si el teléfono la permite. */
       const ajustar = c => (pista && pista.applyConstraints ? pista.applyConstraints({ advanced: [c] }) : Promise.reject()).catch(() => false);
       const modos = () => cap.focusMode || [];
-      function ponerZoom(z) {
+      const LS_ZOOM = 'codigos.zoom';
+      const zoomGuardado = () => { try { return Number(localStorage.getItem(LS_ZOOM)) || 0; } catch (e) { return 0; } };
+      function ponerZoom(z, recordar) {
+        if (recordar) { try { localStorage.setItem(LS_ZOOM, String(z)); } catch (e) {} }
         ajustar({ zoom: z });
         $('.cod-zoom').querySelectorAll('[data-zoom]').forEach(b => b.setAttribute('aria-pressed', Number(b.dataset.zoom) === z));
       }
       async function configurar() {
         pista = flujo.getVideoTracks()[0];
         cap = pista && pista.getCapabilities ? pista.getCapabilities() || {} : {};
-        if (cap.torch) $('[data-a=linterna]').hidden = false;
+        // La linterna es de cada lente: al cambiar de cámara se apaga y el botón solo sale si esa lente la tiene.
+        linterna = false; $('[data-a=linterna]').setAttribute('aria-pressed', 'false'); $('[data-a=linterna]').hidden = !cap.torch;
         if (modos().includes('continuous')) await ajustar({ focusMode: 'continuous' });
         const zz = cap.zoom && typeof cap.zoom.max === 'number' ? cap.zoom : null;
         const niveles = zz ? [1, 2, 3, 4].filter(z => z >= (zz.min || 1) && z <= zz.max) : [];
         const caja2 = $('.cod-zoom');
         if (niveles.length > 1) {
           caja2.innerHTML = niveles.map(z => `<button class="cod-btn" type="button" data-zoom="${z}" aria-pressed="false" aria-label="Zoom ${z} veces">${z}×</button>`).join('');
-          caja2.hidden = false; ponerZoom(niveles.includes(2) ? 2 : niveles[0]);
+          // No se fuerza 2×: se abre con el último zoom que la persona usó (o sin zoom la primera vez).
+          caja2.hidden = false; const g = zoomGuardado(); ponerZoom(niveles.includes(g) ? g : niveles[0]);
         } else { caja2.hidden = true; caja2.innerHTML = ''; }
         cerca = false; $('[data-a=cerca]').setAttribute('aria-pressed', 'false');
         $('[data-a=cerca]').hidden = !(modos().includes('manual') && cap.focusDistance && typeof cap.focusDistance.min === 'number');
         try {
-          traseras = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput' && !/front|frontal|user|delantera|selfie/i.test(d.label || ''));
+          traseras = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput' && !/front|frontal|user|delantera|selfie|facetime|integrad|built-in|webcam/i.test(d.label || ''));
         } catch (e) { traseras = []; }
         const ajustes = pista && pista.getSettings ? pista.getSettings() : {};
         camActual = ajustes.deviceId || camActual;
@@ -274,14 +369,22 @@
         function listo() { clearTimeout(t); ok(); }
         video.addEventListener('loadeddata', listo, { once: true });
       });
-      async function usarCamara(id) {
+      // Cambiar de lente: primero se suelta la cámara que está abierta (muchos teléfonos no dejan abrir dos lentes traseras a la vez).
+      function soltarCamara() { if (flujo) { flujo.getTracks().forEach(t => t.stop()); flujo = null; } video.srcObject = null; }
+      async function usarCamara(id, soltarAntes) {
+        if (soltarAntes) soltarCamara();
         const nuevo = await pedirCamara(id);
         if (!nuevo) return;
         if (fin) { nuevo.getTracks().forEach(t => t.stop()); return; }
         if (flujo) flujo.getTracks().forEach(t => t.stop());
         flujo = nuevo; video.srcObject = flujo;
-        try { await video.play(); } catch (e) {}
-        await conImagen();
+        try {
+          try { await video.play(); } catch (e) {}
+          await conImagen();
+        } catch (e) {
+          // Una cámara que «abre» pero no manda imagen se apaga (si no, la luz de la cámara queda prendida).
+          soltarCamara(); throw e;
+        }
         await configurar();
       }
       function mostrarAyuda() {
@@ -297,7 +400,7 @@
         ponerEstado('Enfocando…');
         ajustar({ focusMode: 'single-shot', pointsOfInterest: [punto] }).then(() => setTimeout(() => {
           if (!fin && !cerca && modos().includes('continuous')) ajustar({ focusMode: 'continuous' });
-          if (!fin) ponerEstado('Apunta al código de barras o QR del serial, dentro del recuadro.');
+          if (!fin) ponerEstado(textoApunta());
         }, 1800));
       });
       // Por qué no abrió la cámara y qué hacer, según el error y el teléfono.
@@ -331,7 +434,7 @@
       // El lector y la cámara arrancan a la vez: la imagen sale enseguida aunque el lector tarde en prepararse.
       let lector = null;
       function prepararLector() {
-        lector = lector || obtener().then(d => { detector = d; if (!fin && flujo) ponerEstado('Apunta al código de barras o QR del serial, dentro del recuadro.'); return d; }, e => {
+        lector = lector || obtener().then(d => { detector = d; if (!fin && flujo) ponerEstado(textoApunta()); return d; }, e => {
           lector = null;
           if (!fin) ponerEstado('No se pudo preparar el lector de códigos. Toca Escribir a mano, o cierra y vuelve a intentar con internet.');
           if (window.nube && window.nube.reportarError) window.nube.reportarError(e, 'codigos.lector');
@@ -345,6 +448,7 @@
           return sinCamara(enOtraApp || !window.isSecureContext ? explicar(null) : { t: 'Este navegador no deja usar la cámara en vivo.', pasos: ['Toca Tomar foto y saca una foto clara del código.'] }, false);
         }
         video.hidden = false; $('.cod-marco').hidden = false; sin.hidden = true; ponerEstado('Abriendo la cámara…');
+        if (continuo) { $('.cod-vivo').hidden = false; $('[data-a=terminar]').hidden = false; $('[data-a=escribir]').hidden = true; pintarCuenta(); }
         // La cámara que se escogió la última vez (si ya no existe, la trasera que dé el navegador).
         try { await usarCamara(camGuardada()); }
         catch (e0) {
@@ -360,13 +464,13 @@
           }
         }
         if (fin) return;
-        ponerEstado(detector ? 'Apunta al código de barras o QR del serial, dentro del recuadro.' : 'Preparando el lector de códigos…');
+        ponerEstado(detector ? textoApunta() : 'Preparando el lector de códigos…');
         clearTimeout(tAyuda); tAyuda = setTimeout(() => { if (!fin) mostrarAyuda(); }, 6000);
         clearTimeout(timer); ciclo();
       }
       caja.addEventListener('click', async ev => {
         const u = ev.target.closest('[data-usar]'); if (u) return cerrar(u.dataset.usar);
-        const zb = ev.target.closest('[data-zoom]'); if (zb) return ponerZoom(Number(zb.dataset.zoom));
+        const zb = ev.target.closest('[data-zoom]'); if (zb) return ponerZoom(Number(zb.dataset.zoom), true);
         const a = ev.target.closest('[data-a]'); if (!a) return;
         if (a.dataset.a === 'cancelar' || a.dataset.a === 'escribir') cerrar(null);
         if (a.dataset.a === 'foto') { inFoto.value = ''; try { inFoto.click(); } catch (e) {} }
@@ -379,12 +483,16 @@
           if (cerca) ponerEstado('Enfoque de cerca: acerca el código a unos 8 a 12 cm.');
         }
         if (a.dataset.a === 'otra' && traseras.length > 1) {
-          const i = traseras.findIndex(d => d.deviceId === camActual), sig = traseras[(i + 1) % traseras.length];
-          a.disabled = true;
-          try { await usarCamara(sig.deviceId); try { localStorage.setItem(LS_CAM, sig.deviceId); } catch (e) {} ponerEstado(`Cámara ${traseras.indexOf(sig) + 1} de ${traseras.length}. Usa la que enfoque mejor.`); }
-          catch (e) { ponerEstado('No se pudo cambiar de cámara.'); }
+          const n = traseras.length, i = traseras.findIndex(d => d.deviceId === camActual), j = (i + 1) % n, sig = traseras[j], previa = camActual;
+          a.disabled = true; ponerEstado('Cambiando de cámara…');
+          try { await usarCamara(sig.deviceId, true); try { localStorage.setItem(LS_CAM, sig.deviceId); } catch (e) {} ponerEstado(`Cámara ${j + 1} de ${n}. Usa la que enfoque mejor.`); }
+          catch (e) {
+            ponerEstado('No se pudo cambiar de cámara.');
+            if (!fin && !flujo) { try { await usarCamara(previa, false); } catch (e2) { sinCamara(explicar(e2), true); } }   // se vuelve a la que andaba
+          }
           a.disabled = false;
         }
+        if (a.dataset.a === 'terminar') cerrar(null);
         if (a.dataset.a === 'linterna' && flujo) {
           linterna = !linterna;
           try { await flujo.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: linterna }] }); a.setAttribute('aria-pressed', linterna); } catch (e) { linterna = false; }
@@ -397,6 +505,7 @@
           await prepararLector();
           const v = await leerImagen(f);
           if (!v.length) { ponerEstado('No encontré un código en la foto. Acércate más, con buena luz y sin reflejos.'); return; }
+          if (continuo) { pausas.clear(); leyoContinuo(v); ponerEstado(textoApunta()); return; }
           vistos = new Map(v.map(x => [x, 2]));
           if (v.length === 1) return cerrar(conocidos.get(norm(v[0])) || v[0]);
           revisar(v);

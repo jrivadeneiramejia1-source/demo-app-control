@@ -14,6 +14,7 @@
   const esJefeReal = () => !!yo() && yo().real === true && yo().rol === 'jefe';
   const esDireccion = rol => ['gerente', 'jefe'].includes(rol);
   const MAX_FILAS = 200, MAX_BYTES = 1000000;
+  window.addEventListener('app:persona-cambio', () => { previa = null; });
   let ocupado = false, previa = null;   // previa: las filas del Excel ya entendidas, esperando el «Guardar»
 
   /* ---------- entender el Excel ---------- */

@@ -37,6 +37,8 @@
       'auth/email-already-in-use': 'Ese correo ya tiene cuenta. Toca «Entrar» y escribe tu clave.',
       'codigo-malo': 'Ese código no sirve. Pídele a tu jefe el código de tu rol y escríbelo tal cual (ejemplo: LOG-7KQ4-M2XP).',
       'permission-denied': 'Firebase no dejó hacer este cambio. Puede que otra persona ya lo cambió (revisa la lista otra vez) o que falte pegar las reglas de firestore.rules en Firestore Database, pestaña Reglas.',
+      'articulo-cambio': 'Otra persona movió este artículo mientras lo hacías. No se guardó nada: mira la cantidad que hay ahora y vuelve a intentar.',
+      'sin-senal-mov': 'Sin señal: para mover una cantidad la app revisa primero que nadie más la haya cambiado. No se guardó nada; vuelve a intentar cuando tengas señal.',
       'unavailable': 'Sin conexión con la base de datos. Lo que hagas se guarda cuando vuelva la señal.',
       'not-found': 'Ese registro ya no existe. Puede que otra persona lo haya borrado.',
       'sin-sdk': 'Firebase no alcanzó a cargar. Revisa la conexión a internet y toca Reintentar arriba.',
@@ -53,7 +55,11 @@
     A = Au; FS = F;
     const app = App.initializeApp(window.FIREBASE_CONFIG);
     auth = A.getAuth(app);
-    db = F.getFirestore(app);
+    // Caché en disco: lo que se guardó sin señal sobrevive si se cierra la app, y entre pestañas no se pelean. En modo incógnito
+    // (o si el navegador no la deja) se usa el Firestore normal.
+    try {
+      db = F.initializeFirestore(app, { localCache: F.persistentLocalCache({ tabManager: F.persistentMultipleTabManager() }) });
+    } catch (e) { db = F.getFirestore(app); }
     auth.languageCode = 'es';
     A.getRedirectResult(auth).catch(() => {});   // si volvió de Google por redirección, termina el ingreso
     alCambiarSesionFn = alCambiarSesion;
@@ -67,7 +73,7 @@
   function abrirSesion(u) {
     const alCambiarSesion = alCambiarSesionFn;
     if (oyentePerfil) { oyentePerfil(); oyentePerfil = null; }
-    if (!u) { alCambiarSesion(null); return; }
+    if (!u) { yaProbeInvitacion.clear(); alCambiarSesion(null); return; }
     const prueba = window.DEMO.porCorreo(u.email);
     if (prueba) { alCambiarSesion(prueba); return; }
     // Cuenta real con correo y clave: tiene que confirmar el correo (el enlace que le llega). Con Google ya viene confirmado.
@@ -199,7 +205,7 @@
     return p;
   }
 
-  const salir = () => (auth ? A.signOut(auth) : Promise.resolve());
+  const salir = () => { yaProbeInvitacion.clear(); return auth ? A.signOut(auth) : Promise.resolve(); };
 
   /** La Jefe sube la lista de personas: una invitación por correo (el documento se llama como el correo, en minúscula). */
   async function invitar(lista, por) {
@@ -270,6 +276,28 @@
     await b.commit();
   }
 
-  window.nube = Object.freeze({ configLista, explicar, iniciar, entrar, salir, escuchar, guardar, mezclar, borrar, sembrar, idNuevo, incremento, lote, COLECCIONES,
+  /** Como lote(), pero antes de guardar vuelve a leer los artículos de `vistos` ({ id: { cantidad, costo } } = lo que la persona tenía
+      en pantalla) y, si otra persona los movió mientras tanto, no guarda nada y avisa (así el kárdex —saldo, valor y costo— nunca se desajusta). */
+  async function loteSeguro(ops, vistos) {
+    const ids = Object.keys(vistos || {});
+    if (!ids.length) return lote(ops);
+    try { await FS.runTransaction(db, async tx => {
+      for (const id of ids) {
+        const s = await tx.get(FS.doc(db, 'articulos', id));
+        const d = s.exists() ? s.data() : null, v = vistos[id];
+        if (!d || Number(d.cantidad || 0) !== Number(v.cantidad || 0) || Number(d.costo || 0) !== Number(v.costo || 0)) { const e = new Error('Cambió'); e.code = 'articulo-cambio'; throw e; }
+      }
+      ops.forEach(([t, col, id, datos]) => {
+        const ref = FS.doc(db, col, id);
+        if (t === 'set') tx.set(ref, datos); else if (t === 'mezclar') tx.set(ref, datos, { merge: true }); else if (t === 'borrar') tx.delete(ref); else tx.update(ref, datos);
+      });
+    }); } catch (e) {
+      // Una transacción no se guarda «para después»: sin señal falla. Se dice claro.
+      if (e && ['unavailable', 'failed-precondition', 'deadline-exceeded'].includes(e.code)) { const x = new Error('Sin señal'); x.code = 'sin-senal-mov'; throw x; }
+      throw e;
+    }
+  }
+
+  window.nube = Object.freeze({ configLista, explicar, iniciar, entrar, salir, escuchar, guardar, mezclar, borrar, sembrar, idNuevo, incremento, lote, loteSeguro, COLECCIONES,
     uid, correo, ahoraServidor, token, entrarCuenta, crearCuenta, usarCodigo, codigoNuevo, limpiarCodigo, entrarGoogle, reenviarConfirmacion, yaConfirme, invitar, recuperarClave });
 })();

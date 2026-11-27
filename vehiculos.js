@@ -509,6 +509,15 @@
   const campoFoto = (id, lbl) => `<div class="field foto-campo"><span class="lbl">${esH(lbl)}</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="${id}Txt">Tomar foto</span><input id="${id}" class="archivo-oculto" type="file" accept="image/*" capture="environment" data-foto="${id}"></label><img id="${id}Ver" class="nov-foto" alt="${esH(lbl)}" hidden></div>`;
   const valor = id => ($(id) ? $(id).value.trim() : '');
   const entero = id => { const v = valor(id); return /^\d+$/.test(v) ? Number(v) : NaN; };
+  /** Pesos escritos por una persona: vacío = 0; acepta «150000», «150.000» o «$ 150.000»; cualquier otra cosa da NaN (no se guarda en silencio como $ 0). */
+  const pesos = id => {
+    const el = $(id); if (!el) return 0;
+    const v = el.value.trim().replace(/^\$\s*/, '');
+    if (v === '') return el.validity && el.validity.badInput ? NaN : 0;
+    if (/^\d+$/.test(v)) return Number(v);
+    if (/^\d{1,3}(\.\d{3})+$/.test(v)) return Number(v.replace(/\./g, ''));
+    return NaN;
+  };
   // Decimal con coma o punto y hasta 2 decimales (los galones: 12,5).
   const decimal = id => { const v = valor(id).replace(',', '.'); return /^\d{1,3}(\.\d{1,2})?$/.test(v) ? Number(v) : NaN; };
   function fallar(msg, id) { const e = $('veErr'); e.textContent = msg; e.hidden = false; if (id && $(id)) $(id).focus(); return false; }
@@ -567,7 +576,7 @@
     txt.textContent = 'Preparando…';
     try {
       const grande = id === 'vnFoto' || id === 'vqFoto';   // la novedad y el recibo llevan una sola foto más grande; las 5 de la salida, pequeñas
-      const dato = await window.Inventario.leerFoto(f, grande ? 1280 : 720, grande ? 300000 : 140000);
+      const dato = await window.Inventario.leerFoto(f, grande ? 1280 : 720, grande ? 300000 : 100000);
       if (id === 'vnFoto') fotoNov = dato; else if (id === 'vqFoto') fotoTan = dato; else fotos[id] = dato;
       ver.src = dato; ver.hidden = false; txt.textContent = 'Cambiar'; $('veErr').hidden = true;
     } catch (er) { txt.textContent = 'Tomar foto'; fallar(er.message === 'grande' ? 'La foto es muy pesada. Toma otra más de cerca.' : 'Ese archivo no es una foto.'); }
@@ -586,11 +595,12 @@
         (esAdmin() ? campoNum('vnCosto', 'Costo (si ya se sabe)', '', 0, 100000000) : ''),
       primario: 'Reportar', icono: 'enviar', listo: 'Listo: novedad reportada. Ya les llegó el aviso.',
       ops: () => {
-        const veh = vehPorId(valor('vnVeh')), kmv = entero('vnKm'), desc = valor('vnDesc'), costo = esAdmin() ? (entero('vnCosto') || 0) : 0;
+        const veh = vehPorId(valor('vnVeh')), kmv = entero('vnKm'), desc = valor('vnDesc'), costo = esAdmin() ? pesos('vnCosto') : 0;
         if (!veh) return fallar('Escoge el carro.', 'vnVeh');
         if (!(kmv >= 0)) return fallar('Escribe el kilometraje.', 'vnKm');
         if (kmv + 5000 < num(veh.km)) return fallar(`El kilometraje parece bajo: el carro va en ${km(veh.km)}.`, 'vnKm');
         if (desc.length < 5) return fallar('Cuenta qué pasó.', 'vnDesc');
+        if (!(costo >= 0)) return fallar('Escribe el costo en pesos, solo números (ejemplo: 150000).', 'vnCosto');
         if (!fotoNov) return fallar('Falta la foto de la novedad.');
         const tipo = valor('vnTipo');
         return [['set', 'novedades', window.nube.idNuevo('no'), { vehiculoId: veh.id, placa: veh.placa, tipo, fecha: ahora(), km: kmv, descripcion: desc, foto: fotoNov,
@@ -642,7 +652,8 @@
         (v && v.estado === 'disponible' ? marca('vrTaller', 'Mandar el carro al taller', n.tipo === 'choque') : v && v.estado === 'en-uso' ? '<p class="meta">El carro está en uso. Si hay que llevarlo al taller, hazlo después de que llegue.</p>' : ''),
       primario: 'Marcar como revisada', icono: 'check', listo: 'Listo: novedad revisada.', base: v ? Object.assign({}, v) : null,
       ops: () => {
-        const costo = entero('vrCosto') || 0, nota = valor('vrNota');
+        const costo = pesos('vrCosto'), nota = valor('vrNota');
+        if (!(costo >= 0)) return fallar('Escribe el costo en pesos, solo números (ejemplo: 150000).', 'vrCosto');
         const ops = [['mezclar', 'novedades', n.id, { costo, nota, revisada: true, revisadaPor: persona().nombre, revisadaEn: ahora() }]];
         if (v && $('vrTaller') && $('vrTaller').checked) ops.push(['mezclar', 'vehiculos', v.id, { estado: 'en-taller', conductor: '', historial: paso(v, `Entró al taller: ${TIPO_NOV[n.tipo] || 'novedad'}`) }]);
         if (n.reportaRol && n.reportaRol !== miRol()) ops.push(aviso(n.reportaRol, 'Revisaron tu novedad', `${persona().nombre} revisó ${(TIPO_NOV[n.tipo] || 'la novedad').toLowerCase()} del ${n.placa}${nota ? ': ' + nota : '.'}`));
@@ -1043,7 +1054,7 @@
     clave: 'vehiculos', hoja: 'Carros', titulo: 'Base de datos: carros', sub: 'Una fila por carro', archivo: 'Base de datos Carros',
     acciones: ['Agregar', 'Cambiar', 'Eliminar'], puedeSubir: esJefe, puedeEliminar: esJefe,
     columnas: [
-      { t: 'Placa', k: 'placa', clave: true, obligatoria: true, fija: true, unico: true, mayus: true, max: 10, ancho: 12 },
+      { t: 'Placa', k: 'placa', clave: true, obligatoria: true, fija: true, unico: true, normaliza: v => String(v == null ? '' : v).toUpperCase().replace(/[^A-Z0-9]/g, ''), mayus: true, max: 10, ancho: 12 },
       { t: 'Marca', k: 'marca', obligatoria: true, max: 30, ancho: 16 }, { t: 'Modelo', k: 'modelo', obligatoria: true, max: 40, ancho: 18 },
       { t: 'Año', k: 'anio', tipo: 'entero', min: 1990, max: 2100, obligatoria: true }, { t: 'Color', k: 'color', max: 20, ancho: 14 },
       { t: 'Kilometraje', k: 'km', tipo: 'entero', min: 0, obligatoria: true },

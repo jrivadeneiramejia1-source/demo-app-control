@@ -378,23 +378,30 @@
   /* ---------- firma en la pantalla ---------- */
   const campoFirma = (id, lbl, cc) => `<div class="field firma-campo"><span class="lbl">${esH(lbl)}</span>
       <canvas id="${esH(id)}" class="firma-pad" width="600" height="200" aria-label="${esH(lbl)}: firma con el dedo"></canvas>
-      <div class="row"><span class="meta" id="${esH(id)}Txt">Firma con el dedo dentro del cuadro.</span>${boton('borrarfirma', 'Borrar', 'borrar', id, 'ghost small')}</div>
+      <div class="row"><span class="meta" id="${esH(id)}Txt">Firma con el dedo dentro del cuadro.</span>${boton('deshacerfirma', 'Deshacer', 'atras', id, 'ghost small')}${boton('borrarfirma', 'Borrar', 'borrar', id, 'ghost small')}</div>
       ${cc ? `<span class="meta">C.C. <b id="${esH(id)}CC">${esH(cc)}</b></span>` : ''}</div>`;
   const pads = {};
-  /** Prepara un cuadro de firma: se dibuja con el dedo o el mouse. */
+  const FIRMA_AYUDA = 'Firma con el dedo dentro del cuadro.';
+  /** Prepara un cuadro de firma: se dibuja con el dedo o el mouse. Guarda cada trazo para poder deshacer el último. */
   function activarFirma(id) {
     const cv = $(id); if (!cv) return;
-    const ctx = cv.getContext('2d'), pad = { puntos: 0 };
-    ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#13212b';
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
-    let antes = null;
+    const ctx = cv.getContext('2d'), pad = { puntos: 0, trazos: [] };
+    const blanco = () => { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#13212b'; };
+    const rayar = (a, b) => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
+    const texto = () => { const t = $(id + 'Txt'); if (t) t.textContent = pad.puntos ? 'Firma lista.' : FIRMA_AYUDA; };
+    blanco();
+    pad.deshacer = () => { pad.trazos.pop(); blanco(); pad.puntos = 0; pad.trazos.forEach(tr => { for (let i = 1; i < tr.length; i++) { rayar(tr[i - 1], tr[i]); pad.puntos++; } }); texto(); };
+    pad.borrar = () => { pad.trazos = []; pad.puntos = 0; blanco(); texto(); };
+    let antes = null, trazo = null;
     const punto = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height }; };
-    cv.onpointerdown = e => { e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {} antes = punto(e); };
-    cv.onpointermove = e => { if (!antes) return; e.preventDefault(); const p = punto(e); ctx.beginPath(); ctx.moveTo(antes.x, antes.y); ctx.lineTo(p.x, p.y); ctx.stroke(); pad.puntos++; antes = p; const t = $(id + 'Txt'); if (t) t.textContent = 'Firma lista.'; };
-    cv.onpointerup = cv.onpointercancel = () => { antes = null; };
+    // Solo cuenta el primer dedo: la palma o un segundo dedo apoyados en la pantalla no dibujan.
+    cv.onpointerdown = e => { if (e.isPrimary === false) return; e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {} antes = punto(e); trazo = [antes]; pad.trazos.push(trazo); };
+    cv.onpointermove = e => { if (!antes || e.isPrimary === false) return; e.preventDefault(); const p = punto(e); rayar(antes, p); trazo.push(p); pad.puntos++; antes = p; texto(); };
+    cv.onpointerup = cv.onpointercancel = e => { if (e && e.isPrimary === false) return; antes = null; trazo = null; };
     pads[id] = pad;
   }
-  function borrarFirma(id) { const cv = $(id); if (!cv) return; const ctx = cv.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height); pads[id] = { puntos: 0 }; const t = $(id + 'Txt'); if (t) t.textContent = 'Firma con el dedo dentro del cuadro.'; }
+  function borrarFirma(id) { if (pads[id]) pads[id].borrar(); }
+  function deshacerFirma(id) { if (pads[id]) pads[id].deshacer(); }
   const firmada = id => !!(pads[id] && pads[id].puntos >= 8);
   /** La firma como imagen pequeña (PNG). */
   function leerFirma(id) {
@@ -450,7 +457,9 @@
   function devolucion(clave) {
     const conEquipos = personas().filter(p => p.hojas.some(h => porDevolver(h).some(x => { const e = eqPorId(x.id); return e && e.estado === 'asignado'; })));
     if (!conEquipos.length) { A().toast('Nadie tiene equipos por devolver.'); return null; }
-    const elegido = conEquipos.find(p => p.clave === clave) || conEquipos[0];
+    // Si pidieron los equipos de una persona concreta y no tiene acta abierta, se avisa (no se abre la devolución de otra persona).
+    const elegido = clave ? conEquipos.find(p => p.clave === clave) : conEquipos[0];
+    if (!elegido) { A().toast('Esa persona tiene equipos asignados, pero ninguno con el acta de entrega abierta. Revisa sus actas o corrige el equipo desde su hoja de vida.'); return null; }
     abrir({ titulo: 'Devolución de equipos', sub: 'Se anota en la misma acta de la entrega, con la fecha de devolución y la firma. Lo que llega queda en Recibidos.',
       campos: campoSel('ehQuien', 'Quién devuelve', conEquipos.map(p => [p.clave, `${p.nombre}${p.cedula ? ' · C.C. ' + p.cedula : ''}`]), elegido.clave) +
         campoTxt('ehFecha', 'Fecha de devolución', hoy(), '', 10, 'date') + `<div class="acc-rap">${boton('escanear', 'Escanear un equipo', 'codigo', '', 'small', ' data-modo="devolucion"')}</div><div class="field" id="ehLista"></div>` +
@@ -583,12 +592,12 @@
   }
   function nuevo() {
     abrir({ titulo: 'Registrar equipo nuevo', sub: 'Queda en bodega, listo para entregar.',
-      campos: `<div class="fields cols">${campoTxt('ehSerial', 'Serial', '', 'Ej: DEMO-0013', 30)}${campoSel('ehTipo', 'Tipo', TIPOS_EQ.map(t => [t, t]), 'Portátil')}</div>` +
+      campos: `<div class="fields cols"><div class="field"><label for="ehSerial">Serial</label><div class="con-scan"><input id="ehSerial" type="text" maxlength="40" autocomplete="off" placeholder="Ej: DEMO-0013"><button type="button" class="btn small" data-accion="escanear" data-modo="nuevo">Escanear</button></div></div>${campoSel('ehTipo', 'Tipo', TIPOS_EQ.map(t => [t, t]), 'Portátil')}</div>` +
         `<div class="fields cols">${campoTxt('ehMarca', 'Marca', '', 'Ej: Lenovo', 40)}${campoTxt('ehModelo', 'Modelo', '', 'Ej: ThinkPad E14', 60)}</div>` + campoTxt('ehObs', 'Observaciones', '', '', 160) + camposCompra({}),
       primario: 'Registrar', icono: 'mas', listo: 'Listo: equipo registrado en bodega.',
       ops: () => {
         const serial = valor('ehSerial').toUpperCase(), marcaV = valor('ehMarca'), modelo = valor('ehModelo');
-        if (!/^[A-Z0-9-]{4,30}$/.test(serial)) return fallar('Escribe el serial (letras, números y guiones).', 'ehSerial');
+        if (!/^[A-Z0-9-]{4,30}$/.test(serial)) return fallar('Escribe el serial (letras, números y guiones, de 4 a 30 caracteres).', 'ehSerial');
         if (D().equipos.some(e => normSerial(e.serial) === normSerial(serial))) return fallar('Ya hay un equipo con ese serial (los guiones, los puntos y los espacios no cuentan).', 'ehSerial');
         if (!marcaV) return fallar('Escribe la marca.', 'ehMarca');
         const compra = leerCompra(); if (typeof compra === 'string') return false;
@@ -696,21 +705,26 @@
     pintarVerif();
   }
   /** Marca un equipo como verificado (por escáner o escrito a mano). */
-  function agregarVerif(s) {
-    if (!verif || !accion || !accion.esVerif) return;
+  function agregarVerif(s, enCamara) {
+    if (!verif || !accion || !accion.esVerif) return { estado: 'no', texto: 'La verificación ya se cerró' };
+    const dec = (estado, texto) => { if (!enCamara) A().toast(texto); return { estado, texto }; };   // con la cámara abierta el aviso sale dentro de la cámara
     const e = porSerial(s);
-    if (!e) { A().toast(`No hay un equipo con el serial ${s}`); return; }
-    if (e.estado === 'baja') { A().toast(`El ${e.serial} está de baja: no se verifica.`); return; }
-    if (verif.hechos.has(e.id)) { A().toast(`${e.serial} ya estaba verificado.`); return; }
+    if (!e) return dec('no', `No hay un equipo con el serial ${s}`);
+    if (e.estado === 'baja') return dec('no', `El ${e.serial} está de baja: no se verifica.`);
+    if (verif.hechos.has(e.id)) return dec('repetido', `${e.serial} ya estaba verificado.`);
     verif.hechos.add(e.id); pintarVerif();
-    A().toast(`Verificado: ${e.serial}`);
+    return dec('ok', `Verificado: ${e.serial}`);
   }
-  /** Escanea uno tras otro hasta que se cierre la cámara. */
+  /** Escanea uno tras otro con la cámara abierta todo el rato (sin cerrarla ni reiniciarla): cuenta, avisa de cada lectura y se cierra con «Terminar». */
   async function escanearVerif() {
     while (accion && accion.esVerif && !$('shEq').hidden) {
-      const s = await leerSerial('Escanear un equipo para verificarlo', activos().map(e => e.serial));
-      if (!s || !accion || !accion.esVerif || $('shEq').hidden) break;
-      agregarVerif(s);
+      const r = await leerSerial('Verificar equipos', activos().map(e => e.serial), {
+        continuo: true, alLeer: s => agregarVerif(s, true),
+        resumen: () => { const n = verif ? verif.hechos.size : 0, falta = verif ? esperados().filter(e => !verif.hechos.has(e.id)).length : 0; return { linea: `Verificados ${n} · Faltan ${falta}`, n }; }
+      });
+      // Un lector sin modo continuo (o una prueba) entrega un solo serial: se anota y se sigue pidiendo.
+      if (typeof r !== 'string' || !r || !accion || !accion.esVerif || $('shEq').hidden) break;
+      agregarVerif(r);
     }
     return true;
   }
@@ -801,21 +815,33 @@
      codigos.js (lector con la cámara) se descarga solo cuando se toca «Escanear». Si la cámara no sirve, queda escribir a mano. */
   const normSerial = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   const porSerial = s => equipos().find(e => normSerial(e.serial) === normSerial(s));
-  async function leerSerial(titulo, conocidos) {
-    try { await UI.cargarScript('codigos.js?v=1'); }
+  async function leerSerial(titulo, conocidos, extra) {
+    try { await UI.cargarScript('codigos.js?v=2'); }
     catch (e) { A().toast('No se pudo abrir el lector de códigos. Revisa la conexión o escribe el serial.'); return null; }
-    return window.Codigos.leer({ titulo, conocidos });
+    return window.Codigos.leer(Object.assign({ titulo, conocidos }, extra || {}));
   }
   /** Quién tiene el equipo, para decirlo cuando no se puede entregar. */
   const dondeEsta = e => (e.estado === 'baja' ? 'está de baja' : bajaDe(e) ? 'tiene una baja pedida' : e.estado === 'asignado' ? `lo tiene ${e.asignadoA || 'alguien'}` : e.estado === 'recibido' ? 'está en Recibidos y falta su mantenimiento o backup' : 'no está en bodega');
   async function escanear(modo) {
     if (modo === 'entrega' || modo === 'devolucion') return escanearEnActa(modo);
+    if (modo === 'nuevo') return escanearNuevo();
     const s = await leerSerial('Escanear el serial del equipo', equipos().map(e => e.serial));
     if (!s) return true;
     const e = porSerial(s);
     if (e) { ver(e); return true; }
     buscar = s; pintar();
     A().toast(`No hay un equipo con el serial ${s}`);
+    return true;
+  }
+  /** En «Registrar equipo nuevo»: el serial leído se escribe en el campo (sin recortarlo; si es muy largo o ya existe, se avisa). */
+  async function escanearNuevo() {
+    const s = await leerSerial('Escanear el serial del equipo nuevo', []);
+    if (!s || !accion || $('shEq').hidden || !$('ehSerial')) return true;
+    $('ehSerial').value = s; $('ehSerial').dispatchEvent(new Event('input', { bubbles: true }));
+    const ya = porSerial(s);
+    if (ya) A().toast(`Ojo: ya hay un equipo con el serial ${ya.serial}.`);
+    else if (s.length > 30 || !/^[A-Z0-9-]{4,30}$/.test(s.toUpperCase())) A().toast(`El serial leído es «${s}»: solo se aceptan letras, números y guiones, de 4 a 30. Corrígelo en el campo.`);
+    else A().toast(`Serial leído: ${s}`);
     return true;
   }
   /** En el acta de entrega marca el equipo escaneado; en la de devolución marca el que llega (y cambia de persona si es de otra). */
@@ -856,7 +882,7 @@
     const desde = $('eqCampos').contains(b) && accion ? accion.volverA : '';
     const mapa = {
       ver: () => eq && ver(eq), veracta: () => h && verActa(h), persona: () => verPersona(b.dataset.clave),
-      borrarfirma: () => (accion ? borrarFirma(id) : null), imprimir: () => imprimir(),
+      borrarfirma: () => (accion ? borrarFirma(id) : null), deshacerfirma: () => (accion ? deshacerFirma(id) : null), imprimir: () => imprimir(),
       entregar: () => (esEncargado() ? entrega(eq ? eq.id : '') : null), devolver: () => (esEncargado() ? devolucion(b.dataset.clave) : null),
       mtto: () => (eq && esEncargado() && pend(eq).mtto ? trabajo(eq, 'mtto') : null), backup: () => (eq && esEncargado() && pend(eq).backup ? trabajo(eq, 'backup') : null),
       abodega: () => (eq && esEncargado() && eq.estado === 'recibido' && !pend(eq).mtto && !pend(eq).backup ? aBodega(eq) : null),
@@ -881,7 +907,7 @@
     const fn = mapa[b.dataset.accion]; if (!fn) return;
     const r = fn();
     if (r === null) { A().toast('Eso ya cambió o no te toca. Revisa otra vez.'); return; }
-    if (desde && accion && !['borrarfirma', 'imprimir'].includes(b.dataset.accion)) accion.volver = desde;
+    if (desde && accion && !['borrarfirma', 'deshacerfirma', 'imprimir'].includes(b.dataset.accion)) accion.volver = desde;
   }
   const ponerCC = () => { const cc = $('ehFirmaPCC'); if (cc && $('ehCedula')) cc.textContent = $('ehCedula').value.replace(/\D/g, '') || '—'; };
   $('eqContenido').addEventListener('click', alTocar);
