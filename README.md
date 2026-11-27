@@ -186,4 +186,4 @@ npm run lint
 npm run pruebas        # corre todo: reglas de Firebase, Workers y la app con navegador
 npm run reglas         # solo las reglas, contra el emulador de Firestore (gratis; necesita Java)
 ```
-Las capturas quedan en `capturas/`. **Cifras:** las pruebas de reglas son **265** (todas bien); las de navegador: ver el último resultado de `npm run pruebas`. Las reglas de Firebase se prueban con el emulador (`pruebas/reglas.mjs`): cada persona intenta lo permitido y lo prohibido (incluidos ataques) y Firebase debe dejar o negar. Después de pegar las reglas en Firebase conviene entrar una vez con cada nivel.
+Las capturas quedan en `capturas/`. **Cifras:** las pruebas de reglas son **265** (todas bien); las de navegador son **789** (todas bien). Las reglas de Firebase se prueban con el emulador (`pruebas/reglas.mjs`): cada persona intenta lo permitido y lo prohibido (incluidos ataques) y Firebase debe dejar o negar. Después de pegar las reglas en Firebase conviene entrar una vez con cada nivel.

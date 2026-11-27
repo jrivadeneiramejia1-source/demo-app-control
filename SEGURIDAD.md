@@ -10,7 +10,7 @@ Revisión hecha el 20 de noviembre de 2026 sobre la rama `desarrollo`. Todo con 
 | Claves en todo el historial de git | Búsqueda de patrones (llaves privadas, `ghp_`, `sk-`, `AKIA`, etc.) | 0 hallazgos. Gitleaks no se pudo bajar (GitHub lo bloqueó desde el entorno). |
 | Librerías con fallas conocidas | `npm audit` | Antes: 2 moderadas (`eslint`). Ahora: 20 (15 moderadas, 5 altas), **todas en herramientas de prueba** (`firebase`, `firebase-tools` y `@firebase/rules-unit-testing`, para Node). No se publican con la app. Los «arreglos» que propone npm son versiones más viejas, así que se aceptan. |
 | Reglas de Firebase | Emulador de Firestore + `pruebas/reglas.mjs` (**265 pruebas**, última corrida) | Todas pasan. Incluye pruebas de ataque y los pasos más pesados con **cuentas propias** (no solo personas de prueba), para comprobar el límite de 1000 expresiones. |
-| La app con navegador | Playwright (`pruebas/prueba.mjs`; ver el último resultado de `npm run pruebas`: 724 bien y 0 mal al cerrar el paso 7 de las 3 bodegas, antes de la pasada final) | Todas pasan. Incluye texto con HTML malicioso en compras, artículos y líneas. |
+| La app con navegador | Playwright (`pruebas/prueba.mjs`; 789 bien y 0 mal en la pasada final de las 3 bodegas) | Todas pasan. Incluye texto con HTML malicioso en compras, artículos y líneas. |
 
 ## Qué se encontró y se arregló
 1. **Las reglas dejaban leer casi todo a cualquier persona con sesión** (Equipos, Vehículos, compras, reuniones), aunque la pantalla dijera «sin acceso». Ahora cada módulo se lee solo con su nivel.
