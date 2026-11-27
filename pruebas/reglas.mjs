@@ -444,7 +444,8 @@ await prueba('con el código, el perfil solo se crea con el correo confirmado', 
 
 console.log('Revisión de seguridad, paso 6: la bodega deja rastro de cada cambio de cantidad');
 await limpiar();
-const movDe = (o = {}) => Object.assign({ articuloId: 'ar-m', articulo: 'Guantes', tipo: 'entrada', motivo: 'compra', cantidad: 2, saldo: 7, persona: '', proyecto: '', nota: '', compraId: '', solicitudId: '', por: 'Bodega', porRol: 'asistente', fecha: '2026-11-20T10:00:00Z' }, o);
+const sinVacios = m => { for (const k of Object.keys(m)) if (m[k] === undefined) delete m[k]; return m; };
+const movDe = (o = {}) => sinVacios(Object.assign({ articuloId: 'ar-m', articulo: 'Guantes', tipo: 'entrada', motivo: 'compra', cantidad: 2, saldo: 7, persona: '', proyecto: '', nota: '', compraId: '', solicitudId: '', bodega: 'Riohacha', por: 'Bodega', porRol: 'asistente', fecha: '2026-11-20T10:00:00Z' }, o));
 const lote = (db, escribir) => { const b = writeBatch(db); escribir(b); return b.commit(); };
 const bodegaR = await cuenta('bodR', 'asistente');
 const sembrarArt = (id = 'ar-m', extra = {}) => sembrar(db => setDoc(doc(db, 'articulos', id), Object.assign({ nombre: 'Guantes', categoria: 'EPP', unidad: 'pares', cantidad: 5, minimo: 2, maximo: 10, ubicacion: 'A1', costo: 100, proveedor: 'X', bodega: 'Riohacha' }, extra)));
@@ -474,7 +475,7 @@ await prueba('Kárdex: el costo (promedio) solo cambia con un ajuste de cantidad
 await prueba('un artículo nuevo con cantidad trae su movimiento; sin cantidad no hace falta', async () => {
   await assertFails(setDoc(doc(bodegaR, 'articulos', 'ar-n1'), { nombre: 'Nuevo', cantidad: 8, bodega: 'Riohacha' }));
   await assertSucceeds(setDoc(doc(bodegaR, 'articulos', 'ar-n2'), { nombre: 'Nuevo', cantidad: 0, bodega: 'Riohacha' }));
-  await assertSucceeds(lote(bodegaR, b => { b.set(doc(bodegaR, 'articulos', 'ar-n3'), { nombre: 'Nuevo', cantidad: 8, ultimoMov: 'mo-n3', bodega: 'Bogotá' }); b.set(doc(bodegaR, 'movimientos', 'mo-n3'), movDe({ articuloId: 'ar-n3', motivo: 'inicial', cantidad: 8, saldo: 8 })); })); });
+  await assertSucceeds(lote(bodegaR, b => { b.set(doc(bodegaR, 'articulos', 'ar-n3'), { nombre: 'Nuevo', cantidad: 8, ultimoMov: 'mo-n3', bodega: 'Bogotá' }); b.set(doc(bodegaR, 'movimientos', 'mo-n3'), movDe({ articuloId: 'ar-n3', bodega: 'Bogotá', motivo: 'inicial', cantidad: 8, saldo: 8 })); })); });
 await prueba('las 3 bodegas: un artículo nuevo solo nace en Riohacha, Guamal o Bogotá (sin bodega o con otra, no)', async () => {
   for (const b of ['Riohacha', 'Guamal', 'Bogotá']) await assertSucceeds(setDoc(doc(bodegaR, 'articulos', 'ar-b-' + b), { nombre: 'Nuevo ' + b, cantidad: 0, bodega: b }));
   await assertFails(setDoc(doc(bodegaR, 'articulos', 'ar-b-sin'), { nombre: 'Sin bodega', cantidad: 0 }));
@@ -486,22 +487,23 @@ await prueba('un artículo no cambia de bodega con una edición (para eso es el 
 await prueba('traslado entre bodegas: sale de una (con su movimiento) y entra a la otra, en una sola escritura', async () => {
   await sembrarArt('ar-t1', { cantidad: 10, bodega: 'Riohacha' }); await sembrarArt('ar-t2', { cantidad: 1, bodega: 'Guamal' });
   await assertSucceeds(lote(bodegaR, b => {
-    b.update(doc(bodegaR, 'articulos', 'ar-t1'), { cantidad: 6, ultimoMov: 'mo-t1' }); b.set(doc(bodegaR, 'movimientos', 'mo-t1'), movDe({ articuloId: 'ar-t1', tipo: 'salida', motivo: 'traslado', cantidad: 4, saldo: 6, trasladoId: 'tr-1' }));
-    b.update(doc(bodegaR, 'articulos', 'ar-t2'), { cantidad: 5, ultimoMov: 'mo-t2' }); b.set(doc(bodegaR, 'movimientos', 'mo-t2'), movDe({ articuloId: 'ar-t2', tipo: 'entrada', motivo: 'traslado', cantidad: 4, saldo: 5, trasladoId: 'tr-1' })); }));
+    b.update(doc(bodegaR, 'articulos', 'ar-t1'), { cantidad: 6, ultimoMov: 'mo-t1' }); b.set(doc(bodegaR, 'movimientos', 'mo-t1'), movDe({ articuloId: 'ar-t1', tipo: 'salida', motivo: 'traslado', cantidad: 4, saldo: 6, trasladoId: 'tr-1', bodegaOtra: 'Guamal' }));
+    b.update(doc(bodegaR, 'articulos', 'ar-t2'), { cantidad: 5, ultimoMov: 'mo-t2' }); b.set(doc(bodegaR, 'movimientos', 'mo-t2'), movDe({ articuloId: 'ar-t2', bodega: 'Guamal', bodegaOtra: 'Riohacha', tipo: 'entrada', motivo: 'traslado', cantidad: 4, saldo: 5, trasladoId: 'tr-1' })); }));
   // Si en la bodega de destino no estaba, se crea ahí con su movimiento.
   await assertSucceeds(lote(bodegaR, b => {
-    b.update(doc(bodegaR, 'articulos', 'ar-t1'), { cantidad: 4, ultimoMov: 'mo-t3' }); b.set(doc(bodegaR, 'movimientos', 'mo-t3'), movDe({ articuloId: 'ar-t1', tipo: 'salida', motivo: 'traslado', cantidad: 2, saldo: 4, trasladoId: 'tr-2' }));
+    b.update(doc(bodegaR, 'articulos', 'ar-t1'), { cantidad: 4, ultimoMov: 'mo-t3' }); b.set(doc(bodegaR, 'movimientos', 'mo-t3'), movDe({ articuloId: 'ar-t1', tipo: 'salida', motivo: 'traslado', cantidad: 2, saldo: 4, trasladoId: 'tr-2', bodegaOtra: 'Bogotá' }));
     b.set(doc(bodegaR, 'articulos', 'ar-t3'), { nombre: 'Guantes', categoria: 'EPP', unidad: 'pares', cantidad: 2, ultimoMov: 'mo-t4', minimo: 2, maximo: 10, ubicacion: '', costo: 100, proveedor: 'X', bodega: 'Bogotá' });
-    b.set(doc(bodegaR, 'movimientos', 'mo-t4'), movDe({ articuloId: 'ar-t3', tipo: 'entrada', motivo: 'traslado', cantidad: 2, saldo: 2, trasladoId: 'tr-2' })); }));
+    b.set(doc(bodegaR, 'movimientos', 'mo-t4'), movDe({ articuloId: 'ar-t3', bodega: 'Bogotá', bodegaOtra: 'Riohacha', tipo: 'entrada', motivo: 'traslado', cantidad: 2, saldo: 2, trasladoId: 'tr-2' })); }));
   // No se puede sacar de una bodega más de lo que hay, ni sumar a la otra sin que salga de la primera.
   await assertFails(lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-t1'), { cantidad: -1, ultimoMov: 'mo-t5' }); b.set(doc(bodegaR, 'movimientos', 'mo-t5'), movDe({ articuloId: 'ar-t1', tipo: 'salida', motivo: 'traslado', cantidad: 5, saldo: -1 })); }));
-  await assertFails(lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-t2'), { cantidad: 50, ultimoMov: 'mo-t6' }); b.set(doc(bodegaR, 'movimientos', 'mo-t6'), movDe({ articuloId: 'ar-t2', tipo: 'entrada', motivo: 'traslado', cantidad: 4, saldo: 50 })); })); });
+  await assertFails(lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-t2'), { cantidad: 50, ultimoMov: 'mo-t6' }); b.set(doc(bodegaR, 'movimientos', 'mo-t6'), movDe({ articuloId: 'ar-t2', bodega: 'Guamal', tipo: 'entrada', motivo: 'traslado', cantidad: 4, saldo: 50 })); })); });
 await prueba('recibir una compra de 5 artículos (cuenta propia de Bodega) cabe en los límites de las reglas', async () => {
   const ids = ['r1', 'r2', 'r3', 'r4', 'r5'];
-  await sembrar(async db => { for (const i of ids) await setDoc(doc(db, 'articulos', 'ar-' + i), { nombre: i, cantidad: 1 });
+  const bodegasR = ['Riohacha', 'Guamal', 'Bogotá', 'Riohacha', 'Guamal'];   // cada línea llega a su bodega (la tercera, a otra que la pedida)
+  await sembrar(async db => { for (const [k, i] of ids.entries()) await setDoc(doc(db, 'articulos', 'ar-' + i), { nombre: i, cantidad: 1, bodega: bodegasR[k] });
     await setDoc(doc(db, 'compras', 'cp-5'), compra({ estado: 'comprado', historial: H1 })); });
   await assertSucceeds(lote(bodegaR, b => { b.update(doc(bodegaR, 'compras', 'cp-5'), { estado: 'recibido', entregadoA: '', historial: H2 });
-    for (const i of ids) { b.update(doc(bodegaR, 'articulos', 'ar-' + i), { cantidad: 3, ultimoMov: 'mo-' + i }); b.set(doc(bodegaR, 'movimientos', 'mo-' + i), movDe({ articuloId: 'ar-' + i })); } })); });
+    for (const i of ids) { b.update(doc(bodegaR, 'articulos', 'ar-' + i), { cantidad: 3, ultimoMov: 'mo-' + i }); b.set(doc(bodegaR, 'movimientos', 'mo-' + i), movDe({ articuloId: 'ar-' + i, bodega: bodegasR[ids.indexOf(i)], lineaArticuloId: i === 'r3' ? 'ar-r1' : undefined })); } })); });
 await prueba('movimientos: Bodega solo crea entrada, salida o ajuste con números', async () => {
   await sembrarArt('ar-x');
   const con = (id, o) => lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-x'), { cantidad: 7, ultimoMov: id }); b.set(doc(bodegaR, 'movimientos', id), movDe(Object.assign({ articuloId: 'ar-x', saldo: 7 }, o))); });
@@ -521,7 +523,7 @@ await prueba('Kárdex: un movimiento no se crea suelto (sin tocar su artículo),
   await sembrarArt('ar-y2');
   await assertSucceeds(lote(bodegaR, b => { b.update(doc(bodegaR, 'articulos', 'ar-y2'), { cantidad: 2, ultimoMov: 'mo-y8' }); b.set(doc(bodegaR, 'movimientos', 'mo-y8'), movDe({ articuloId: 'ar-y2', tipo: 'ajuste', motivo: 'conteo', cantidad: -3, saldo: 2 })); })); });
 await prueba('pedidos de material: Bodega solo los entrega o los cierra y nunca cambia de quién son', async () => {
-  const sol = { articulo: 'Guantes', cantidad: 1, pideUid: 'pide1', pideRol: 'profesional', estado: 'pendiente', pide: 'Persona', fecha: '2026-11-20' };
+  const sol = { articulo: 'Guantes', cantidad: 1, pideUid: 'pide1', pideRol: 'profesional', estado: 'pendiente', pide: 'Persona', fecha: '2026-11-20', bodega: 'Riohacha' };
   await sembrar(async db => { await setDoc(doc(db, 'solicitudes', 'so-1'), sol); await setDoc(doc(db, 'solicitudes', 'so-2'), sol); await setDoc(doc(db, 'solicitudes', 'so-3'), Object.assign({}, sol, { estado: 'entregada' })); });
   await assertFails(updateDoc(doc(bodegaR, 'solicitudes', 'so-1'), { pideUid: 'otra-cuenta' }));
   await assertFails(updateDoc(doc(bodegaR, 'solicitudes', 'so-1'), { estado: 'entregada', pideRol: 'jefe' }));
@@ -529,6 +531,108 @@ await prueba('pedidos de material: Bodega solo los entrega o los cierra y nunca 
   await assertSucceeds(updateDoc(doc(bodegaR, 'solicitudes', 'so-1'), { estado: 'entregada', entregadaPor: 'Bodega', fechaEntrega: '2026-11-20', motivo: '' }));
   await assertSucceeds(updateDoc(doc(bodegaR, 'solicitudes', 'so-2'), { estado: 'rechazada', motivo: 'No hay' }));
   await assertFails(updateDoc(doc(bodegaR, 'solicitudes', 'so-3'), { estado: 'rechazada', motivo: 'Ya estaba entregada' })); });
+
+console.log('Las 3 bodegas en cada cosa: movimientos y pedidos de material');
+await limpiar(); await cuenta('bodR', 'asistente');   // (limpiar borra también el perfil de la cuenta de Bodega: se vuelve a crear)
+// Un cambio de cantidad de un artículo (artículo + su movimiento en una escritura). delta: lo que cambia la cantidad (entrada +, salida -).
+const conMov = (db, artId, id, delta, o = {}) => lote(db, b => {
+  b.update(doc(db, 'articulos', artId), { cantidad: 10 + delta, ultimoMov: id });
+  b.set(doc(db, 'movimientos', id), movDe(Object.assign({ articuloId: artId, tipo: delta < 0 ? 'salida' : 'entrada', cantidad: Math.abs(delta), saldo: 10 + delta }, o))); });
+const artB = (id, extra = {}) => sembrarArt(id, Object.assign({ cantidad: 10 }, extra));
+await prueba('movimientos con bodega: sin bodega, con otra bodega que la del artículo, con una que no existe o en minúscula no pasan; la correcta sí', async () => {
+  await artB('ar-mb1');
+  await assertFails(conMov(bodegaR, 'ar-mb1', 'mo-mb1', 2, { bodega: undefined }));
+  await assertFails(conMov(bodegaR, 'ar-mb1', 'mo-mb2', 2, { bodega: 'Guamal' }));
+  await assertFails(conMov(bodegaR, 'ar-mb1', 'mo-mb3', 2, { bodega: 'Medellín' }));
+  await assertFails(conMov(bodegaR, 'ar-mb1', 'mo-mb4', 2, { bodega: 'riohacha' }));
+  await assertFails(conMov(bodegaR, 'ar-mb1', 'mo-mb5', 2, { bodega: 7 }));
+  await assertSucceeds(conMov(bodegaR, 'ar-mb1', 'mo-mb6', 2, { bodega: 'Riohacha' })); });
+await prueba('movimientos con bodega: en Guamal y en Bogotá cada uno con la bodega de su artículo', async () => {
+  await artB('ar-mb2', { bodega: 'Guamal' }); await artB('ar-mb3', { bodega: 'Bogotá' });
+  await assertFails(conMov(bodegaR, 'ar-mb2', 'mo-mb7', -2, { bodega: 'Bogotá' }));
+  await assertSucceeds(conMov(bodegaR, 'ar-mb2', 'mo-mb8', -2, { bodega: 'Guamal' }));
+  await assertFails(conMov(bodegaR, 'ar-mb3', 'mo-mb9', 2, { bodega: 'Riohacha' }));
+  await assertSucceeds(conMov(bodegaR, 'ar-mb3', 'mo-mb10', 2, { bodega: 'Bogotá' })); });
+await prueba('movimientos con bodega: un artículo viejo (sin campo bodega) deja pasar el movimiento con una de las 3 bodegas, pero el movimiento sin bodega no pasa', async () => {
+  await sembrar(d => setDoc(doc(d, 'articulos', 'ar-mb4'), { nombre: 'Guantes', cantidad: 10, minimo: 1, maximo: 20 }));
+  await assertFails(conMov(bodegaR, 'ar-mb4', 'mo-mb11', 2, { bodega: undefined }));
+  await assertFails(conMov(bodegaR, 'ar-mb4', 'mo-mb12', 2, { bodega: 'Medellín' }));
+  await assertSucceeds(conMov(bodegaR, 'ar-mb4', 'mo-mb13', 2, { bodega: 'Guamal' })); });
+await prueba('pedido atendido desde otra bodega: «bodegaPedida» distinta pide el motivo (de 5 a 160 letras); si es la misma no hace falta', async () => {
+  const salida = (id, o) => artB('ar-mb5', { bodega: 'Bogotá' }).then(() => conMov(bodegaR, 'ar-mb5', id, -3, Object.assign({ bodega: 'Bogotá', motivo: 'entrega', solicitudId: 'so-x' }, o)));
+  await assertFails(salida('mo-bp1', { bodegaPedida: 'Riohacha' }));
+  await assertFails(salida('mo-bp2', { bodegaPedida: 'Riohacha', motivoBodega: 'Nada' }));
+  await assertFails(salida('mo-bp3', { bodegaPedida: 'Riohacha', motivoBodega: 12345 }));
+  await assertFails(salida('mo-bp4', { bodegaPedida: 'Riohacha', motivoBodega: 'x'.repeat(161) }));
+  await assertSucceeds(salida('mo-bp5', { bodegaPedida: 'Riohacha', motivoBodega: 'En Riohacha no hay botas: se mandaron desde Bogotá' }));
+  await assertSucceeds(salida('mo-bp6', { bodegaPedida: 'Bogotá' })); });
+await prueba('traslado: la otra bodega («bodegaOtra») tiene que ser una de las 3', async () => {
+  await artB('ar-mb6', { bodega: 'Riohacha' });
+  await assertFails(conMov(bodegaR, 'ar-mb6', 'mo-bo1', -2, { motivo: 'traslado', trasladoId: 'tr-x', bodegaOtra: 'Cali' }));
+  await assertFails(conMov(bodegaR, 'ar-mb6', 'mo-bo2', -2, { motivo: 'traslado', trasladoId: 'tr-x', bodegaOtra: 'guamal' }));
+  await assertSucceeds(conMov(bodegaR, 'ar-mb6', 'mo-bo3', -2, { motivo: 'traslado', trasladoId: 'tr-x', bodegaOtra: 'Guamal' })); });
+await prueba('Bodega con cuenta propia no edita ni borra un movimiento (solo la Jefe de prueba)', async () => {
+  await sembrar(d => setDoc(doc(d, 'movimientos', 'mo-ed'), movDe()));
+  await assertFails(updateDoc(doc(bodegaR, 'movimientos', 'mo-ed'), { bodega: 'Guamal' }));
+  await assertFails(updateDoc(doc(bodegaR, 'movimientos', 'mo-ed'), { motivoBodega: 'Cambiado' }));
+  await assertFails(deleteDoc(doc(bodegaR, 'movimientos', 'mo-ed')));
+  await assertFails(updateDoc(doc(prueba_('asistente'), 'movimientos', 'mo-ed'), { bodega: 'Guamal' }));
+  await assertFails(deleteDoc(doc(prueba_('asistente'), 'movimientos', 'mo-ed'))); });
+const pedidoNuevo = (uid, rol, o = {}) => sinVacios(Object.assign({ articulo: 'Botas', cantidad: 2, pideUid: uid, pideRol: rol, estado: 'pendiente', pide: 'Persona', fecha: '2026-11-20', bodega: 'Bogotá' }, o));
+await prueba('crear un pedido de material: trae la bodega para la que se pide (una de las 3); sin bodega, en minúscula o con otra no pasa (persona de prueba y cuenta propia)', async () => {
+  const pp = prueba_('logistica'), cp = await cuenta('pdB1', 'profesional');
+  for (const [db, uid, rol, k] of [[pp, 'uid-logistica', 'logistica', 'p'], [cp, 'pdB1', 'profesional', 'c']]) {
+    await assertFails(setDoc(doc(db, 'solicitudes', 'so-n1' + k), pedidoNuevo(uid, rol, { bodega: undefined })));
+    await assertFails(setDoc(doc(db, 'solicitudes', 'so-n2' + k), pedidoNuevo(uid, rol, { bodega: 'bogota' })));
+    await assertFails(setDoc(doc(db, 'solicitudes', 'so-n3' + k), pedidoNuevo(uid, rol, { bodega: 'Medellín' })));
+    await assertFails(setDoc(doc(db, 'solicitudes', 'so-n4' + k), pedidoNuevo(uid, rol, { bodega: '' })));
+    for (const b of ['Riohacha', 'Guamal', 'Bogotá']) await assertSucceeds(setDoc(doc(db, 'solicitudes', 'so-n5' + k + b), pedidoNuevo(uid, rol, { bodega: b }))); } });
+await prueba('entregar un pedido desde otra bodega: «bodegaSurte» distinta de la pedida pide el motivo; la misma no; no se puede cambiar la bodega del pedido', async () => {
+  const ped = (o = {}) => pedidoNuevo('x', 'profesional', Object.assign({ bodega: 'Riohacha' }, o));
+  await sembrar(async d => { for (const i of ['1', '2', '3', '4', '5', '6', '7']) await setDoc(doc(d, 'solicitudes', 'so-s' + i), ped()); });
+  const E = (o = {}) => Object.assign({ estado: 'entregada', entregadaPor: 'Bodega', fechaEntrega: '2026-11-20', motivo: '' }, o);
+  const otra = { bodegaSurte: 'Bogotá', articuloSurteId: 'ar-b1' };
+  await assertFails(updateDoc(doc(bodegaR, 'solicitudes', 'so-s1'), E(otra)));
+  await assertFails(updateDoc(doc(bodegaR, 'solicitudes', 'so-s1'), E(Object.assign({ motivoBodega: 'Nada' }, otra))));
+  await assertFails(updateDoc(doc(bodegaR, 'solicitudes', 'so-s1'), E({ bodegaSurte: 'Medellín', articuloSurteId: 'ar-b1', motivoBodega: 'Se mandó desde Medellín' })));
+  await assertFails(updateDoc(doc(bodegaR, 'solicitudes', 'so-s1'), E(Object.assign({ motivoBodega: 'x'.repeat(161) }, otra))));
+  await assertSucceeds(updateDoc(doc(bodegaR, 'solicitudes', 'so-s1'), E(Object.assign({ motivoBodega: 'En Riohacha no hay botas' }, otra))));
+  await assertSucceeds(updateDoc(doc(bodegaR, 'solicitudes', 'so-s2'), E({ bodegaSurte: 'Riohacha', articuloSurteId: 'ar-b2' })));
+  await assertFails(updateDoc(doc(bodegaR, 'solicitudes', 'so-s3'), E({ bodega: 'Guamal' })));
+  await assertFails(updateDoc(doc(bodegaR, 'solicitudes', 'so-s3'), E(Object.assign({ bodega: 'Bogotá', motivoBodega: 'Cambio de bodega' }, otra))));
+  await assertSucceeds(updateDoc(doc(bodegaR, 'solicitudes', 'so-s4'), { estado: 'rechazada', entregadaPor: 'Bodega', fechaEntrega: '2026-11-20', motivo: 'No hay' })); });
+await prueba('quien solo pide no pone «bodegaSurte» ni cierra el pedido; el pedido viejo (sin bodega) se entrega sin motivo', async () => {
+  const pide = await cuenta('pdB2', 'profesional');
+  await sembrar(async d => { await setDoc(doc(d, 'solicitudes', 'so-q1'), pedidoNuevo('pdB2', 'profesional', { bodega: 'Riohacha' }));
+    await setDoc(doc(d, 'solicitudes', 'so-v1'), pedidoNuevo('x', 'profesional', { bodega: undefined }));
+    await setDoc(doc(d, 'solicitudes', 'so-v2'), pedidoNuevo('x', 'profesional', { bodega: undefined })); });
+  await assertFails(updateDoc(doc(pide, 'solicitudes', 'so-q1'), { estado: 'entregada', entregadaPor: 'Yo', fechaEntrega: '2026-11-20', bodegaSurte: 'Bogotá', articuloSurteId: 'ar-q', motivoBodega: 'Me la di yo mismo' }));
+  await assertFails(updateDoc(doc(pide, 'solicitudes', 'so-q1'), { bodegaSurte: 'Riohacha' }));
+  await assertSucceeds(updateDoc(doc(bodegaR, 'solicitudes', 'so-v1'), { estado: 'entregada', entregadaPor: 'Bodega', fechaEntrega: '2026-11-20', motivo: '' }));
+  await assertSucceeds(updateDoc(doc(bodegaR, 'solicitudes', 'so-v2'), { estado: 'entregada', entregadaPor: 'Bodega', fechaEntrega: '2026-11-20', motivo: '', bodegaSurte: 'Guamal', articuloSurteId: 'ar-q' })); });
+await prueba('cuenta propia de Bodega: entregar un pedido de Riohacha desde Bogotá en un solo lote (pedido + artículo + movimiento + aviso)', async () => {
+  await sembrar(async d => { await setDoc(doc(d, 'articulos', 'ar-sb'), { nombre: 'Botas', unidad: 'pares', cantidad: 10, minimo: 4, maximo: 16, bodega: 'Bogotá' });
+    await setDoc(doc(d, 'solicitudes', 'so-sb'), pedidoNuevo('x', 'logistica', { bodega: 'Riohacha', articulo: 'Botas', cantidad: 4 })); });
+  const motivo = 'En Riohacha no hay botas: salieron de Bogotá', aviso = { para: 'logistica', titulo: 'Pedido entregado', texto: 'Tus 4 pares de botas salieron de la bodega de Bogotá.', en: '2026-11-20T10:00:00Z', modulo: 'inventario', leido: {}, deUid: 'bodR' };
+  await assertFails(lote(bodegaR, b => {   // sin motivo en el pedido ni en el movimiento: no
+    b.set(doc(bodegaR, 'solicitudes', 'so-sb'), { estado: 'entregada', entregadaPor: 'Bodega', fechaEntrega: '2026-11-20', motivo: '', bodegaSurte: 'Bogotá', articuloSurteId: 'ar-sb' }, { merge: true });
+    b.update(doc(bodegaR, 'articulos', 'ar-sb'), { cantidad: 6, ultimoMov: 'mo-sb' });
+    b.set(doc(bodegaR, 'movimientos', 'mo-sb'), movDe({ articuloId: 'ar-sb', bodega: 'Bogotá', bodegaPedida: 'Riohacha', tipo: 'salida', motivo: 'entrega', cantidad: 4, saldo: 6, solicitudId: 'so-sb' })); }));
+  await assertSucceeds(lote(bodegaR, b => {
+    b.set(doc(bodegaR, 'solicitudes', 'so-sb'), { estado: 'entregada', entregadaPor: 'Bodega', fechaEntrega: '2026-11-20', motivo: '', bodegaSurte: 'Bogotá', articuloSurteId: 'ar-sb', motivoBodega: motivo }, { merge: true });
+    b.update(doc(bodegaR, 'articulos', 'ar-sb'), { cantidad: 6, ultimoMov: 'mo-sb' });
+    b.set(doc(bodegaR, 'movimientos', 'mo-sb'), movDe({ articuloId: 'ar-sb', bodega: 'Bogotá', bodegaPedida: 'Riohacha', motivoBodega: motivo, tipo: 'salida', motivo: 'entrega', cantidad: 4, saldo: 6, solicitudId: 'so-sb' }));
+    b.set(doc(bodegaR, 'avisos', 'av-sb'), aviso); })); });
+await prueba('la Jefe de prueba carga TODOS los datos de ejemplo (versión actual) con las reglas nuevas, por lotes', async () => {
+  globalThis.window = globalThis.window || {};
+  if (!globalThis.window.DEMO) await import('../personas.js');
+  if (!globalThis.window.DatosDemo) await import('../datos-demo.js');
+  const datos = globalThis.window.DatosDemo.generar(new Date()), cols = Object.keys(datos), jefe = prueba_('jefe'), ops = [];
+  for (const col of cols) for (const [id, v] of Object.entries(datos[col])) ops.push([col, id, v]);
+  if (!ops.length) throw new Error('los datos de ejemplo salieron vacíos');
+  for (const m of Object.values(datos.movimientos)) if (!['Riohacha', 'Guamal', 'Bogotá'].includes(m.bodega)) throw new Error('movimiento sin bodega válida: ' + (m.articulo || ''));
+  for (const m of Object.values(datos.solicitudes)) if (!['Riohacha', 'Guamal', 'Bogotá'].includes(m.bodega)) throw new Error('pedido sin bodega válida: ' + (m.articulo || ''));
+  for (let i = 0; i < ops.length; i += 450) await assertSucceeds(lote(jefe, b => ops.slice(i, i + 450).forEach(([col, id, v]) => b.set(doc(jefe, col, id), v)))); });
 
 console.log('Revisión de seguridad, paso 7: los teléfonos con avisos ya no están en Firestore');
 await limpiar();
@@ -687,8 +791,8 @@ await prueba('cuenta propia: pedir una compra de 5 artículos con 3 cotizaciones
 await prueba('cuenta propia de Compras: registrar una compra «sin autorizar» con 5 líneas', async () => { const db = await cuenta('lmC', 'compras');
   await assertSucceeds(setDoc(doc(db, 'compras', 'lim-2'), nueva(correoCuenta('lmC'), { estado: 'sin-autorizar', pideRol: 'compras', pideUid: 'lmC', valorAprox: 15, lineas: [linea(1), linea(2), linea(3), linea(4), linea(5)], cotizaciones: [FOTO, FOTO, FOTO] }))); });
 await prueba('cuenta propia de Bodega: entregar un pedido de material (pedido + artículo + movimiento)', async () => { const db = await cuenta('bodR', 'asistente');
-  await sembrar(async d => { await setDoc(doc(d, 'articulos', 'ar-e'), { nombre: 'Guantes', cantidad: 9, minimo: 1, maximo: 20 });
-    await setDoc(doc(d, 'solicitudes', 'so-e'), { articulo: 'Guantes', cantidad: 2, pideUid: 'x', pideRol: 'profesional', estado: 'pendiente' }); });
+  await sembrar(async d => { await setDoc(doc(d, 'articulos', 'ar-e'), { nombre: 'Guantes', cantidad: 9, minimo: 1, maximo: 20, bodega: 'Riohacha' });
+    await setDoc(doc(d, 'solicitudes', 'so-e'), { articulo: 'Guantes', cantidad: 2, pideUid: 'x', pideRol: 'profesional', estado: 'pendiente', bodega: 'Riohacha' }); });
   await assertSucceeds(lote(db, b => { b.set(doc(db, 'solicitudes', 'so-e'), { estado: 'entregada', entregadaPor: 'Bodega', fechaEntrega: '2026-11-20', motivo: '' }, { merge: true });
     b.update(doc(db, 'articulos', 'ar-e'), { cantidad: 7, ultimoMov: 'mo-e' }); b.set(doc(db, 'movimientos', 'mo-e'), movDe({ articuloId: 'ar-e', tipo: 'salida', motivo: 'entrega', cantidad: 2, saldo: 7, solicitudId: 'so-e' })); })); });
 await prueba('cuenta propia de Transporte: el Conductor registra una salida (vehículo + salida con 5 fotos)', async () => { const db = await cuenta('lmV', 'conductor');

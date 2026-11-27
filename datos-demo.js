@@ -252,7 +252,10 @@
       'ar-015': articulo('Papel higiénico', 'Aseo', 'paquetes', 10, 4, 20, 'Estante D1', 24000, 'Distribuidora Agua Clara', 'Guamal'),
       'ar-016': articulo('Café molido', 'Cafetería', 'paquetes', 0, 4, 12, 'Estante D2', 16000, 'Distribuidora Agua Clara', 'Bogotá'),
       'ar-017': articulo('Vasos desechables', 'Cafetería', 'paquetes', 8, 3, 15, 'Estante D2', 7000, 'Distribuidora Agua Clara', 'Bogotá'),
-      'ar-018': articulo('Linterna recargable', 'Herramientas', 'unidades', 5, 2, 8, 'Estante E1', 38000, 'Ferretería El Faro', 'Bogotá')
+      'ar-018': articulo('Linterna recargable', 'Herramientas', 'unidades', 5, 2, 8, 'Estante E1', 38000, 'Ferretería El Faro', 'Bogotá'),
+      // Las mismas botas talla 40 que están agotadas en Riohacha, pero en la bodega de Bogotá (para ver «entregar desde otra bodega»), y tapabocas en Guamal (llegaron por traslado).
+      'ar-019': articulo('Botas de seguridad talla 40', 'EPP', 'pares', 10, 4, 16, 'Estante A1', 85000, 'Ferretería El Faro', 'Bogotá'),
+      'ar-020': articulo('Tapabocas', 'EPP', 'cajas', 2, 1, 6, 'Estante D3', 18000, 'Distribuidora Costa Salud', 'Guamal')
     };
 
     // Códigos de ejemplo (inventados; algunos artículos no tienen, porque es opcional) y fecha del último conteo (días atrás).
@@ -261,15 +264,18 @@
       'ar-010': 'HDM002', 'ar-011': 'MOU001', 'ar-012': 'TON001', 'ar-013': '7700000000013' };
     Object.entries(CODIGOS).forEach(([id, c]) => { articulos[id].codigo = c; });
     const CONTEOS = { 'ar-001': -45, 'ar-002': -200, 'ar-003': -100, 'ar-004': -20, 'ar-005': -3, 'ar-006': -30, 'ar-007': -30, 'ar-008': -30, 'ar-009': -30, 'ar-010': -190, 'ar-011': -30,
-      'ar-013': -10, 'ar-014': -60, 'ar-015': -30, 'ar-016': -30, 'ar-017': -30, 'ar-018': -30 };
+      'ar-013': -10, 'ar-014': -60, 'ar-015': -30, 'ar-016': -30, 'ar-017': -30, 'ar-018': -30, 'ar-019': -30, 'ar-020': -30 };
     Object.entries(CONTEOS).forEach(([id, n]) => { articulos[id].ultimoConteo = dias(n); });
 
     // ---------- MOVIMIENTOS DE BODEGA ----------
+    const MOTIVO_SO7 = 'En Guamal no hay linternas: se mandó desde Bogotá';
     // El saldo de cada movimiento es la cantidad del artículo justo después de registrarlo.
     function mov(articuloId, tipo, motivo, cantidad, saldo, persona, proyecto, fecha, nota, extra) {
       return Object.assign({
         articuloId, articulo: articulos[articuloId].nombre, tipo, motivo, cantidad, saldo, persona, proyecto,
         por: 'Andrés Beltrán', porRol: 'asistente', fecha, nota, compraId: '', solicitudId: '',
+        // Cada movimiento guarda la bodega cuya cantidad cambió (la de su artículo).
+        bodega: articulos[articuloId].bodega,
         // Kárdex con plata: cada unidad al costo del artículo (la demo no tiene historia de precios).
         costoUnit: articulos[articuloId].costo, valor: Math.abs(cantidad) * articulos[articuloId].costo, valorSaldo: saldo * articulos[articuloId].costo
       }, extra);
@@ -289,13 +295,24 @@
       'mo-011': mov('ar-001', 'salida', 'entrega', 6, 0, 'Andrés Mendoza', 'Proyecto Ruta Alta', iso(-9, 15, 10), 'Botas para la cuadrilla de la ruta alta'),
       'mo-012': mov('ar-004', 'salida', 'entrega', 4, 10, 'Jorge Ibarra', 'Proyecto Costa Norte', iso(-6, 10, 0), 'Guantes para el trabajo de campo',
         { solicitudId: 'so-004' }),
-      'mo-013': mov('ar-005', 'ajuste', 'conteo', -1, 9, '', '', iso(-3, 16, 20), 'Conteo físico: faltaba un casco en el estante')
+      'mo-013': mov('ar-005', 'ajuste', 'conteo', -1, 9, '', '', iso(-3, 16, 20), 'Conteo físico: faltaba un casco en el estante'),
+      // Un pedido para Guamal que se atendió con una linterna de Bogotá: la salida queda en la bodega que la tenía.
+      // Es de hace 95 días a propósito: así queda fuera de los 90 días de la clase ABC y no la cambia.
+      'mo-014': mov('ar-018', 'salida', 'entrega', 1, 5, 'Julio Flórez', 'Proyecto Costa Norte', iso(-95, 10, 20), 'Pedido para Guamal: salió de Bogotá',
+        { solicitudId: 'so-007', bodega: 'Bogotá', bodegaPedida: 'Guamal', motivoBodega: MOTIVO_SO7 }),
+      // Traslado de 2 cajas de tapabocas de Riohacha a Guamal (cada bodega con su movimiento).
+      'mo-015': mov('ar-006', 'salida', 'traslado', 2, 7, '', '', iso(-20, 9, 30), 'Traslado a Guamal: para la sede de Guamal',
+        { trasladoId: 'tr-demo1', bodega: 'Riohacha', bodegaOtra: 'Guamal' }),
+      'mo-016': mov('ar-020', 'entrada', 'traslado', 2, 2, '', '', iso(-20, 9, 30), 'Traslado desde Riohacha: para la sede de Guamal',
+        { trasladoId: 'tr-demo1', bodega: 'Guamal', bodegaOtra: 'Riohacha' })
     };
 
     // ---------- SOLICITUDES DE MATERIAL ----------
     function solicitud(articuloId, cantidad, pide, pideRol, paraQue, proyecto, estado, fecha, extra) {
       return Object.assign({
         articuloId, articulo: articulos[articuloId].nombre, cantidad, pide, pideRol, paraQue, proyecto, estado, fecha,
+        // Para qué bodega se pidió (la de su artículo, salvo que se diga otra).
+        bodega: articulos[articuloId].bodega,
         entregadaPor: '', fechaEntrega: '', motivo: ''
       }, extra);
     }
@@ -309,7 +326,14 @@
       'so-004': solicitud('ar-004', 4, 'Jorge Ibarra', '', 'Guantes para el trabajo de campo',
         'Proyecto Costa Norte', 'entregada', iso(-7, 15, 0), { entregadaPor: 'Andrés Beltrán', fechaEntrega: iso(-6, 10, 0) }),
       'so-005': solicitud('ar-017', 20, 'Andrés Mendoza', '', 'Para una reunión con la comunidad',
-        'Proyecto Ruta Alta', 'rechazada', iso(-4, 11, 15), { motivo: 'Es mucho para una sola reunión, pide máximo 5 paquetes' })
+        'Proyecto Ruta Alta', 'rechazada', iso(-4, 11, 15), { motivo: 'Es mucho para una sola reunión, pide máximo 5 paquetes' }),
+      // Botas talla 40 para Riohacha: allá están agotadas y en Bogotá hay 10 (se puede entregar desde Bogotá con su motivo).
+      'so-006': solicitud('ar-001', 4, 'Elkin Bruno', 'logistica', 'Botas para el personal de logística',
+        'Proyecto Costa Norte', 'pendiente', iso(-1, 10, 40), { bodega: 'Riohacha' }),
+      // Pedido para Guamal que se entregó desde Bogotá (la linterna de Bogotá, ar-018). Su movimiento es mo-014.
+      'so-007': solicitud('ar-018', 1, 'Julio Flórez', 'logistica', 'Linterna para el trabajo de noche en Guamal',
+        'Proyecto Costa Norte', 'entregada', iso(-96, 9, 0), { bodega: 'Guamal', entregadaPor: 'Andrés Beltrán', fechaEntrega: iso(-95, 10, 20),
+          bodegaSurte: 'Bogotá', articuloSurteId: 'ar-018', motivoBodega: MOTIVO_SO7 })
     };
 
     // ---------- VEHÍCULOS ----------
@@ -318,18 +342,29 @@
     // «hechos» guarda cada vez que se hizo con su costo (así se suma lo gastado en un periodo).
     const mtto = (id, tarea, cadaKm, cadaDias, ultimoKm, haceDias, ultimoCosto) => ({ id, tarea, cadaKm, cadaDias, ultimoKm, ultimaFecha: dias(haceDias), ultimoCosto,
       hechos: ultimoCosto ? [{ fecha: dias(haceDias), km: ultimoKm, costo: ultimoCosto }] : [] });
+    // Líneas del historial de cada carro, con el mismo texto que escribe la app al hacer cada cosa.
+    const MES_CORTO = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sept', 'oct', 'nov', 'dic'];
+    const fCorta = f => { const [y, m, d] = f.split('-').map(Number); return d + ' ' + MES_CORTO[m - 1] + (y !== base.getFullYear() ? ' ' + y : ''); };
+    const kmTxt = n => n.toLocaleString('es-CO') + ' km';
+    const copTxt = n => '$ ' + n.toLocaleString('es-CO');
+    const hMtto = (tarea, km, haceDias, costo, por) => ({ fecha: iso(-haceDias, 11, 0), texto: `Mantenimiento hecho: ${tarea} (${kmTxt(km)}, ${fCorta(dias(-haceDias))}, costó ${copTxt(costo)})`, por });
+    const hDocs = (haceDias, soat, tecno, por) => ({ fecha: iso(-haceDias, 9, 30), texto: `Actualizó los documentos (SOAT ${fCorta(soat)}, técnico-mecánica ${fCorta(tecno)})`, por });
+    const hAsigna = (haceDias, cond, por) => ({ fecha: iso(-haceDias, 8, 15), texto: `Asignado a ${cond}`, por });
     const vehiculos = {
       've-abc123': { placa: 'ABC 123', marca: 'Toyota', modelo: 'Hilux', anio: 2022, color: 'Blanco', conductor: 'Oscar Farfán', km: 45210,
-        soat: dias(12), tecno: dias(200), estado: 'en-uso', historial: [{ fecha: iso(-1, 6, 40), texto: 'Salió con Oscar Farfán (45.180 km)', por: 'Oscar Farfán' }],
+        soat: dias(12), tecno: dias(200), estado: 'en-uso', historial: [
+          hMtto('Alineación y balanceo', 38000, 200, 120000, 'Wilson Muñoz'), hMtto('Cambio de aceite', 40300, 70, 190000, 'Wilson Muñoz'), hAsigna(60, 'Oscar Farfán', 'Wilson Muñoz'),
+          { fecha: iso(-1, 6, 40), texto: 'Salió con Oscar Farfán (45.180 km)', por: 'Oscar Farfán' }],
         mttos: [mtto('mt-aceite', 'Cambio de aceite', 5000, 180, 40300, -70, 190000), mtto('mt-alin', 'Alineación y balanceo', 10000, 365, 38000, -200, 120000)] },
       've-def456': { placa: 'DEF 456', marca: 'Chevrolet', modelo: 'D-Max', anio: 2021, color: 'Gris', conductor: '', km: 62800,
-        soat: dias(150), tecno: dias(-5), estado: 'disponible', historial: [],
+        soat: dias(150), tecno: dias(-5), estado: 'disponible', historial: [hMtto('Cambio de aceite', 57500, 150, 185000, 'Wilson Muñoz')],
         mttos: [mtto('mt-aceite', 'Cambio de aceite', 5000, 180, 57500, -150, 185000)] },
       've-ghi789': { placa: 'GHI 789', marca: 'Mitsubishi', modelo: 'L200', anio: 2020, color: 'Rojo', conductor: '', km: 88450,
-        soat: dias(90), tecno: dias(120), estado: 'en-taller', historial: [{ fecha: iso(-8, 9, 0), texto: 'Entró al taller por mantenimiento', por: 'Wilson Muñoz' }],
+        soat: dias(90), tecno: dias(120), estado: 'en-taller', historial: [hMtto('Pastillas de freno', 70000, 8, 260000, 'Wilson Muñoz'), { fecha: iso(-8, 9, 0), texto: 'Entró al taller por mantenimiento', por: 'Wilson Muñoz' }],
         mttos: [mtto('mt-pastillas', 'Pastillas de freno', 30000, 540, 70000, -8, 260000)] },
       've-jkl012': { placa: 'JKL 012', marca: 'Toyota', modelo: 'Fortuner', anio: 2023, color: 'Plata', conductor: '', km: 21340,
-        soat: dias(240), tecno: dias(300), estado: 'disponible', historial: [],
+        soat: dias(240), tecno: dias(300), estado: 'disponible',
+        historial: [hDocs(125, dias(240), dias(300), 'Wilson Muñoz'), hMtto('Revisión de los 10.000 km', 15000, 20, 150000, 'Wilson Muñoz')],
         mttos: [mtto('mt-revision', 'Revisión de los 10.000 km', 10000, 180, 15000, -20, 150000)] }
     };
     // ---------- RESERVAS DE CARRO (viajes que no son reuniones; todo inventado) ----------
@@ -466,11 +501,11 @@
       'av-003': aviso('carros', 'SOAT por vencer', 'El SOAT del ABC 123 vence en 12 días.', iso(-1, 7, 30), 'vehiculos'),
       'av-004': aviso('jefe', 'Novedad en un carro', 'Oscar Farfán reportó un rayón en el ABC 123.', iso(-2, 18, 10), 'vehiculos'),
       'av-005': aviso('todos', 'Bienvenido a la demo', 'Bienvenido a la demo. Aquí todos los datos son inventados, puedes probar todo con calma.', iso(0, 7, 0), 'inicio'),
-      'av-006': aviso('asistente', 'Pedidos de material por entregar', 'Tienes 3 pedidos de material por entregar.', iso(-1, 17, 10), 'inventario')
+      'av-006': aviso('asistente', 'Pedidos de material por entregar', 'Tienes 4 pedidos de material por entregar.', iso(-1, 17, 10), 'inventario')
     };
 
     return { equipos, hojas, tareasEq, compras, proveedores, vehiculos, novedades, entregas, tanqueos, reservas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 19, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 20, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

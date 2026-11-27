@@ -495,7 +495,22 @@ service cloud.firestore {
     }
     // Las 3 bodegas de la empresa (deben coincidir con personas.js): todo artículo nace en una de ellas y no cambia de bodega
     // (para moverlo se hace un traslado: sale de una y entra a la otra, cada una con su movimiento).
-    function bodegaOk() { return nuevo().get('bodega', '') in ['Riohacha', 'Guamal', 'Bogotá']; }
+    function enBodegas(b) { return b in ['Riohacha', 'Guamal', 'Bogotá']; }
+    function bodegaOk() { return enBodegas(nuevo().get('bodega', '')); }
+    // Cuando un pedido se atiende desde otra bodega (o un movimiento lo dice) hay que escribir el porqué (5 a 160 letras).
+    function motivoBodegaOk() { let m = nuevo().get('motivoBodega', ''); return m is string && m.size() >= 5 && m.size() <= 160; }
+    // Un movimiento dice en qué bodega cambió la cantidad (la misma de su artículo; un artículo viejo sin bodega deja pasar). Si atendió el
+    // pedido de otra bodega (bodegaPedida distinta) trae el motivo, y en un traslado la otra bodega (bodegaOtra) también es una de las 3.
+    function movBodegaOk() {
+      let b = nuevo().get('bodega', '');
+      return enBodegas(b) && getAfter(rutaArt(nuevo().articuloId)).data.get('bodega', b) == b
+        && enBodegas(nuevo().get('bodegaOtra', b)) && (nuevo().get('bodegaPedida', b) == b || motivoBodegaOk());
+    }
+    // Al entregar un pedido: bodegaSurte vacía, o una de las 3 y, si no es la pedida (un pedido viejo sin bodega deja pasar), con el motivo.
+    function surteOk() {
+      let s = nuevo().get('bodegaSurte', '');
+      return s == '' || (enBodegas(s) && (s == antes().get('bodega', s) || motivoBodegaOk()));
+    }
     // Código del artículo (opcional, en mayúsculas: 3 a 30 letras o números) y fecha de su último conteo (opcional).
     function codigoArtOk() { let c = nuevo().get('codigo', ''); return c is string && (c == '' || c.matches('^[A-Z0-9]{3,30}$')); }
     function conteoArtOk() { let f = nuevo().get('ultimoConteo', ''); return f is string && (f == '' || esFecha(f)); }
@@ -517,18 +532,22 @@ service cloud.firestore {
       allow create: if (esPrueba() && esJefe())
         || (esBodega() && nuevo().por is string && nuevo().porRol == rol() && nuevo().tipo in ['entrada', 'salida', 'ajuste'] && nuevo().cantidad is number
             && (nuevo().tipo == 'ajuste' || nuevo().cantidad > 0)
+            && movBodegaOk()
             && nuevo().get('costoUnit', 0) is number && nuevo().get('costoUnit', 0) >= 0 && nuevo().get('valor', 0) is number && nuevo().get('valor', 0) >= 0
             && nuevo().articuloId is string && getAfter(rutaArt(nuevo().articuloId)).data.get('ultimoMov', '') == id);
       allow update, delete: if esPrueba() && rol() == 'jefe';
     }
 
-    // Pedidos de material: cada quien pide a su nombre; la bodega los entrega o los cierra (solo toca el estado, quién entregó y el motivo).
+    // Pedidos de material: cada quien pide a su nombre; la bodega los entrega o los cierra (solo toca el estado, quién entregó, el motivo y, si sale de otra bodega, cuál y por qué).
+    // Todo pedido nace con la bodega para la que se pide (Riohacha, Guamal o Bogotá) y esa no se cambia después.
     match /solicitudes/{id} {
       allow read: if veLoSuyo();
       allow create: if puedePedir() && (nuevo().pideRol == rol() || esJefe()) && (nuevo().estado == 'pendiente' || esJefe())
-        && nuevo().get('pideUid', request.auth.uid) == request.auth.uid;
+        && nuevo().get('pideUid', request.auth.uid) == request.auth.uid
+        && enBodegas(nuevo().get('bodega', ''));
       allow update: if (esPrueba() && esJefe())
-        || (antes().estado == 'pendiente' && nuevo().estado in ['entregada', 'rechazada'] && soloCambia(['estado', 'entregadaPor', 'fechaEntrega', 'motivo']) && esBodega());
+        || (antes().estado == 'pendiente' && nuevo().estado in ['entregada', 'rechazada']
+            && soloCambia(['estado', 'entregadaPor', 'fechaEntrega', 'motivo', 'bodegaSurte', 'articuloSurteId', 'motivoBodega']) && surteOk() && esBodega());
       allow delete: if esJefe();
     }
 

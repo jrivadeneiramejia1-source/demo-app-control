@@ -9,8 +9,8 @@ Revisión hecha el 20 de noviembre de 2026 sobre la rama `desarrollo`. Todo con 
 | Claves olvidadas en archivos | detect-secrets | 13 avisos, todos falsos: la clave web de Firebase (`config.js`, pública por diseño), textos de error y claves de prueba inventadas. |
 | Claves en todo el historial de git | Búsqueda de patrones (llaves privadas, `ghp_`, `sk-`, `AKIA`, etc.) | 0 hallazgos. Gitleaks no se pudo bajar (GitHub lo bloqueó desde el entorno). |
 | Librerías con fallas conocidas | `npm audit` | Antes: 2 moderadas (`eslint`). Ahora: 20 (15 moderadas, 5 altas), **todas en herramientas de prueba** (`firebase`, `firebase-tools` y `@firebase/rules-unit-testing`, para Node). No se publican con la app. Los «arreglos» que propone npm son versiones más viejas, así que se aceptan. |
-| Reglas de Firebase | Emulador de Firestore + `pruebas/reglas.mjs` (147 pruebas) | Todas pasan. Incluye pruebas de ataque y los pasos más pesados con **cuentas propias** (no solo personas de prueba), para comprobar el límite de 1000 expresiones. |
-| La app con navegador | Playwright (`pruebas/prueba.mjs`, 336 pruebas) | Todas pasan. Incluye texto con HTML malicioso en compras, artículos y líneas. |
+| Reglas de Firebase | Emulador de Firestore + `pruebas/reglas.mjs` (**265 pruebas**, última corrida) | Todas pasan. Incluye pruebas de ataque y los pasos más pesados con **cuentas propias** (no solo personas de prueba), para comprobar el límite de 1000 expresiones. |
+| La app con navegador | Playwright (`pruebas/prueba.mjs`; 789 bien y 0 mal en la pasada final de las 3 bodegas) | Todas pasan. Incluye texto con HTML malicioso en compras, artículos y líneas. |
 
 ## Qué se encontró y se arregló
 1. **Las reglas dejaban leer casi todo a cualquier persona con sesión** (Equipos, Vehículos, compras, reuniones), aunque la pantalla dijera «sin acceso». Ahora cada módulo se lee solo con su nivel.
@@ -41,6 +41,20 @@ Una revisión aparte sobre `desarrollo` encontró lo siguiente; todo está arreg
 13. **Financieros:** solo la Gerente Financiera, el Contador y la Profesional Contable ven todo el inventario; las asistentes y auxiliares de contabilidad quedaron como Colaboradores (solo ven lo suyo).
 14. **Límite de 1000 expresiones:** se hicieron más baratas las consultas de nivel y de las tareas de reunión; hay pruebas con cuentas propias de cada paso pesado.
 
+## Tercera revisión: las 3 bodegas (reglas nuevas)
+Cada movimiento y cada pedido de material guardan su bodega (Riohacha, Guamal o Bogotá), y si un pedido sale de otra bodega queda escrito por qué. Lo que cambió en `firestore.rules` (todo con pruebas en `pruebas/reglas.mjs`):
+1. **Movimientos (crear):** `bodega` es obligatoria, es una de las 3 y **es la misma de su artículo** (un artículo viejo sin bodega deja pasar). Si trae `bodegaOtra` (traslado), también es una de las 3. Si trae `bodegaPedida` distinta de `bodega` (se atendió el pedido de otra bodega), debe traer `motivoBodega` de 5 a 160 letras. Un movimiento sin bodega, con «Medellín» o con «riohacha» (minúscula) ya no se crea.
+2. **Pedidos (crear):** `bodega` obligatoria y una de las 3 (sin bodega o «bogota» no pasa).
+3. **Pedidos (entregar o cerrar):** además de `estado`, `entregadaPor`, `fechaEntrega` y `motivo` se permiten `bodegaSurte`, `articuloSurteId` y `motivoBodega`, y **la bodega del pedido no se puede cambiar**. Si `bodegaSurte` no es la pedida, hace falta el motivo (5 a 160 letras). Un pedido viejo sin bodega se entrega sin motivo. Quien solo pide no puede poner esos campos.
+4. **Nada reescribe historiales** y Bodega con cuenta propia sigue sin poder editar ni borrar movimientos.
+5. **Lo que NO miran las reglas (solo la app):** la bodega de cada línea de una compra (`lineas[i].bodega`), a qué bodega llegó lo recibido (`lineaArticuloId`), que `articuloSurteId` sea el artículo del que salió lo entregado y que `solicitudId` de una compra exista. Se dejó así para no gastar el margen de las reglas (ver el punto siguiente).
+6. **Límite de 1000 expresiones, antes y después:** se midió cuánto margen quedaba agregando relleno (K ≈ 20 expresiones de más por regla marcada). **K antes = 2 y K después = 2**: las reglas nuevas no gastaron margen. **La regla más justa es la de crear una compra del Gerente general**, que ya estaba así y no se tocó. El margen es corto (unas 40 expresiones): hay que medirlo de nuevo antes de agregar condiciones a esa regla.
+7. **Pruebas de reglas: 265, todas bien.** Incluyen la siembra de los datos de ejemplo versión 20 con la Jefe de prueba y una entrega desde otra bodega en un solo lote (pedido, artículo, movimiento y aviso) con cuenta propia de Bodega.
+
+**Publicar reglas y app juntas (importante).** Reglas nuevas con la app vieja = **no se crean pedidos ni movimientos** (la app vieja no manda `bodega`). App nueva con reglas viejas = falla «Entregar» desde otra bodega (las reglas viejas no aceptan los campos nuevos del pedido). Por eso se pegan las reglas en Firebase justo antes de pasar la app a `main`, y se entra una vez con cada nivel. Además, **al subir los datos de ejemplo a la versión 20, la primera vez que entre la Jefe de prueba a la demo publicada se borran y recargan los datos de prueba** (avisar antes).
+
+**Historial completo de carros y artículos:** se arma en pantalla con datos que ya existen y **no escribe nada nuevo**; por eso no cambió ninguna regla de Vehículos ni se le dieron permisos nuevos al Conductor.
+
 ## Nombres reales en una demo pública
 Por decisión de Jeiler (20-nov-2026), la demo pública lleva los **nombres y cargos de 44 personas del organigrama de la empresa** y su **logo** (marca registrada), para que en la presentación se vea quién es quién. No lleva correos, cédulas ni teléfonos reales (los correos son `@example.com` y los casos son inventados), y la entrada avisa qué es real y qué inventado. Cualquiera que abra la página puede ver esos nombres, porque la clave de las personas de prueba es pública. Si la empresa pide quitarlos: se cambian en `personas.js` (lista `DE_PRUEBA`) y se reemplaza `iconos/`. La app real con datos de la empresa va aparte (copia privada y otro Firebase).
 
@@ -58,3 +72,4 @@ Por decisión de Jeiler (20-nov-2026), la demo pública lleva los **nombres y ca
 - **Respaldo del Gerente a los 2 días:** se probó con fechas del emulador; el reloj es el del servidor de Firebase, pero hay que ver cómo se siente en la práctica (¿2 días corridos o hábiles?).
 - **Las tareas de ejemplo de datos-demo** con `creadoEn` como texto no sirven para probar el respaldo: se prueba creando una compra nueva y esperando (o en el emulador).
 - **Pedidos de material con varias líneas y préstamo de herramientas (que quedan «por devolver»)** no se hicieron.
+- **Las 3 bodegas, sin probar de verdad:** las reglas nuevas con el Firebase real; los Excel nuevos abiertos en Excel o LibreOffice reales; imprimir la orden de compra («ENTREGAR EN») en un celular real; el historial con cientos de registros reales; los avisos al teléfono con los textos nuevos; dos personas sacando lo último a la vez; la clase ABC con datos reales.
