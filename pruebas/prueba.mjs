@@ -100,7 +100,7 @@ try {
   log('el buscador no distingue tildes («angel» encuentra a Ángel Ortiz)', await hasta(t.page, () => [...document.querySelectorAll('#entradaLista .persona-card')].filter(c => !c.hidden).map(c => c.textContent).join().includes('Ángel Ortiz')));
   await t.page.fill('#entradaLista .filtro-personas', '');
   log('al borrar la búsqueda vuelven las 46', await hasta(t.page, () => [...document.querySelectorAll('#entradaLista .persona-card')].filter(c => !c.hidden).length === 46));
-  log('la entrada tiene la etiqueta Versión pagada', await visible(t.page, '#vEntrada .pagada'));
+  log('la entrada ya no tiene la franja «Versión pagada»', !(await t.page.$('#vEntrada .pagada')));
   log('entra como Carolina Castillo (Jefe)', await entrar(t.page, 'jefe'));
   log('siembra los datos y llena el tablero', await datosListos(t.page));
   await esp(900); // las cifras cuentan hasta su valor
@@ -559,11 +559,7 @@ try {
   await t.page.click('#vehSecciones [data-sec="hacer"]');
   await t.page.click('.tab[data-vista="reuniones"]');
   log('Reuniones: la Jefe ve lo que toca a cada quien y las 2 próximas', await hasta(t.page, () => /Le toca a/.test(document.getElementById('reuContenido').textContent) && Number(document.querySelector('#sumReuniones .num')?.textContent) >= 0) && await (async () => { await esp(900); return (await cifra(t.page, 'sumReuniones', 0)) === 2 && (await cifra(t.page, 'sumReuniones', 2)) === 1; })());
-  log('cada módulo tiene su etiqueta Versión pagada', await t.page.evaluate(() => ['vEquipos', 'vInventario', 'vVehiculos', 'vReuniones', 'vInicio'].every(v => document.querySelector('#' + v + ' .pagada'))));
-  await t.page.click('#vReuniones .pagada');
-  log('la etiqueta abre la hoja con demo frente a pagando', await hasta(t.page, () => !document.getElementById('shPagada').hidden && /Outlook/.test(document.getElementById('pagadaCuerpo').textContent)));
-  await t.page.keyboard.press('Escape');
-  log('Escape cierra la hoja', await hasta(t.page, () => document.getElementById('shPagada').hidden));
+  log('ningún módulo ni el Inicio tiene la franja «Versión pagada» ni su hoja', await t.page.evaluate(() => !document.querySelector('.pagada, [data-pagada], #shPagada')));
 
   console.log('4. Cambio de persona y permisos');
   log('cambia a Oscar Farfán (Conductor)', await cambiar(t.page, 'conductor'));
@@ -1552,6 +1548,80 @@ try {
     await t.page.click('#invContenido [data-accion="vercompra"][data-id="co-p8"]'); await hojaAb();
     log('el cuadro de la compra dice «llegó a Bogotá» y no dice «faltan»', await hasta(t.page, () => { const x = document.getElementById('acCampos').textContent; return /llegó a Bogotá/.test(x) && !/faltan/.test(x); }));
     await cerrarHoja();
+    // Artículo nuevo desde la compra: se pide «Sí» + «Artículo nuevo» + bodega, y el artículo nace al recibir la compra
+    const grande = d => Object.entries(d.articulos).map(([id, a]) => Object.assign({ id }, a));
+    await secInv('compras');
+    await t.page.click('#btnPedirCompra'); await hojaAb();
+    await t.page.selectOption('#acVa', 'si'); await esp(200);
+    log('«¿Cuál artículo de la bodega?» trae «Artículo nuevo» de primero, pregunta en qué bodega va (las 3; sale la última de este teléfono) y ya no manda a «Agregar artículo»', await hasta(t.page, () => { const s = document.getElementById('acArt'), b = document.getElementById('acBodNuevo'); return s.options[0].value === '__nuevo' && /^Artículo nuevo/.test(s.options[0].textContent) && s.value === '__nuevo' && !!b && !b.closest('[hidden]') && [...b.options].map(o => o.value).join() === 'Riohacha,Guamal,Bogotá' && b.value === 'Guamal' && /Escoge «Artículo nuevo»/.test(document.getElementById('acArtBox').textContent) && !/primero agrégalo/.test(document.getElementById('acArtBox').textContent) && document.getElementById('acQue').value === ''; }));
+    await t.page.fill('#acQue', 'Tapabocas'); await t.page.selectOption('#acUni', 'cajas'); await t.page.selectOption('#acBodNuevo', 'Guamal');
+    await t.page.fill('#acCant', '5'); await t.page.fill('#acValor', '100000'); await t.page.fill('#acPara', 'Prueba de artículo nuevo');
+    await t.page.click('#acPrimario');
+    log('pedir un artículo nuevo que ya existe en esa bodega (mismo nombre y unidad, sin mayúsculas ni tildes) da el error y no crea la compra', await errHoja(/Ya existe «Tapabocas» en la bodega de Guamal: escógelo en la lista\./) && !Object.values((await datosApp()).compras).some(c => c.paraQue && /Prueba de artículo nuevo/.test(c.paraQue)));
+    await t.page.fill('#acQue', 'Cascos blancos'); await t.page.selectOption('#acUni', 'unidades'); await t.page.selectOption('#acCat', 'EPP');
+    await t.page.screenshot({ path: path.join(CAPTURAS, '41-compra-articulo-nuevo.png') });
+    await t.page.click('#acPrimario'); await hojaCerrada();
+    const cCas = Object.entries((await datosApp()).compras).map(([id, c]) => Object.assign({ id }, c)).find(c => c.que === 'Cascos blancos');
+    log('la compra queda con su línea nueva (nuevo true, sin articuloId, bodega Guamal, unidad y categoría) y sin artículo en la compra', !!cCas && cCas.lineas.length === 1 && cCas.articuloId === '' && JSON.stringify(cCas.lineas[0]) === JSON.stringify({ que: 'Cascos blancos', cantidad: 5, unidad: 'unidades', valor: 100000, articuloId: '', bodega: 'Guamal', nuevo: true, categoria: 'EPP' }), JSON.stringify(cCas));
+    await t.page.click('#invContenido [data-accion="vercompra"][data-id="' + cCas.id + '"]'); await hojaAb();
+    log('la tarjeta dice «va a Guamal» y el detalle «Artículo nuevo: se crea en la bodega de Guamal al recibirla»', await hasta(t.page, () => /Artículo nuevo: se crea en la bodega de Guamal al recibirla/.test(document.getElementById('acCampos').textContent)) && (await filas('#invContenido [data-accion="vercompra"][data-id="' + cCas.id + '"]')).some(x => /va a Guamal/.test(x)));
+    await cerrarHoja();
+    // Autorizada y comprada (como en las compras de arriba, se deja el estado directo) y la recibe la persona de Bodega
+    await t.page.evaluate(id => window.nube.lote([['mezclar', 'compras', id, { estado: 'comprado', autoriza: 'Mauricio Giraldo', proveedor: 'Ferretería El Faro', valorReal: 100000, fechaCompra: window.App.hoyISO() }]]), cCas.id);
+    log('cambia a Andrés Beltrán (Bodega)', await cambiar(t.page, 'asistente'));
+    await t.page.click('.tab[data-vista="inventario"]'); await esp(300);
+    await secInv('hacer');
+    const tareaCas = await filas('#invContenido .card.tarea');
+    log('en «Qué hay que hacer» sale «Recibir en bodega: Cascos blancos», con «Artículo nuevo» y la etiqueta Guamal (no «No va a bodega»)', tareaCas.some(x => /Recibir en bodega: Cascos blancos/.test(x) && /Artículo nuevo: se crea en la bodega de Guamal/.test(x) && /Guamal/.test(x) && !/No va a bodega/.test(x)) && (await t.page.evaluate(id => document.querySelector(`#invContenido [data-accion="recibir"][data-id="${id}"]`).textContent.trim(), cCas.id)) === 'Recibir en bodega de Guamal', JSON.stringify(tareaCas.filter(x => /Cascos blancos/.test(x))));
+    await t.page.click(`#invContenido [data-accion="recibir"][data-id="${cCas.id}"]`); await hasta(t.page, () => !!document.getElementById('acBodLlego'));
+    log('«Recibir en bodega» propone Guamal (la pedida) y dice que el artículo todavía no está allí: se crea', await hasta(t.page, () => document.getElementById('acBodLlego').value === 'Guamal' && /todavía no está este artículo: se crea allí/.test(document.getElementById('acBodLlegoAy').textContent) && document.getElementById('acMotivoBodBox').hidden && /Es un artículo nuevo/.test(document.getElementById('acSub').textContent)));
+    await t.page.screenshot({ path: path.join(CAPTURAS, '42-recibir-articulo-nuevo.png') });
+    await t.page.click('#acPrimario'); await hojaCerrada();
+    const dCas = await datosApp(), aCas = grande(dCas).filter(a => a.nombre === 'Cascos blancos'), mCas = Object.values(dCas.movimientos).filter(m => m.compraId === cCas.id);
+    log('al recibir se crea «Cascos blancos» en Guamal (5 unidades, EPP, mínimo 1, máximo 5, sin estante ni código, a 20.000 c/u, proveedor de la compra)', aCas.length === 1 && aCas[0].bodega === 'Guamal' && aCas[0].cantidad === 5 && aCas[0].unidad === 'unidades' && aCas[0].categoria === 'EPP' && aCas[0].minimo === 1 && aCas[0].maximo === 5 && aCas[0].ubicacion === '' && !aCas[0].codigo && aCas[0].costo === 20000 && aCas[0].proveedor === 'Ferretería El Faro' && dCas.compras[cCas.id].estado === 'recibido' && dCas.compras[cCas.id].articuloId === '', JSON.stringify(aCas));
+    log('su movimiento es una entrada «compra» en Guamal con la compra, el costo, el saldo y «partes», y sin lineaArticuloId', mCas.length === 1 && mCas[0].articuloId === aCas[0].id && mCas[0].tipo === 'entrada' && mCas[0].motivo === 'compra' && mCas[0].bodega === 'Guamal' && mCas[0].cantidad === 5 && mCas[0].saldo === 5 && mCas[0].costoUnit === 20000 && JSON.stringify(mCas[0].partes) === '[{"i":0,"cantidad":5}]' && !('lineaArticuloId' in mCas[0]) && !('bodegaPedida' in mCas[0]) && aCas[0].ultimoMov === Object.entries(dCas.movimientos).find(([, m]) => m.compraId === cCas.id)[0], JSON.stringify(mCas));
+    const hCas = dCas.compras[cCas.id].historial.map(h => h.texto).pop(), avCas = Object.values(dCas.avisos).find(a => a.titulo === 'Llegó tu compra' && /Cascos blancos/.test(a.texto));
+    log('el historial de la compra y el aviso a quien la pidió dicen que se creó el artículo nuevo en la bodega de Guamal', /^Artículo nuevo creado en la bodega de Guamal: 5 unidades/.test(hCas) && !!avCas && avCas.para === 'jefe' && /bodega de Guamal \(artículo nuevo creado\)/.test(avCas.texto), JSON.stringify([hCas, avCas]));
+    await secInv('compras'); await t.page.click('#invContenido .chip[data-sub="compras"][data-val="todas"]'); await esp(250);
+    await t.page.click('#invContenido [data-accion="vercompra"][data-id="' + cCas.id + '"]'); await hojaAb();
+    log('el cuadro de la compra cuenta la línea nueva (5 unidades recibidas) y no dice «faltan»', await hasta(t.page, () => { const x = document.getElementById('acCampos').querySelector('.cuadro-compra').textContent; return /5 unidades/.test(x) && !/faltan|No va a bodega/.test(x); }));
+    await cerrarHoja();
+    await secInv('existencias');
+    await t.page.click(`#invContenido [data-accion="verart"][data-id="${aCas[0].id}"]`); await hojaAb(); await t.page.click('#acCampos [data-accion="kardex"]'); await esp(300);
+    const kCas = await t.page.evaluate(() => [...document.querySelectorAll('#acCampos .kardex-tabla tbody tr')].map(r => r.textContent.replace(/\s+/g, ' ').trim()));
+    log('el kárdex del artículo nuevo empieza con la entrada «Compra recibida» (+5, a 20.000)', kCas.length === 1 && /Compra recibida/.test(kCas[0]) && /5/.test(kCas[0]) && /20\.000/.test(kCas[0]), JSON.stringify(kCas));
+    await cerrarHoja();
+    // Llega a otra bodega que la pedida: pide el motivo y el artículo nace allí
+    await t.page.evaluate(() => window.nube.lote([['set', 'compras', 'co-p9', { que: 'Overoles azules', cantidad: 4, unidad: 'unidades', categoria: 'EPP', valorAprox: 200000, paraQue: 'Prueba de artículo nuevo', proyecto: 'Oficina', pide: 'Andrés Beltrán', pideRol: 'asistente', autoriza: 'Mauricio Giraldo', autorizaJefe: '', estado: 'comprado', proveedor: 'Ferretería El Faro', valorReal: 180000, fechaPedido: '2026-11-10', fechaCompra: '2026-11-12', entregadoA: '', motivoRechazo: '', articuloId: '', factura: '', revisada: false,
+      historial: [{ fecha: '2026-11-10T10:00:00.000Z', texto: 'Pidió la compra', por: 'Andrés Beltrán' }], cotizaciones: [], lineas: [{ que: 'Overoles azules', cantidad: 4, unidad: 'unidades', valor: 200000, articuloId: '', bodega: 'Guamal', nuevo: true, categoria: 'EPP' }] }]]));
+    await secInv('compras'); await t.page.click('#invContenido .chip[data-sub="compras"][data-val="todas"]'); await esp(250);
+    await t.page.click('#invContenido [data-accion="vercompra"][data-id="co-p9"]'); await hojaAb();
+    await t.page.click('#acCampos [data-accion="recibir"]'); await hasta(t.page, () => !!document.getElementById('acBodLlego'));
+    await t.page.selectOption('#acBodLlego', 'Riohacha'); await esp(200); await t.page.click('#acPrimario');
+    log('recibir un artículo nuevo en otra bodega sin motivo da error y no crea nada', await errHoja(/Escribe por qué llegó a otra bodega/) && !grande(await datosApp()).some(a => a.nombre === 'Overoles azules'));
+    await t.page.fill('#acMotivoBod', 'En Guamal ya no se necesitan'); await t.page.click('#acPrimario'); await hojaCerrada();
+    const dOv = await datosApp(), aOv = grande(dOv).filter(a => a.nombre === 'Overoles azules'), mOv = Object.values(dOv.movimientos).filter(m => m.compraId === 'co-p9');
+    log('con motivo: el artículo nace en Riohacha (4 a 45.000 c/u) y su movimiento dice «pedido para Guamal» y el porqué, sin lineaArticuloId', aOv.length === 1 && aOv[0].bodega === 'Riohacha' && aOv[0].cantidad === 4 && aOv[0].costo === 45000 && mOv.length === 1 && mOv[0].bodega === 'Riohacha' && mOv[0].bodegaPedida === 'Guamal' && mOv[0].motivoBodega === 'En Guamal ya no se necesitan' && !('lineaArticuloId' in mOv[0]) && JSON.stringify(mOv[0].partes) === '[{"i":0,"cantidad":4}]' && dOv.compras['co-p9'].estado === 'recibido', JSON.stringify([aOv, mOv]));
+    await t.page.click('#invContenido [data-accion="vercompra"][data-id="co-p9"]'); await hojaAb();
+    log('el cuadro de la compra dice «llegó a Riohacha» y no dice «faltan»', await hasta(t.page, () => { const x = document.getElementById('acCampos').textContent; return /llegó a Riohacha/.test(x) && !/faltan/.test(x) && /pidió para Guamal|se pidió para Guamal/.test(x); }));
+    await cerrarHoja();
+    // Una compra con 2 líneas (una nueva y una de la bodega) se recibe de una vez
+    await t.page.evaluate(() => window.nube.lote([['set', 'compras', 'co-p10', { que: 'Gafas claras y 1 más', cantidad: 2, unidad: 'artículos', categoria: 'EPP', valorAprox: 100000, paraQue: 'Prueba de artículo nuevo', proyecto: 'Oficina', pide: 'Andrés Beltrán', pideRol: 'asistente', autoriza: 'Mauricio Giraldo', autorizaJefe: '', estado: 'comprado', proveedor: 'Ferretería El Faro', valorReal: 100000, fechaPedido: '2026-11-10', fechaCompra: '2026-11-12', entregadoA: '', motivoRechazo: '', articuloId: '', factura: '', revisada: false,
+      historial: [{ fecha: '2026-11-10T10:00:00.000Z', texto: 'Pidió la compra', por: 'Andrés Beltrán' }], cotizaciones: [], lineas: [{ que: 'Gafas claras', cantidad: 3, unidad: 'unidades', valor: 90000, articuloId: '', bodega: 'Riohacha', nuevo: true, categoria: 'EPP' }, { que: 'Cinta aislante', cantidad: 2, unidad: 'rollos', valor: 10000, articuloId: 'ar-009', bodega: 'Riohacha' }] }]]));
+    await secInv('compras'); await t.page.click('#invContenido .chip[data-sub="compras"][data-val="todas"]'); await esp(250);
+    const cinta0 = await art('ar-009');
+    await t.page.click('#invContenido [data-accion="vercompra"][data-id="co-p10"]'); await hojaAb();
+    await t.page.click('#acCampos [data-accion="recibir"]'); await hasta(t.page, () => !!document.getElementById('rb0'));
+    log('«Recibir la compra» pregunta la bodega de las 2 líneas y la nueva dice «se crea allí»', await hasta(t.page, () => !!document.getElementById('rb1') && document.getElementById('rb0').value === 'Riohacha' && /se crea allí/.test(document.getElementById('rb0Ay').textContent) && /Artículo nuevo: se crea en la bodega/.test(document.getElementById('acCampos').textContent)));
+    await t.page.screenshot({ path: path.join(CAPTURAS, '43-recibir-nueva-y-existente.png') });
+    await t.page.click('#acPrimario'); await hojaCerrada();
+    const d10 = await datosApp(), aGa = grande(d10).filter(a => a.nombre === 'Gafas claras'), m10 = Object.entries(d10.movimientos).filter(([, m]) => m.compraId === 'co-p10').map(([, m]) => m);
+    log('se recibe de una vez: nace «Gafas claras» en Riohacha (3 a 30.000 c/u), la cinta sube 2 y quedan 2 movimientos (el del artículo nuevo con sus «partes»)', d10.compras['co-p10'].estado === 'recibido' && aGa.length === 1 && aGa[0].bodega === 'Riohacha' && aGa[0].cantidad === 3 && aGa[0].costo === 30000 && d10.articulos['ar-009'].cantidad === cinta0 + 2 && m10.length === 2 && JSON.stringify(m10.find(m => m.articuloId === aGa[0].id).partes) === '[{"i":0,"cantidad":3}]' && m10.find(m => m.articuloId === 'ar-009').cantidad === 2, JSON.stringify([aGa, m10]));
+    await t.page.click('#invContenido [data-accion="vercompra"][data-id="co-p10"]'); await hojaAb();
+    log('el cuadro de esa compra muestra las 2 líneas recibidas y no dice «faltan»', await hasta(t.page, () => { const x = document.getElementById('acCampos').querySelector('.cuadro-compra').textContent; return /3 unidades/.test(x) && /2 rollos/.test(x) && !/faltan/.test(x); }));
+    await cerrarHoja();
+    log('cambia a Carolina Castillo (Jefe) otra vez', await cambiar(t.page, 'jefe'));
+    await t.page.click('.tab[data-vista="inventario"]'); await esp(300);
     // Historial del artículo y texto malicioso en el porqué
     await t.page.evaluate(() => { const ops = []; for (let i = 0; i < 40; i++) ops.push(['set', 'movimientos', 'mo-h' + i, { articuloId: 'ar-006', articulo: 'Tapabocas', tipo: i % 3 ? 'salida' : 'entrada', motivo: i % 3 ? 'entrega' : 'compra', cantidad: 1, saldo: 5, persona: 'Persona ' + i, proyecto: 'Oficina', nota: '', motivoBodega: i === 3 ? '<img src=x onerror="window.__h=1">' : '', compraId: '', solicitudId: '', por: 'Andrés Beltrán', porRol: 'asistente', fecha: new Date(Date.now() - (i + 30) * 86400000).toISOString(), bodega: 'Riohacha', costoUnit: 18000, valor: 18000, valorSaldo: 90000 }]); return window.nube.lote(ops); });
     await esp(400); await secInv('existencias');
