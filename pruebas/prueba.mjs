@@ -1440,6 +1440,254 @@ try {
   log('Reiniciar devuelve los datos de ejemplo y quita lo que sobraba', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return d.compras['co-001'].estado === 'pedido' && !d.compras['extra-1']; }));
   log('después de reiniciar avisa que quedó listo', await hasta(t.page, () => /reiniciados/.test(document.getElementById('toast').textContent)));
 
+  console.log('2d. Las 3 bodegas en cada cosa (datos de ejemplo recién cargados)');
+  {
+    const BODS = ['Riohacha', 'Guamal', 'Bogotá'];
+    const secInv = async k => { await t.page.click(`#invSecciones [data-sec="${k}"]`); await esp(350); };
+    const filas = sel => t.page.evaluate(s => [...document.querySelectorAll(s)].map(c => c.textContent.replace(/\s+/g, ' ').trim()), sel);
+    const hojaAb = () => t.page.waitForSelector('#shAccion:not([hidden])');
+    const hojaCerrada = () => hasta(t.page, () => document.getElementById('shAccion').hidden);
+    const cerrarHoja = async () => { await t.page.keyboard.press('Escape'); await esp(250); if (await t.page.evaluate(() => !document.getElementById('shConfirmar').hidden)) { await t.page.click('#cfSi'); await esp(250); } };
+    const errHoja = re => hasta(t.page, r => !document.getElementById('acErr').hidden && new RegExp(r).test(document.getElementById('acErr').textContent), re.source);
+    await t.page.click('.tab[data-vista="inventario"]'); await esp(500);
+    const dX = await datosApp(), movsX = Object.values(dX.movimientos);
+    log('todos los movimientos de ejemplo (16) traen una bodega válida y es la de su artículo', movsX.length === 16 && movsX.every(m => BODS.includes(m.bodega) && dX.articulos[m.articuloId] && dX.articulos[m.articuloId].bodega === m.bodega));
+    // Movimientos: empieza en «Todas» aunque en Bodega esté escogida Guamal, y el filtro Bogotá deja solo lo de Bogotá
+    await secInv('existencias'); await t.page.click('#invContenido .chip[data-sub="bodega"][data-val="Guamal"]');
+    await secInv('movimientos');
+    log('Movimientos empieza en «Todas las bodegas» (aunque Bodega tenga Guamal escogida) y cada bodega trae su número', await hasta(t.page, n => { const c = [...document.querySelectorAll('#invContenido [aria-label="Filtrar por bodega"] .chip')]; return c.map(x => x.dataset.val).join() === 'todas,Riohacha,Guamal,Bogotá' && c[0].getAttribute('aria-pressed') === 'true' && c.map(x => Number(x.querySelector('.n').textContent)).join() === n.join() && document.querySelectorAll('#invContenido .card.mov').length === 16; }, [16].concat(BODS.map(b => movsX.filter(m => m.bodega === b).length))), (await filas('#invContenido .chips.sub .chip')).join(' | '));
+    await t.page.click('#invContenido .chip[data-sub="bodMov"][data-val="Bogotá"]'); await esp(300);
+    log('el filtro Bogotá deja solo los movimientos de Bogotá (cada uno con su etiqueta de bodega)', await hasta(t.page, n => { const c = [...document.querySelectorAll('#invContenido .card.mov')]; return c.length === n && c.every(x => /Bogotá/.test(x.querySelector('.docs').textContent)); }, movsX.filter(m => m.bodega === 'Bogotá').length));
+    await t.page.screenshot({ path: path.join(CAPTURAS, '33-movimientos-por-bodega.png'), fullPage: true });
+    for (const b of ['Riohacha', 'Guamal']) {
+      await t.page.click(`#invContenido .chip[data-sub="bodMov"][data-val="${b}"]`); await esp(250);
+      log(`el traslado de ejemplo de los tapabocas se ve en la bodega de ${b} («Traslado de Riohacha a Guamal»)`, (await filas('#invContenido .card.mov')).some(x => /Tapabocas/.test(x) && /Traslado de Riohacha a Guamal/.test(x)));
+    }
+    await t.page.click('#invContenido .chip[data-sub="bodMov"][data-val="todas"]');
+    await t.page.fill('#qInventario', 'Guamal');
+    log('el buscador de Movimientos encuentra «Guamal» (la bodega también se busca)', await hasta(t.page, () => { const c = [...document.querySelectorAll('#invContenido .card.mov')]; return c.length >= 5 && c.length < 16 && c.every(x => /Guamal/.test(x.textContent)); }));
+    await t.page.fill('#qInventario', ''); await hasta(t.page, () => document.querySelectorAll('#invContenido .card.mov').length === 16);
+    await t.page.click('#invContenido .chip[data-sub="bodMov"][data-val="todas"]');
+    await secInv('existencias'); await t.page.click('#invContenido .chip[data-sub="bodega"][data-val="todas"]');
+    // Qué hay que hacer: la tarea del pedido de botas (Riohacha agotada, Bogotá con 10)
+    await secInv('hacer');
+    const tarea = await t.page.evaluate(() => { const b = document.querySelector('#invContenido [data-accion="entregar"][data-id="so-006"]'), c = b && b.closest('.card'); return c ? { texto: c.textContent.replace(/\s+/g, ' '), botones: [...c.querySelectorAll('button')].map(x => x.textContent.trim()) } : null; });
+    log('la tarea del pedido so-006 dice «En Bogotá hay 10 pares» y trae el botón «Entregar desde Bogotá»', !!tarea && /En Bogotá hay 10 pares/.test(tarea.texto) && tarea.botones.includes('Entregar desde Bogotá'), JSON.stringify(tarea));
+    // Entregar desde otra bodega: sin motivo da error; con motivo baja la de Bogotá y no toca la de Riohacha
+    await t.page.click('#invContenido [data-accion="entregar"][data-id="so-006"][data-desde]'); await hojaAb();
+    log('la hoja dice «Sale de la bodega», propone Bogotá y trae el motivo ya escrito («En Riohacha no había»)', await hasta(t.page, () => { const s = document.getElementById('acDesde'); return !!s && s.value === 'ar-019' && !document.getElementById('acMotivoBodBox').hidden && /^En Riohacha no había/.test(document.getElementById('acMotivoBod').value) && document.getElementById('acCant').value === '4'; }));
+    await t.page.fill('#acMotivoBod', ''); await t.page.click('#acPrimario');
+    log('entregar desde otra bodega sin motivo da error y no guarda nada', await errHoja(/Escribe por qué sale de otra bodega/) && (await datosApp()).solicitudes['so-006'].estado === 'pendiente');
+    await t.page.fill('#acMotivoBod', 'En Riohacha no había botas');
+    await t.page.screenshot({ path: path.join(CAPTURAS, '34-entregar-desde-otra-bodega.png') });
+    await t.page.click('#acPrimario'); await hojaCerrada();
+    const dE = await datosApp(), soE = dE.solicitudes['so-006'], mE = Object.values(dE.movimientos).find(m => m.solicitudId === 'so-006');
+    log('con motivo: Bogotá baja 4 (10 a 6), las botas de Riohacha siguen en 0 y el pedido queda entregado', dE.articulos['ar-019'].cantidad === 6 && dE.articulos['ar-001'].cantidad === 0 && soE.estado === 'entregada');
+    log('el movimiento queda en Bogotá («pedido para Riohacha», con el motivo) y el pedido guarda de dónde salió', !!mE && mE.bodega === 'Bogotá' && mE.bodegaPedida === 'Riohacha' && mE.motivoBodega === 'En Riohacha no había botas' && mE.articuloId === 'ar-019' && soE.bodegaSurte === 'Bogotá' && soE.articuloSurteId === 'ar-019' && soE.motivoBodega === 'En Riohacha no había botas', JSON.stringify([mE, soE]));
+    await secInv('movimientos');
+    const entregaEn = async b => { await t.page.click(`#invContenido .chip[data-sub="bodMov"][data-val="${b}"]`); await esp(250); return (await filas('#invContenido .card.mov')).some(x => /Botas/.test(x) && /Elkin Bruno/.test(x) && /pedido para Riohacha/.test(x) && /Por qué salió de otra bodega: En Riohacha no había botas/.test(x)); };
+    log('en Movimientos la entrega sale con el filtro Bogotá (pedido para Riohacha, con el porqué) y NO con el de Riohacha (allá no cambió nada)', (await entregaEn('Bogotá')) && !(await entregaEn('Riohacha')));
+    await t.page.click('#invContenido .chip[data-sub="bodMov"][data-val="todas"]');
+    // Pedidos: sale con el filtro Riohacha (la que pidió) y con Bogotá (la que entregó)
+    await secInv('solicitudes'); await t.page.click('#invContenido .chip[data-sub="solicitudes"][data-val="todos"]');
+    const salio = async b => { await t.page.click(`#invContenido .chip[data-sub="bodSol"][data-val="${b}"]`); await esp(250); return (await filas('#invContenido .card.tarea')).some(x => /Botas de seguridad talla 40/.test(x) && /Salió de Bogotá: En Riohacha no había botas/.test(x)); };
+    log('el pedido entregado desde Bogotá sale con el filtro Riohacha y con el filtro Bogotá, y dice «Salió de Bogotá»', (await salio('Riohacha')) && (await salio('Bogotá')) && !(await salio('Guamal')));
+    await t.page.click('#invContenido .chip[data-sub="bodSol"][data-val="todas"]');
+    await t.page.click('#invContenido [data-accion="versol"][data-id="so-006"]'); await hojaAb(); await esp(300);
+    const pasos = await filas('#acCampos ol.linea li b');
+    log('el recorrido del pedido va en orden: pidió, salió de la bodega de Bogotá, se entregó', pasos.length === 3 && /^Pidió 4 pares de Botas de seguridad talla 40/.test(pasos[0]) && pasos[1] === 'Salió de la bodega de Bogotá' && pasos[2] === 'Se entregó', JSON.stringify(pasos));
+    await t.page.screenshot({ path: path.join(CAPTURAS, '35-pedido-recorrido.png') });
+    await cerrarHoja();
+    // Quien solo pide ve «Salió de Bogotá» y ningún botón de bodega
+    log('cambia a Elkin Bruno (logística, solo pide material)', await cambiar(t.page, 'logistica'));
+    await t.page.click('.tab[data-vista="inventario"]'); await esp(300);
+    await t.page.click('#btnPedirMaterial'); await hojaAb();
+    log('«Pedir material» pregunta primero para qué bodega (las 3, empieza en Riohacha) y luego da los artículos de esa bodega', await hasta(t.page, () => { const s = document.getElementById('acBod'); return !!s && [...s.options].map(o => o.value).join() === 'Riohacha,Guamal,Bogotá' && s.value === 'Riohacha' && document.querySelectorAll('#acArt optgroup')[0].label === 'Bodega de Riohacha'; }));
+    await t.page.selectOption('#acBod', 'Guamal'); await esp(200); await t.page.selectOption('#acArt', 'ar-020');
+    await t.page.fill('#acCant', '1'); await t.page.fill('#acPara', 'Prueba de pedido por bodega'); await t.page.click('#acPrimario'); await hojaCerrada();
+    const dP = await datosApp(), soP = Object.values(dP.solicitudes).find(x => x.paraQue === 'Prueba de pedido por bodega'), avP = Object.values(dP.avisos).find(a => a.titulo === 'Nuevo pedido de material' && /Tapabocas/.test(a.texto) && /Guamal/.test(a.texto));
+    log('el pedido guarda la bodega pedida (Guamal), el aviso la nombra y el teléfono la recuerda para la próxima', !!soP && soP.bodega === 'Guamal' && soP.articuloId === 'ar-020' && !!avP && /para la bodega de Guamal/.test(avP.texto) && await t.page.evaluate(() => localStorage.getItem('inv.miBodega') === 'Guamal'), JSON.stringify([soP, avP]));
+    await t.page.click('#btnPedirMaterial'); await hojaAb();
+    log('al volver a pedir, ya viene escogida Guamal', await hasta(t.page, () => document.getElementById('acBod').value === 'Guamal'));
+    await cerrarHoja();
+    await secInv('hacer');
+    const mio = await t.page.evaluate(() => ({ txt: [...document.querySelectorAll('#invContenido .card.tarea')].map(c => c.textContent.replace(/\s+/g, ' ')).find(x => /Botas de seguridad talla 40/.test(x)) || '', acc: [...document.querySelectorAll('#invContenido [data-accion]')].map(b => b.dataset.accion).filter(a => ['entregar', 'noentregar', 'traer', 'recibir', 'pedir'].includes(a)) }));
+    log('quien solo pide ve «Salió de Bogotá» en su pedido y ningún botón de entregar ni de traer', /Salió de Bogotá/.test(mio.txt) && mio.acc.length === 0, JSON.stringify(mio));
+    log('cambia a Carolina Castillo (Jefe) otra vez', await cambiar(t.page, 'jefe'));
+    await t.page.click('.tab[data-vista="inventario"]');
+    // Compras: la bodega a la vista, el filtro y la línea de una compra nueva
+    await secInv('compras'); await t.page.click('#invContenido .chip[data-sub="compras"][data-val="todas"]'); await esp(250);
+    log('la compra co-003 (resmas) dice «va a Guamal» y lleva su etiqueta de bodega', (await filas('#invContenido [data-accion="vercompra"][data-id="co-003"]')).some(x => /va a Guamal/.test(x) && /Guamal/.test(x)));
+    await t.page.click('#invContenido .chip[data-sub="bodCom"][data-val="Guamal"]'); await esp(250);
+    const idsG = await t.page.evaluate(() => [...document.querySelectorAll('#invContenido [data-accion="vercompra"]')].map(c => c.dataset.id));
+    await t.page.click('#invContenido .chip[data-sub="bodCom"][data-val="Riohacha"]'); await esp(250);
+    const idsR = await t.page.evaluate(() => [...document.querySelectorAll('#invContenido [data-accion="vercompra"]')].map(c => c.dataset.id));
+    log('el filtro de bodega de Compras funciona: Guamal trae co-003 y Riohacha no', idsG.includes('co-003') && idsG.length < 14 && !idsR.includes('co-003') && idsR.length >= 1, JSON.stringify([idsG, idsR]));
+    await t.page.click('#invContenido .chip[data-sub="bodCom"][data-val="todas"]');
+    await t.page.click('#btnPedirCompra'); await hojaAb();
+    await t.page.selectOption('#acArt', 'ar-018'); await esp(200); await t.page.click('#acPrimario'); await hojaCerrada();
+    const cN = Object.values((await datosApp()).compras).find(c => c.que === 'Linterna recargable' && c.pide === 'Carolina Castillo');
+    log('una compra nueva de un artículo de Bogotá guarda la bodega en su línea', !!cN && cN.lineas.length === 1 && cN.lineas[0].bodega === 'Bogotá' && cN.lineas[0].articuloId === 'ar-018', JSON.stringify(cN));
+    // Compra recibida en otra bodega (compra creada aquí)
+    await t.page.evaluate(() => window.nube.lote([['set', 'compras', 'co-p8', { que: 'Botas de seguridad talla 40', cantidad: 6, unidad: 'pares', categoria: 'EPP', valorAprox: 510000, paraQue: 'Reponer la bodega', proyecto: 'Proyecto Costa Norte', pide: 'Andrés Beltrán', pideRol: 'asistente', autoriza: 'Mauricio Giraldo', autorizaJefe: '', estado: 'comprado', proveedor: 'Ferretería El Faro', valorReal: 480000, fechaPedido: '2026-11-10', fechaCompra: '2026-11-12', entregadoA: '', motivoRechazo: '', articuloId: 'ar-001', factura: '', revisada: false, historial: [{ fecha: '2026-11-10T10:00:00.000Z', texto: 'Pidió la compra', por: 'Andrés Beltrán' }],
+      lineas: [{ que: 'Botas de seguridad talla 40', cantidad: 6, unidad: 'pares', valor: 510000, articuloId: 'ar-001', bodega: 'Riohacha' }] }]]));
+    await secInv('compras'); await t.page.click('#invContenido .chip[data-sub="compras"][data-val="todas"]'); await esp(250);
+    await t.page.click('#invContenido [data-accion="vercompra"][data-id="co-p8"]'); await hojaAb();
+    await t.page.evaluate(() => { window.print = () => {}; });
+    await t.page.click('#acCampos [data-accion="imprimirorden"]'); await esp(400);
+    log('la orden de compra dice «ENTREGAR EN: Bodega de Riohacha»', await t.page.evaluate(() => { const o = document.getElementById('ordenDoc'); return !!o && /ENTREGAR EN:\s*Bodega de Riohacha/.test(o.textContent); }));
+    await t.page.emulateMedia({ media: 'print' }); await esp(250);
+    const odoc = await t.page.$('#ordenDoc'); if (odoc) await odoc.screenshot({ path: path.join(CAPTURAS, '40-orden-compra-bodega.png') });
+    await t.page.emulateMedia({ media: 'screen' });
+    await t.page.evaluate(() => { const i = document.getElementById('impresion'); if (i) i.remove(); document.body.classList.remove('imprimiendo'); });
+    await t.page.click('#acCampos [data-accion="recibir"]'); await hasta(t.page, () => !!document.getElementById('acBodLlego'));
+    await t.page.selectOption('#acBodLlego', 'Bogotá'); await esp(200);
+    await t.page.screenshot({ path: path.join(CAPTURAS, '37-recibir-otra-bodega.png') });
+    await t.page.click('#acPrimario');
+    log('recibir en otra bodega sin motivo da error y la compra sigue sin recibir', await errHoja(/Escribe por qué llegó a otra bodega/) && (await datosApp()).compras['co-p8'].estado === 'comprado');
+    await t.page.fill('#acMotivoBod', 'En Riohacha no hay quién reciba'); await t.page.click('#acPrimario'); await hojaCerrada();
+    const dR = await datosApp(), mR = Object.values(dR.movimientos).find(m => m.compraId === 'co-p8');
+    log('con motivo: las 6 entran a las botas de Bogotá (6 a 12), el movimiento guarda lineaArticuloId y el motivo, y las de Riohacha siguen en 0', dR.compras['co-p8'].estado === 'recibido' && dR.articulos['ar-019'].cantidad === 12 && dR.articulos['ar-001'].cantidad === 0 && !!mR && mR.bodega === 'Bogotá' && mR.articuloId === 'ar-019' && mR.lineaArticuloId === 'ar-001' && mR.motivoBodega === 'En Riohacha no hay quién reciba', JSON.stringify(mR));
+    await t.page.click('#invContenido [data-accion="vercompra"][data-id="co-p8"]'); await hojaAb();
+    log('el cuadro de la compra dice «llegó a Bogotá» y no dice «faltan»', await hasta(t.page, () => { const x = document.getElementById('acCampos').textContent; return /llegó a Bogotá/.test(x) && !/faltan/.test(x); }));
+    await cerrarHoja();
+    // Historial del artículo y texto malicioso en el porqué
+    await t.page.evaluate(() => { const ops = []; for (let i = 0; i < 40; i++) ops.push(['set', 'movimientos', 'mo-h' + i, { articuloId: 'ar-006', articulo: 'Tapabocas', tipo: i % 3 ? 'salida' : 'entrada', motivo: i % 3 ? 'entrega' : 'compra', cantidad: 1, saldo: 5, persona: 'Persona ' + i, proyecto: 'Oficina', nota: '', motivoBodega: i === 3 ? '<img src=x onerror="window.__h=1">' : '', compraId: '', solicitudId: '', por: 'Andrés Beltrán', porRol: 'asistente', fecha: new Date(Date.now() - (i + 30) * 86400000).toISOString(), bodega: 'Riohacha', costoUnit: 18000, valor: 18000, valorSaldo: 90000 }]); return window.nube.lote(ops); });
+    await esp(400); await secInv('existencias');
+    await t.page.click('#invContenido [data-accion="verart"][data-id="ar-006"]'); await hojaAb(); await esp(300);
+    const nHist = () => t.page.evaluate(() => document.querySelectorAll('#artHist li').length);
+    log('el historial del artículo muestra 30 movimientos, «Ver más» y «Ver también las otras bodegas»', (await nHist()) === 30 && await visible(t.page, '#artHist .ver-mas') && await visible(t.page, '#artHist [data-accion="histotras"]'));
+    log('el porqué con HTML sale escapado (se lee como texto y no se ejecuta)', !(await t.page.evaluate(() => window.__h)) && /<img src=x/.test(await texto(t.page, '#artHist')));
+    await t.page.click('#artHist .ver-mas'); await esp(200);
+    log('«Ver más» muestra el resto (más de 30)', (await nHist()) > 30);
+    await t.page.click('#artHist [data-accion="histotras"]'); await esp(250);
+    log('«Ver también las otras bodegas» suma lo de Guamal (los tapabocas que llegaron por traslado)', (await filas('#artHist li')).some(x => /Bodega de Guamal/.test(x)));
+    await t.page.screenshot({ path: path.join(CAPTURAS, '38-articulo-historial.png') });
+    await cerrarHoja();
+    // «Traer de Bogotá»: las botas de Riohacha están agotadas y en Bogotá sobran
+    await secInv('existencias');
+    await t.page.click('#invContenido [data-accion="verart"][data-id="ar-001"]'); await hojaAb(); await esp(250);
+    log('el artículo agotado dice «En otras bodegas: Bogotá 12» y ofrece «Traer de Bogotá»', await hasta(t.page, () => /En otras bodegas/.test(document.getElementById('acCampos').textContent) && /Bogotá 12/.test(document.getElementById('acCampos').textContent) && [...document.querySelectorAll('#acCampos [data-accion="traer"]')].some(b => b.textContent.trim() === 'Traer de Bogotá')));
+    await t.page.click('#acCampos [data-accion="traer"]'); await esp(300);
+    log('«Traer de Bogotá» abre el traslado ya llenado: destino Riohacha y una cantidad lista', await hasta(t.page, () => /Trasladar a otra bodega/.test(document.getElementById('acT').textContent) && /Botas de seguridad talla 40/.test(document.getElementById('acSub').textContent) && document.getElementById('acDest').value === 'Riohacha' && Number(document.getElementById('acCant').value) >= 1));
+    await cerrarHoja();
+    // Resumen: una tarjeta por bodega y el filtro Bogotá cambia el valor
+    await secInv('panorama');
+    log('el Panorama trae las 3 tarjetas por bodega', await hasta(t.page, () => [...document.querySelectorAll('#invContenido .card-bodega')].map(c => c.dataset.bodega).join() === 'Riohacha,Guamal,Bogotá'));
+    await secInv('resumen');
+    const valRes = () => t.page.evaluate(() => { const c = [...document.querySelectorAll('#invContenido .resumen-grid .card')].find(x => /Valor de lo que hay en bodega/.test(x.textContent)); return c ? c.querySelector('.rm-n').textContent.trim() : ''; });
+    const vTodas = await valRes(), vBogTarjeta = await t.page.evaluate(() => document.querySelector('#invContenido .card-bodega[data-bodega="Bogotá"] .valor').textContent.trim());
+    await t.page.click('#invContenido .chip[data-sub="bodRes"][data-val="Bogotá"]'); await esp(300);
+    const vBog = await valRes();
+    log('el Resumen trae una tarjeta por bodega y con el filtro Bogotá el valor pasa a ser el de Bogotá', vTodas !== vBog && vBog === vBogTarjeta && /\$/.test(vBog), JSON.stringify([vTodas, vBog, vBogTarjeta]));
+    await t.page.click('#invContenido .chip[data-sub="bodRes"][data-val="todas"]');
+    await t.page.screenshot({ path: path.join(CAPTURAS, '36-resumen-por-bodega.png'), fullPage: true });
+    // Excel del Resumen y del kárdex con las columnas de bodega
+    const [dxR] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#invContenido [data-accion="excel"]')]);
+    if (dxR) {
+      const ruta = path.join(CAPTURAS, 'excel-inventario-bodegas.xlsx'); await dxR.saveAs(ruta); const hs = await excelInfo(ruta), hoja = n => hs.find(h => h.nombre === n);
+      const mv = hoja('Movimientos'), co = hoja('Compras'), pe = hoja('Pedidos de material'), iPara = mv ? mv.titulos.indexOf('Pedido para') : -1;
+      log('el Excel del Resumen trae la bodega en Movimientos, Compras y Pedidos (con «Pedido para», «Salió de» y el motivo)', !!mv && !!co && !!pe && ['Bodega', 'Traslado: otra bodega', 'Pedido para', 'Motivo de la bodega'].every(c => mv.titulos.includes(c)) && co.titulos.includes('Bodega destino') && ['Bodega pedida', 'Salió de', 'Motivo de la bodega'].every(c => pe.titulos.includes(c)), JSON.stringify(hs.map(h => h.titulos)));
+      log('en ese Excel la entrega de las botas dice Bogotá, «Pedido para» Riohacha y el motivo; el pedido dice «Salió de» Bogotá', !!mv && mv.filas.some(f => f[mv.titulos.indexOf('Bodega')] === 'Bogotá' && f[iPara] === 'Riohacha' && f[mv.titulos.indexOf('Motivo de la bodega')] === 'En Riohacha no había botas') && pe.filas.some(f => f[pe.titulos.indexOf('Salió de')] === 'Bogotá' && f[pe.titulos.indexOf('Bodega pedida')] === 'Riohacha'));
+    } else log('el Excel del Resumen se descarga', false, 'sin descarga');
+    await secInv('existencias');
+    await t.page.click('#invContenido [data-accion="verart"][data-id="ar-019"]'); await hojaAb(); await t.page.click('#acCampos [data-accion="kardex"]'); await esp(300);
+    const [dxK] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#acCampos [data-accion="excelkardex"]')]);
+    if (dxK) { const ruta = path.join(CAPTURAS, 'excel-kardex-bodegas.xlsx'); await dxK.saveAs(ruta); const hs = await excelInfo(ruta); log('el Excel del kárdex trae la columna Bodega y su título dice «(Bodega Bogotá)»', hs.length === 1 && hs[0].titulos.includes('Bodega') && /^Kárdex: Botas de seguridad talla 40 \(Bodega Bogotá\)$/.test(hs[0].titulo) && hs[0].filas.every(f => f[hs[0].titulos.indexOf('Bodega')] === 'Bogotá'), JSON.stringify([hs[0].titulo, hs[0].titulos])); }
+    else log('el Excel del kárdex se descarga', false, 'sin descarga');
+    await cerrarHoja();
+    // Un conteo en Bogotá deja ajustes de Bogotá y no toca las otras bodegas
+    await secInv('conteo');
+    const ajRioAntes = Object.values((await datosApp()).movimientos).filter(m => m.motivo === 'conteo' && m.bodega === 'Riohacha').length;
+    await t.page.click('#invContenido [data-accion="conteo"]'); await hojaAb();
+    await t.page.selectOption('#acBod', 'Bogotá'); await esp(200); await t.page.click('#acPrimario');
+    await hasta(t.page, () => !!document.getElementById('cn-ar-016'));
+    await t.page.fill('#cn-ar-016', '3'); await t.page.click('#acPrimario');
+    await hasta(t.page, () => !!document.getElementById('acMotivo')); await t.page.fill('#acMotivo', 'Llegó café sin registrar'); await t.page.click('#acPrimario'); await hojaCerrada();
+    const dC = await datosApp(), ajC = Object.values(dC.movimientos).filter(m => m.motivo === 'conteo');
+    log('contar en Bogotá deja el ajuste en Bogotá (el café pasa de 0 a 3) y no deja ajustes nuevos en otras bodegas', dC.articulos['ar-016'].cantidad === 3 && ajC.some(m => m.articuloId === 'ar-016' && m.bodega === 'Bogotá' && m.cantidad === 3) && ajC.filter(m => m.bodega === 'Riohacha').length === ajRioAntes && ajC.filter(m => m.bodega === 'Guamal').length === 0, JSON.stringify(ajC.map(m => [m.articuloId, m.bodega])));
+    const dF = await datosApp();
+    log('todo lo que se movió en esta prueba quedó con la bodega de su artículo', Object.values(dF.movimientos).every(m => !dF.articulos[m.articuloId] || m.bodega === dF.articulos[m.articuloId].bodega));
+    // Datos viejos metidos a mano: un movimiento sin bodega de un artículo borrado y un pedido sin bodega; no rompen y solo salen en «Todas»
+    const nErr = t.errores.length;
+    await t.page.evaluate(() => window.nube.lote([['set', 'movimientos', 'mo-viejo', { articuloId: 'ar-borrado', articulo: 'Artículo viejo borrado', tipo: 'salida', motivo: 'entrega', cantidad: 1, saldo: 0, persona: 'Alguien', proyecto: 'Oficina', nota: '', compraId: '', solicitudId: '', por: 'Andrés Beltrán', porRol: 'asistente', fecha: new Date().toISOString() }],
+      ['set', 'solicitudes', 'so-viejo', { articuloId: 'ar-borrado', articulo: 'Pedido viejo sin bodega', cantidad: 1, pide: 'Alguien', pideRol: 'logistica', paraQue: 'Prueba', proyecto: 'Oficina', estado: 'pendiente', fecha: new Date().toISOString(), entregadaPor: '', fechaEntrega: '', motivo: '' }]]));
+    await esp(400); await secInv('movimientos');
+    const viejoMov = async b => { await t.page.click(`#invContenido .chip[data-sub="bodMov"][data-val="${b}"]`); await esp(250); return (await t.page.evaluate(() => [...document.querySelectorAll('#invContenido .card.mov')].filter(c => /Artículo viejo borrado/.test(c.textContent)).map(c => !!c.querySelector('.docs')))); };
+    const vT = await viejoMov('todas'), vB = await viejoMov('Bogotá'), vR = await viejoMov('Riohacha');
+    await t.page.click('#invContenido .chip[data-sub="bodMov"][data-val="todas"]');
+    await secInv('solicitudes'); await t.page.click('#invContenido .chip[data-sub="solicitudes"][data-val="todos"]'); await esp(250);
+    const viejoSol = async b => { await t.page.click(`#invContenido .chip[data-sub="bodSol"][data-val="${b}"]`); await esp(250); return (await filas('#invContenido .card.tarea')).filter(x => /Pedido viejo sin bodega/.test(x)).length; };
+    const sT = await viejoSol('todas'), sR = await viejoSol('Riohacha');
+    await t.page.click('#invContenido .chip[data-sub="bodSol"][data-val="todas"]');
+    log('un movimiento viejo sin bodega y de un artículo borrado se ve sin etiqueta de bodega y solo en «Todas»', vT.length === 1 && vT[0] === false && vB.length === 0 && vR.length === 0, JSON.stringify([vT, vB, vR]));
+    log('un pedido viejo sin bodega sale solo en «Todas» y nada se rompe (sin errores nuevos)', sT === 1 && sR === 0 && t.errores.length === nErr, JSON.stringify([sT, sR, t.errores.slice(nErr)]));
+    await t.page.evaluate(() => window.nube.lote([['borrar', 'movimientos', 'mo-viejo'], ['borrar', 'solicitudes', 'so-viejo']]));
+    log('cambia a Oscar Muñoz (Gerente general)', await cambiar(t.page, 'gerente'));
+    await t.page.click('.tab[data-vista="inventario"]'); await secInv('resumen');
+    log('el Gerente ve las tarjetas por bodega en el Resumen y no ve la sección Movimientos', await hasta(t.page, () => document.querySelectorAll('#invContenido .card-bodega').length === 3 && !document.querySelector('#invSecciones [data-sec="movimientos"]')));
+    log('cambia a Carolina Castillo (Jefe) otra vez', await cambiar(t.page, 'jefe'));
+  }
+
+  console.log('4e-4. Historial completo del carro (Jefe, datos de ejemplo recién cargados)');
+  {
+    const titulosH = () => t.page.evaluate(() => [...document.querySelectorAll('#veCampos ol.linea li b')].map(b => b.textContent));
+    await t.page.click('.tab[data-vista="vehiculos"]'); await esp(400);
+    await t.page.click('#vehSecciones [data-sec="carros"]');
+    await t.page.click('#vehContenido [data-accion="ver"][data-id="ve-abc123"]'); await abiertaVeh(); await esp(300);
+    const t0 = await titulosH(), hist0 = (await datosApp()).vehiculos['ve-abc123'].historial.length;
+    log('el historial completo del ABC 123 trae la salida, la novedad, los tanqueos y el mantenimiento, con la salida una sola vez', t0.filter(x => x === 'Salió con Oscar Farfán').length === 1 && t0.some(x => /^Novedad: /.test(x)) && t0.filter(x => /^Tanqueo: /.test(x)).length === 5 && t0.some(x => /^Mantenimiento hecho/.test(x)), JSON.stringify(t0));
+    await t.page.click('#veCampos [data-accion="lineafiltro"][data-id="combustible"]'); await esp(250);
+    const tc = await titulosH();
+    log('el filtro «Combustible» deja solo los 5 tanqueos', tc.length === 5 && tc.every(x => /^Tanqueo: /.test(x)), JSON.stringify(tc));
+    await t.page.click('#veCampos [data-accion="lineafiltro"][data-id="todo"]'); await esp(200);
+    await t.page.click('#veCampos [data-accion="lineaorden"][data-id="viejo"]'); await esp(250);
+    const tv = await titulosH();
+    log('«Desde el comienzo» invierte el orden', tv.length === t0.length && tv[0] === t0[t0.length - 1] && tv[tv.length - 1] === t0[0], JSON.stringify([tv[0], t0[t0.length - 1]]));
+    log('«Quién lo ha tenido» nombra a Oscar Farfán y lo da como quien lo tiene ahora', await t.page.evaluate(() => { const l = [...document.querySelectorAll('#veCampos .section-label')].find(x => /Quién lo ha tenido/.test(x.textContent)); return !!l && /Oscar Farfán/.test(l.nextElementSibling.textContent) && /Lo tiene ahora/.test(l.nextElementSibling.textContent); }));
+    await t.page.evaluate(() => { const l = [...document.querySelectorAll('#veCampos .section-label')].find(x => /Historial completo/.test(x.textContent)); l.scrollIntoView(); }); await esp(200);
+    await t.page.locator('#shVeh .sheet').screenshot({ path: path.join(CAPTURAS, '39-vehiculo-historial.png') });
+    log('ver el historial no escribe nada en la hoja de vida del carro', (await datosApp()).vehiculos['ve-abc123'].historial.length === hist0);
+    // Otro carro: el filtro se reinicia y «Mantenimiento y llantas» trae la novedad de la llanta del DEF 456
+    await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shVeh').hidden);
+    await t.page.click('#vehContenido [data-accion="ver"][data-id="ve-def456"]'); await abiertaVeh(); await esp(250);
+    log('al abrir otro carro el filtro vuelve a «Todo»', await t.page.evaluate(() => document.querySelector('#veCampos [data-accion="lineafiltro"][data-id="todo"]').getAttribute('aria-pressed') === 'true' && document.querySelector('#veCampos [data-accion="lineaorden"][data-id="nuevo"]').getAttribute('aria-pressed') === 'true'));
+    await t.page.click('#veCampos [data-accion="lineafiltro"][data-id="mtto"]'); await esp(250);
+    const tm = await titulosH();
+    log('«Mantenimiento y llantas» del DEF 456 trae la novedad de la llanta y el cambio de aceite', tm.some(x => /^Novedad: /.test(x)) && tm.some(x => /^Mantenimiento hecho: Cambio de aceite/.test(x)) && tm.every(x => /^(Novedad|Mantenimiento|Plan de mantenimiento)/.test(x)), JSON.stringify(tm));
+    await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shVeh').hidden);
+    // Un tanqueo nuevo aparece arriba del historial y no escribe en la hoja de vida del carro
+    await t.page.click('#vehContenido [data-accion="ver"][data-id="ve-abc123"]'); await abiertaVeh();
+    const h1 = (await datosApp()).vehiculos['ve-abc123'].historial.length;
+    await t.page.click('#veCampos [data-accion="tanqueo"]'); await abiertaVeh();
+    await t.page.selectOption('#vqVeh', 've-abc123'); await t.page.fill('#vqKm', '45500'); await t.page.fill('#vqGal', '12,5'); await t.page.fill('#vqValor', '160000');
+    await t.page.setInputFiles('#vqFoto', IMG); await hasta(t.page, () => !document.getElementById('vqFotoVer').hidden);
+    log('se guarda un tanqueo nuevo del ABC 123', await guardarVeh());
+    await t.page.click('#vehContenido [data-accion="ver"][data-id="ve-abc123"]'); await abiertaVeh(); await esp(300);
+    const tN = await titulosH();
+    log('el tanqueo nuevo sale arriba de todo (lo más nuevo primero) y vehiculos.historial no crece', tN.length === t0.length + 1 && /^Tanqueo: \$\s?160\.000/.test(tN[0]) && (await datosApp()).vehiculos['ve-abc123'].historial.length === h1, JSON.stringify([tN[0], tN.length, t0.length]));
+    // Excel del historial
+    const [dxH] = await Promise.all([t.page.waitForEvent('download', { timeout: 15000 }).catch(() => null), t.page.click('#veCampos [data-accion="excelhist"]')]);
+    if (dxH) {
+      const ruta = path.join(CAPTURAS, 'excel-historial-carro.xlsx'); await dxH.saveAs(ruta); const hs = await excelInfo(ruta), h0 = hs[0];
+      log('el Excel del historial del carro baja con sus hojas «Historial» y «Quién lo ha tenido», con formato y todos los registros', /^Historial ABC 123 .*\.xlsx$/.test(dxH.suggestedFilename()) && hs.map(h => h.nombre).join() === 'Historial,Quién lo ha tenido' && hs.every(bienFormado) && h0.filas.length === tN.length && h0.filas.some(f => /^Salió con Oscar Farfán/.test(f[2])) && hs[1].filas.some(f => f[0] === 'Oscar Farfán'), JSON.stringify(hs.map(h => [h.nombre, h.filas.length])));
+    } else log('el Excel del historial del carro se descarga', false, 'sin descarga');
+    await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shVeh').hidden);
+    // El Gerente lo ve, pero sin botones para cambiar nada
+    log('cambia a Oscar Muñoz (Gerente general)', await cambiar(t.page, 'gerente'));
+    await t.page.click('.tab[data-vista="vehiculos"]'); await esp(400); await t.page.click('#vehSecciones [data-sec="carros"]');
+    await t.page.click('#vehContenido [data-accion="ver"][data-id="ve-abc123"]'); await abiertaVeh(); await esp(300);
+    const gB = await t.page.evaluate(() => ({ acc: [...document.querySelectorAll('#veCampos [data-accion]')].map(b => b.dataset.accion).filter(a => !['ver', 'lineafiltro', 'lineaorden', 'excelhist'].includes(a)), hist: /Historial completo/.test(document.getElementById('veCampos').textContent) && /Quién lo ha tenido/.test(document.getElementById('veCampos').textContent) }));
+    log('el Gerente ve el historial completo y «Quién lo ha tenido», sin botones de acción (solo filtros y Excel)', gB.hist && gB.acc.length === 0, JSON.stringify(gB));
+    await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shVeh').hidden);
+    log('cambia a Carolina Castillo (Jefe) otra vez', await cambiar(t.page, 'jefe'));
+  }
+  // Se devuelven los datos de ejemplo para que lo que sigue empiece limpio
+  await t.page.click('#btnPersona'); await t.page.waitForSelector('#shPersona:not([hidden])');
+  await t.page.click('#btnReiniciar'); await t.page.click('#cfSi');
+  log('al terminar se reinician los datos de ejemplo', await hasta(t.page, () => { const d = JSON.parse(localStorage.getItem('__fb_datos')); return !d.compras['co-p8'] && d.articulos['ar-019'].cantidad === 10 && /reiniciados/.test(document.getElementById('toast').textContent); }));
+  await t.page.click('.tab[data-vista="inicio"]');   // como antes (la prueba recargaba la página aquí): lo que sigue entra por Inicio
+
   console.log('5b. Cuentas propias: invitaciones por Excel, correo confirmado, Google y permisos por persona');
   const salir = async () => { await t.page.click('#btnPersona'); await t.page.waitForSelector('#shPersona:not([hidden])'); await t.page.click('#btnSalir'); return hasta(t.page, () => !document.getElementById('vEntrada').hidden); };
   const salirCuenta = async () => { await t.page.click('#cuSalir'); return hasta(t.page, () => !document.getElementById('vEntrada').hidden); };
@@ -2180,6 +2428,19 @@ try {
       const graves = r.violations.filter(v => ['serious', 'critical'].includes(v.impact));
       log(`${nombre}: accesibilidad sin fallas graves en ${v}`, graves.length === 0, graves.map(g => g.id + ' (' + g.nodes.length + '): ' + g.nodes.slice(0, 2).map(n => n.target.join(' ')).join(', ')).join(' | '));
     }
+    // Movimientos (con sus dos filas de filtros) y la hoja de vida con el historial completo del carro
+    await x.page.click('.tab[data-vista="inventario"]'); await esp(300);
+    await x.page.click('#invSecciones [data-sec="movimientos"]'); await esp(600);
+    log(`${nombre}: Movimientos trae dos filas de filtros (tipo y bodega) y nada se sale de la pantalla`, await hasta(x.page, () => document.querySelectorAll('#invContenido .chips.sub').length === 2 && document.documentElement.scrollWidth <= innerWidth + 1));
+    await x.page.screenshot({ path: path.join(CAPTURAS, `04-inventario-movimientos-${nombre}.png`), fullPage: true });
+    const rMov = await x.page.evaluate(() => window.axe.run(document, { runOnly: ['wcag2a', 'wcag2aa'] })), gravesMov = rMov.violations.filter(v => ['serious', 'critical'].includes(v.impact));
+    log(`${nombre}: accesibilidad sin fallas graves en Movimientos`, gravesMov.length === 0, gravesMov.map(g => g.id + ' (' + g.nodes.length + '): ' + g.nodes.slice(0, 2).map(n => n.target.join(' ')).join(', ')).join(' | '));
+    await x.page.click('.tab[data-vista="vehiculos"]'); await esp(400); await x.page.click('#vehSecciones [data-sec="carros"]');
+    await x.page.click('#vehContenido [data-accion="ver"][data-id="ve-abc123"]'); await x.page.waitForSelector('#shVeh:not([hidden])'); await esp(400);
+    await x.page.evaluate(() => { const l = [...document.querySelectorAll('#veCampos .section-label')].find(y => /Historial completo/.test(y.textContent)); if (l) l.scrollIntoView(); }); await esp(200);
+    await x.page.locator('#shVeh .sheet').screenshot({ path: path.join(CAPTURAS, nombre === '360px' ? '39b-vehiculo-historial-360px.png' : '39c-vehiculo-historial-oscuro.png') });
+    log(`${nombre}: la hoja de vida con el historial completo no se sale de la pantalla`, await x.page.evaluate(() => { const s = document.querySelector('#shVeh .sheet'); return s.scrollWidth <= s.clientWidth + 1 && document.documentElement.scrollWidth <= innerWidth + 1; }));
+    await x.page.keyboard.press('Escape'); await esp(300);
     log(`${nombre}: sin errores de consola`, x.errores.length === 0, x.errores.join(' | '));
     await x.ctx.close();
   }

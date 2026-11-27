@@ -46,9 +46,9 @@
   const EST_SOL = { pendiente: ['En espera', 's-org', 'org'], entregada: ['Entregado', 's-disco', 'disco'], rechazada: ['No se entregó', 's-peligro', 'peligro'] };
   const MOTIVO_MOV = { traslado: 'Traslado entre bodegas', inicial: 'Cantidad inicial', compra: 'Compra recibida', entrega: 'Entrega', devolucion: 'Devolución', conteo: 'Ajuste por conteo', dano: 'Daño o pérdida', precio: 'Cambio de precio' };
   let seccion = 'hacer';
-  const sub = { movimientos: 'todos', solicitudes: 'pendiente', compras: 'curso', bodega: 'todas', bodMov: 'todas', bodSol: 'todas', bodCom: 'todas', bodHacer: 'todas', bodRes: 'todas' };
+  const sub = { movimientos: 'todos', solicitudes: 'pendiente', compras: 'curso', bodega: 'todas', bodMov: 'todas', bodSol: 'todas', bodCom: 'todas', bodCon: 'todas', bodHacer: 'todas', bodRes: 'todas' };
   // Qué clave de filtro de bodega tiene cada parte (el Panorama la reinicia al llevar a una parte).
-  const BOD_DE_SEC = { hacer: 'bodHacer', movimientos: 'bodMov', solicitudes: 'bodSol', compras: 'bodCom', resumen: 'bodRes' };
+  const BOD_DE_SEC = { hacer: 'bodHacer', movimientos: 'bodMov', solicitudes: 'bodSol', compras: 'bodCom', conteo: 'bodCon', resumen: 'bodRes' };
   let guardando = false, accion = null, pushPendientes = [], rolPintado = '';
 
   /* ---------- datos derivados ---------- */
@@ -72,7 +72,20 @@
   const bodegaSol = s => { if (BODEGAS.includes(s.bodega)) return s.bodega; const a = artPorId(s.articuloId); return a ? bodegaDe(a) : ''; };
   const bodegaSurteDe = s => (BODEGAS.includes(s.bodegaSurte) ? s.bodegaSurte : '');
   const bodegaLinea = l => { if (BODEGAS.includes(l.bodega)) return l.bodega; const a = l.articuloId ? artPorId(l.articuloId) : null; return a ? bodegaDe(a) : ''; };
-  const bodegasCompra = c => Array.from(new Set(lineasDe(c).map(bodegaLinea).filter(Boolean)));
+  const bodegasPedidasCompra = c => Array.from(new Set(lineasDe(c).map(bodegaLinea).filter(Boolean)));
+  // Una compra recibida: sus movimientos dicen a qué bodega entró cada línea (puede ser otra que la pedida). Solo los ve quien ve movimientos; si no, queda la pedida.
+  const movsDeCompra = c => (c.estado === 'recibido' && veMovs() ? D().movimientos.filter(m => m.compraId === c.id && m.motivo === 'compra') : []);
+  // Los movimientos de una línea (la `i`-ésima de la compra): el que juntó varias líneas en uno solo trae `partes` ({ i, cantidad }); los demás se reconocen por el artículo pedido (`lineaArticuloId`) o, si no lo trae, por el artículo.
+  const movsDeLinea = (movs, l, i) => movs.filter(m => (Array.isArray(m.partes) ? m.partes.some(p => p.i === i) : m.lineaArticuloId ? m.lineaArticuloId === l.articuloId : m.articuloId === l.articuloId));
+  const cantidadDeLinea = (m, i) => (Array.isArray(m.partes) ? m.partes.filter(p => p.i === i).reduce((s, p) => s + num(p.cantidad), 0) : num(m.cantidad));
+  const bodegaRealLinea = (l, movs, i) => {
+    const bs = l.articuloId ? movsDeLinea(movs, l, i).map(bodegaMov).filter(Boolean) : [];
+    return bs.length ? bs[0] : bodegaLinea(l);
+  };
+  /** Las bodegas donde de verdad entró lo de una compra recibida (la pedida si no hay movimientos que ver). */
+  const bodegasRealesCompra = c => { const movs = movsDeCompra(c); return Array.from(new Set(lineasDe(c).map((l, i) => bodegaRealLinea(l, movs, i)).filter(Boolean))); };
+  // Las de cada línea y, si ya se recibió, también donde entró (para el filtro por bodega).
+  const bodegasCompra = c => Array.from(new Set(bodegasPedidasCompra(c).concat(bodegasRealesCompra(c))));
   // Un pedido sale en el filtro de la bodega que lo pidió y en el de la que lo entregó; una compra, en el de cada bodega a la que va alguna línea.
   const bodegasSol = s => Array.from(new Set([bodegaSol(s), bodegaSurteDe(s)].filter(Boolean)));
   const pillBod = b => (b ? A().pill(b, 's-pend', 'caja') : '');
@@ -218,6 +231,7 @@
     if (lineasDe(c).length > 1) return bods.length === 1 ? `Recibir la compra en ${bods[0]}` : 'Recibir la compra';
     return c.articuloId ? (bods.length === 1 ? `Recibir en bodega de ${bods[0]}` : 'Recibir en bodega') : 'Marcar como recibida';
   };
+  const sinPunto = t => String(t).replace(/[.\s]+$/, '');   // para unir un motivo al aviso sin dejar «..»
   const recorta = (t, max) => (String(t).length > max ? String(t).slice(0, max - 1) + '…' : String(t));
   const provPorNombre = n => provs().find(p => normNom(p.nombre) === normNom(n)) || null;
   const nitSolo = n => String(n || '').split('-')[0];
@@ -647,13 +661,16 @@
   }
   function htmlConteo() {
     const App = A();
-    const ajustes = D().movimientos.filter(m => m.motivo === 'conteo').sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    const todosAj = D().movimientos.filter(m => m.motivo === 'conteo').sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    const bodsAj = m => [bodegaMov(m)].filter(Boolean), ajustes = todosAj.filter(m => enBodFiltro('bodCon', bodsAj(m)));
     let h = `<div class="note">El conteo físico compara lo que hay en los estantes con lo que dice la app. Las diferencias se ajustan con un motivo y quedan en Movimientos.</div>`;
     h += esBodega() ? barraBotones([boton('conteo', 'Empezar conteo', 'tarea', '', 'primary')]) + cuadroHoy() : '<p class="meta">El conteo lo hace la encargada de bodega.</p>';
-    if (!ajustes.length) return h + UI.vacio('tarea', 'Todavía no hay ajustes por conteo', '');
-    const u = ajustes[0];
+    if (!todosAj.length) return h + UI.vacio('tarea', 'Todavía no hay ajustes por conteo', '');
+    const u = todosAj[0];
     h += `<div class="card"><b>Último ajuste por conteo</b><span class="meta">${esH(`${u.por}, ${App.hace(u.fecha)}`)}</span><span class="meta">${esH(textoUltimosAjustes())}</span></div>`;
-    h += `<div class="section-label">Ajustes por conteo (${ajustes.length})</div><div class="list">${ajustes.slice(0, 30).map(m => `<div class="card mov st-org">
+    h += `<div class="section-label">Ajustes por conteo (${ajustes.length})</div>` + chipsBodega('bodCon', todosAj, bodsAj);
+    if (!ajustes.length) return h + UI.vacio('tarea', 'No hay ajustes por conteo', `No hay ajustes de la bodega de ${esH(sub.bodCon)} con ese filtro.`);
+    h += `<div class="list">${ajustes.slice(0, 30).map(m => `<div class="card mov st-org">
       <div class="card-head"><div class="card-title">${esH(m.articulo)}</div><span class="mov-n t-org">${esH((num(m.cantidad) > 0 ? '+' : '') + num(m.cantidad))}</span></div>
       <span class="meta">${esH([`quedan ${num(m.saldo)}`, m.nota, `${m.por} ${App.hace(m.fecha)}`].filter(Boolean).join(' · '))}</span>${bodegaMov(m) ? `<span class="docs">${pillBod(bodegaMov(m))}</span>` : ''}</div>`).join('')}</div>`;
     return h;
@@ -686,7 +703,7 @@
   function valorCompraEn(c, bod) {
     const total = num(c.valorReal || c.valorAprox);
     if (bod === 'todas') return total;
-    const ls = lineasDe(c), mias = ls.filter(l => bodegaLinea(l) === bod);
+    const ls = lineasDe(c), movs = movsDeCompra(c), mias = ls.filter((l, i) => bodegaRealLinea(l, movs, i) === bod);
     if (!mias.length) return 0;
     if (ls.length === 1) return total;
     const suma = ls.reduce((x, l) => x + num(l.valor), 0), pagado = num(c.valorReal), factor = pagado > 0 && suma > 0 ? pagado / suma : 1;
@@ -696,7 +713,7 @@
     const App = A(), cop = App.cop, d = D(), bod = sub.bodRes;
     const artsB = articulos().filter(a => bod === 'todas' || bodegaDe(a) === bod);
     const valorBodega = artsB.reduce((s, a) => s + num(a.cantidad) * num(a.costo), 0);
-    const comprasMes = d.compras.filter(c => ['comprado', 'recibido', 'sin-autorizar'].includes(c.estado) && delMes(c.fechaCompra) && (bod === 'todas' || bodegasCompra(c).includes(bod)));
+    const comprasMes = d.compras.filter(c => ['comprado', 'recibido', 'sin-autorizar'].includes(c.estado) && delMes(c.fechaCompra) && (bod === 'todas' || bodegasRealesCompra(c).includes(bod)));
     const valC = c => valorCompraEn(c, bod);
     const totalMes = comprasMes.reduce((s, c) => s + valC(c), 0);
     const sinAutMes = comprasMes.filter(c => c.estado === 'sin-autorizar').reduce((s, c) => s + valC(c), 0);
@@ -1016,7 +1033,7 @@
     const movs = D().movimientos.filter(m => m.compraId === c.id && m.motivo === 'compra');
     const aviso = txt => `<span class="err-txt">${window.ico('aviso')} ${esH(txt)}</span>`;
     let faltaron = 0;
-    const filas = lineas.map(l => {
+    const filas = lineas.map((l, idx) => {
       const pag = lineas.length === 1 ? pagado : Math.round(num(l.valor) * factor);
       const mas = num(l.valor) > 0 && pag > num(l.valor) * 1.1;
       let rec;
@@ -1025,8 +1042,8 @@
       else if (!veMovs()) rec = '<span class="meta">—</span>';
       else {
         // Lo que llegó a otra bodega también cuenta: ese movimiento guarda el artículo pedido (lineaArticuloId).
-        const delas = movs.filter(m => m.articuloId === l.articuloId || m.lineaArticuloId === l.articuloId);
-        const llego = delas.reduce((s, m) => s + num(m.cantidad), 0), ped = bodegaLinea(l);
+        const delas = movsDeLinea(movs, l, idx);
+        const llego = delas.reduce((s, m) => s + cantidadDeLinea(m, idx), 0), ped = bodegaLinea(l);
         const otras = Array.from(new Set(delas.map(bodegaMov).filter(b => b && b !== ped)));
         if (llego < num(l.cantidad)) faltaron++;
         rec = `${esH(String(llego))} ${esH(l.unidad || '')}${otras.length ? `<span class="meta">${esH('llegó a ' + otras.join(' y '))}</span>` : ''}${llego < num(l.cantidad) ? `<br>${aviso(`faltan ${num(l.cantidad) - llego}`)}` : ''}`;
@@ -1190,26 +1207,32 @@
   }
 
   function recibir(c) { return lineasDe(c).length > 1 ? recibirVarios(c) : recibirUno(c); }
-  /** Lo que entra de UNA línea de compra que llegó a la bodega `dest`: se suma al mismo artículo de esa bodega (si no está, se crea allí con la misma unidad, categoría,
-      costo y proveedor, como en el traslado) y deja su movimiento. Si `dest` no es la bodega pedida, el movimiento guarda el artículo pedido (`lineaArticuloId`) y el porqué (`motivoBodega`).
-      `usados` lleva los artículos que ya reciben algo en esta misma recepción (un artículo no puede recibir dos movimientos en una escritura). Devuelve { ops } o { error }. */
-  function entradaCompra(c, l, a, dest, n, unit, nota, motivoBod, usados) {
-    const ped = bodegaLinea(l) || bodegaDe(a), otra = dest !== ped, d = destinoLlegada(a, dest);
+  /** Lo que entra de una o más líneas de compra que llegaron al MISMO artículo de la bodega `dest` (`partes`: { i (la línea), l, a, n, unit, motivo } en el orden de la compra): se suma a ese artículo
+      (si no está, se crea allí con la misma unidad, categoría, costo y proveedor, como en el traslado) y deja UN solo movimiento (la regla no deja dos al mismo artículo en una escritura).
+      El costo promedio se calcula línea por línea, en orden. Si alguna línea no era para `dest`, el movimiento guarda el artículo pedido de la primera de ellas (`lineaArticuloId`) y el porqué (`motivoBodega`).
+      Devuelve { ops } o { error }. */
+  const claveLlegada = (a, dest) => { const d = destinoLlegada(a, dest); return { d, clave: d.art ? d.art.id : `nuevo|${dest}|${normNom(a.nombre)}|${a.unidad}` }; };
+  function entradaCompra(c, partes, dest, nota) {
+    const a = partes[0].a, d = destinoLlegada(a, dest);
     if (d.error) return { error: d.error };
-    const clave = d.art ? d.art.id : `nuevo|${dest}|${normNom(a.nombre)}|${a.unidad}`;
-    if (usados.has(clave)) return { error: `Dos artículos de esta compra son el mismo en la bodega de ${dest}. Recíbelos de a uno.` };
-    usados.add(clave);
-    const base = { tipo: 'entrada', motivo: 'compra', cantidad: n, persona: c.proveedor || '', nota, compraId: c.id };
-    const extra = otra ? { lineaArticuloId: a.id, motivoBodega: motivoBod } : {};
+    const total = partes.reduce((x, p) => x + p.n, 0), otras = partes.filter(p => dest !== (bodegaLinea(p.l) || bodegaDe(p.a)));
+    const motivos = Array.from(new Set(otras.map(p => p.motivo).filter(Boolean)));
+    // Cada unidad entra a lo que se pagó por ella y el costo de ese artículo pasa a ser el promedio (de lo que había allí y lo que entra, línea por línea).
+    let hay = d.art ? num(d.art.cantidad) : 0, costo = d.art ? num(d.art.costo) : 0;
+    const pagoTotal = partes.reduce((x, p) => x + p.n * p.unit, 0);
+    partes.forEach(p => { costo = promedio(hay, costo, p.n, p.unit); hay += p.n; });
+    const unit = Math.round(pagoTotal / total);
+    const base = { tipo: 'entrada', motivo: 'compra', cantidad: total, persona: c.proveedor || '', nota, compraId: c.id };
+    const extra = Object.assign(otras.length ? { lineaArticuloId: otras[0].a.id, motivoBodega: recorta(motivos.join('; '), 160) } : {},
+      partes.length > 1 ? { partes: partes.map(p => ({ i: p.i, cantidad: p.n })) } : {});   // qué línea de la compra puso cuánto (para el cuadro de la compra)
     if (d.art) {
-      // Cada unidad entra a lo que se pagó por ella y el costo de ese artículo pasa a ser el promedio (de lo que había allí y lo que entra).
-      const t = d.art, hay = num(t.cantidad);
-      return { ops: mover(t, n, Object.assign({ costoUnit: unit, costoNuevo: promedio(hay, num(t.costo), n, unit), articuloId: t.id, articulo: t.nombre, saldo: hay + n }, base, extra)) };
+      const t = d.art;
+      return { ops: mover(t, total, Object.assign({ costoUnit: unit, costoNuevo: costo, articuloId: t.id, articulo: t.nombre, saldo: num(t.cantidad) + total }, base, extra)) };
     }
     const id = window.nube.idNuevo('ar'), movId = window.nube.idNuevo('mo');
     const codigoAlla = a.codigo && !articulos().some(x => x.codigo === a.codigo && bodegaDe(x) === dest) ? a.codigo : '';
-    return { ops: [['set', 'articulos', id, { nombre: a.nombre, codigo: codigoAlla, categoria: a.categoria, unidad: a.unidad, cantidad: n, ultimoMov: movId, minimo: num(a.minimo), maximo: num(a.maximo), ubicacion: '', costo: unit, proveedor: a.proveedor || '', bodega: dest }],
-      movimiento(Object.assign({ bodega: dest, costoUnit: unit, articuloId: id, articulo: a.nombre, saldo: n }, base, extra), movId)] };
+    return { ops: [['set', 'articulos', id, { nombre: a.nombre, codigo: codigoAlla, categoria: a.categoria, unidad: a.unidad, cantidad: total, ultimoMov: movId, minimo: num(a.minimo), maximo: num(a.maximo), ubicacion: '', costo, proveedor: a.proveedor || '', bodega: dest }],
+      movimiento(Object.assign({ bodega: dest, costoUnit: unit, articuloId: id, articulo: a.nombre, saldo: total }, base, extra), movId)] };
   }
   /** «Llegó a la bodega»: la pedida por defecto; si es otra, aparece el porqué y se dice qué pasará allí (se suma al artículo que ya está o se crea). */
   const campoLlegada = (idSel, idBox, idMotivo, etiqueta, a, ped) => campoSel(idSel, etiqueta, BODEGAS.map(b => [b, b + (b === ped ? ' (la pedida)' : '')]), ped)
@@ -1237,25 +1260,32 @@
           if (!BODEGAS.includes(dest)) return fallar('Escoge a qué bodega llegó cada artículo.', 'rb' + i);
           if (dest !== peds[i] && valor('rm' + i).length < 5) return fallar(`Escribe por qué «${lineas[i].que}» llegó a otra bodega (lo verá quien pidió y queda en el registro).`, 'rm' + i);
         }
-        const ops = [], faltan = [], donde = [], usados = new Set(), llegoA = [];
+        const ops = [], faltan = [], donde = [], llegoA = [], grupos = new Map();
         // Lo pagado se reparte entre las líneas en proporción a lo que valía cada una al pedirla; cada unidad entra a ese precio.
         const suma = lineas.reduce((s, l) => s + num(l.valor), 0), pagado = num(c.valorReal), factor = pagado > 0 && suma > 0 ? pagado / suma : 1;
+        // Las líneas que llegan al MISMO artículo de una bodega se juntan en una sola entrada (un solo movimiento por artículo).
         for (let i = 0; i < lineas.length; i++) {
           const l = lineas[i], n = llegaron[i], a = l.articuloId ? artPorId(l.articuloId) : null;
           if (n < num(l.cantidad)) faltan.push(`${l.que}: ${n} de ${num(l.cantidad)}`);
           if (!a || n === 0) continue;
           const dest = valor('rb' + i), otra = dest !== peds[i], motivoBod = otra ? valor('rm' + i) : '';
           const unit = num(l.valor) > 0 && num(l.cantidad) > 0 ? Math.round(num(l.valor) * factor / num(l.cantidad)) : num(a.costo);
-          const r = entradaCompra(c, l, a, dest, n, unit, [valor('acNota'), n < num(l.cantidad) ? `Llegaron ${n} de ${num(l.cantidad)}` : ''].filter(Boolean).join('. '), motivoBod, usados);
-          if (r.error) return fallar(r.error, 'rb' + i);
-          ops.push(...r.ops);
+          const k = claveLlegada(a, dest).clave;
+          if (!grupos.has(k)) grupos.set(k, { dest, i, partes: [] });
+          grupos.get(k).partes.push({ i, l, a, n, unit, motivo: motivoBod });
           if (!llegoA.includes(dest)) llegoA.push(dest);
           if (otra) donde.push({ que: l.que, dest, ped: peds[i], motivo: motivoBod });
         }
-        const nota = [valor('acNota'), faltan.length ? 'Llegó menos: ' + faltan.join('; ') : '', ...donde.map(o => `${o.que} llegó a ${o.dest} (se pidió para ${o.ped}): ${o.motivo}`)].filter(Boolean).join('. ');
+        for (const g of grupos.values()) {
+          const detalle = g.partes.length > 1 ? 'Junta ' + g.partes.map(p => `${p.l.que} (${p.n})`).join(' + ') : '';
+          const r = entradaCompra(c, g.partes, g.dest, [valor('acNota'), ...g.partes.filter(p => p.n < num(p.l.cantidad)).map(p => g.partes.length > 1 ? `${p.l.que}: llegaron ${p.n} de ${num(p.l.cantidad)}` : `Llegaron ${p.n} de ${num(p.l.cantidad)}`), detalle].filter(Boolean).join('. '));
+          if (r.error) return fallar(r.error, 'rb' + g.i);
+          ops.push(...r.ops);
+        }
+        const nota = [valor('acNota'), faltan.length ? 'Llegó menos: ' + faltan.join('; ') : '', ...donde.map(o => `${o.que} llegó a ${o.dest} (se pidió para ${o.ped}): ${sinPunto(o.motivo)}`)].filter(Boolean).join('. ');
         const aBod = llegoA.length ? ` a ${llegoA.length > 1 ? 'las bodegas' : 'la bodega'} de ${llegoA.join(' y ')}` : '';
         return [['mezclar', 'compras', c.id, { estado: 'recibido', entregadoA: hayFuera ? valor('acQuien') : '', historial: paso(c, `Recibida${nota ? '. ' + nota : ''}`) }]].concat(ops,
-          [c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', recorta(`${c.que} ya llegó${aBod}.${donde.length ? ' ' + donde.map(o => `${o.que} se pidió para ${o.ped}: ${o.motivo}.`).join(' ') : ''}`, 780)) : null],
+          [c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', recorta(`${c.que} ya llegó${aBod}.${donde.length ? ' ' + donde.map(o => `${o.que} se pidió para ${o.ped}: ${sinPunto(o.motivo)}.`).join(' ') : ''}`, 780)) : null],
           faltan.length ? [aviso('coordcompras', 'Llegó menos de lo comprado', `${c.que}. ${faltan.join('; ')}.`)] : []);
       }
     });
@@ -1293,13 +1323,13 @@
         // Cada unidad entra a lo que se pagó por ella (total pagado ÷ cantidad comprada) y el costo del artículo que recibe pasa a ser el promedio.
         const unit = num(c.valorReal) > 0 && num(c.cantidad) > 0 ? Math.round(num(c.valorReal) / num(c.cantidad)) : num(act.costo);
         const nota = [valor('acNota'), n < num(c.cantidad) ? `Llegaron ${n} de ${num(c.cantidad)}` : ''].filter(Boolean).join('. ');
-        const r = entradaCompra(c, l, act, dest, n, unit, nota, otra ? motivoBod : '', new Set());
+        const r = entradaCompra(c, [{ l, a: act, n, unit, motivo: otra ? motivoBod : '' }], dest, nota);
         if (r.error) return fallar(r.error, 'acBodLlego');
         accion.listo = otra ? `Listo: recibido en la bodega de ${dest}. La cantidad ya se sumó allí.` : 'Listo: recibido en bodega. La cantidad ya se sumó.';
         return [
-          ['mezclar', 'compras', c.id, { estado: 'recibido', historial: paso(c, `Recibido en bodega: ${cantTxt(n, a.unidad)}${otra ? `. Llegó a ${dest} (se pidió para ${ped}): ${motivoBod}` : ''}${nota ? '. ' + nota : ''}`) }],
+          ['mezclar', 'compras', c.id, { estado: 'recibido', historial: paso(c, `Recibido en bodega: ${cantTxt(n, a.unidad)}${otra ? `. Llegó a ${dest} (se pidió para ${ped}): ${sinPunto(motivoBod)}` : ''}${nota ? '. ' + nota : ''}`) }],
           ...r.ops,
-          c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', recorta(`${c.que} ya está en la bodega de ${dest}${otra ? ` (se pidió para ${ped}). ${motivoBod}.` : '.'}`, 780)) : null,
+          c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', recorta(`${c.que} ya está en la bodega de ${dest}${otra ? ` (se pidió para ${ped}). ${sinPunto(motivoBod)}.` : '.'}`, 780)) : null,
           n < num(c.cantidad) ? aviso('coordcompras', 'Llegó menos de lo comprado', `${c.que}: llegaron ${n} de ${num(c.cantidad)}.`) : null
         ];
       }
@@ -1455,7 +1485,7 @@
           ['mezclar', 'solicitudes', s.id, datosSol],
           ...mover(desde, -n, datosMov),
           aviso(s.pideRol, 'Tu pedido está listo', otra
-            ? `${persona().nombre} te entregó ${cantTxt(n, desde.unidad)} de ${desde.nombre}: salió de la bodega de ${bod} (pediste para ${ped}). ${motivoBod}.`
+            ? `${persona().nombre} te entregó ${cantTxt(n, desde.unidad)} de ${desde.nombre}: salió de la bodega de ${bod} (pediste para ${ped}). ${sinPunto(motivoBod)}.`
             : `${persona().nombre} te entregó ${cantTxt(n, desde.unidad)} de ${desde.nombre} (bodega ${bod}).`)
         ];
       }
@@ -1854,7 +1884,7 @@
       const hoja = (nombre, filas) => hojas.push(window.Excel.deObjetos(nombre, TIT[nombre][0], `${TIT[nombre][1]} ${gen}`, filas));
       hoja('Bodega', articulos().map(a => ({ Bodega: bodegaDe(a), Artículo: a.nombre, Categoría: a.categoria, Cantidad: num(a.cantidad), Unidad: a.unidad, Mínimo: num(a.minimo), Máximo: num(a.maximo), Estado: EST_ART[estadoArt(a)][0], Ubicación: a.ubicacion, 'Precio aprox.': num(a.costo), 'Valor en bodega': num(a.cantidad) * num(a.costo), Proveedor: a.proveedor })));
       hoja('Movimientos', d.movimientos.slice().sort((x, y) => String(y.fecha).localeCompare(String(x.fecha))).map(m => ({ Fecha: fechaLocal(m.fecha, true), Bodega: bodegaMov(m), Artículo: m.articulo, Tipo: m.tipo, Motivo: MOTIVO_MOV[m.motivo] || m.motivo, Cantidad: num(m.cantidad), Saldo: num(m.saldo), Persona: m.persona, Proyecto: m.proyecto, Registró: m.por, Nota: m.nota,
-        'Traslado: otra bodega': BODEGAS.includes(m.bodegaOtra) ? m.bodegaOtra : '', 'Pedido para': BODEGAS.includes(m.bodegaPedida) ? m.bodegaPedida : '', 'Motivo de la bodega': m.motivoBodega || '' })));
+        'Traslado: otra bodega': BODEGAS.includes(m.bodegaOtra) ? m.bodegaOtra : '', 'Pedido para': bodegaPedidaMov(m), 'Motivo de la bodega': m.motivoBodega || '' })));
       hoja('Compras', d.compras.map(c => ({ Qué: c.que, Cantidad: num(c.cantidad), Unidad: c.unidad, Categoría: c.categoria, Estado: (EST_CO[c.estado] || [c.estado])[0], Pidió: c.pide, Autoriza: c.autoriza, 'Valor aprox.': num(c.valorAprox), 'Valor pagado': num(c.valorReal), Proveedor: c.proveedor, 'Fecha pedido': c.fechaPedido, 'Fecha compra': c.fechaCompra, 'Para qué': c.paraQue, 'Bodega destino': bodegasCompra(c).join(' y ') || (lineasDe(c).some(l => l.articuloId) ? '' : 'No va a bodega') })));
       if (veProv()) hoja('Proveedores', provs().map(p => { const st = statsProv(p); return { Proveedor: p.nombre, NIT: p.nit, Contacto: p.contacto, Teléfono: p.telefono, Correo: p.correo, 'Compras hechas': st.n, 'Pagado este año': st.anio, 'Última compra': st.ultima, Nota: p.nota }; }));
       hoja('Pedidos de material', d.solicitudes.map(s => ({ Fecha: fechaLocal(s.fecha, false), 'Bodega pedida': bodegaSol(s), Artículo: s.articulo, Cantidad: num(s.cantidad), Pidió: s.pide, 'Para qué': s.paraQue, Proyecto: s.proyecto, Estado: (EST_SOL[s.estado] || [s.estado])[0], Entregó: s.entregadaPor, Motivo: s.motivo,
