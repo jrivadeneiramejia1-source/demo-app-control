@@ -360,17 +360,19 @@ Alguien pide → (se autoriza) → Compras la compra → Bodega la recibe
 - Cómo: botón **«Pedir una compra»**.
 - Se escribe: qué se compra, cantidad, unidad, categoría, valor, para qué, proyecto y, si quieres, a quién se le compra.
 - Se puede agregar **hasta 5 artículos** en una misma compra y **hasta 3 fotos de cotización**.
-- Si el artículo es de la bodega, se llena solo el nombre, unidad, categoría y valor.
+- **«¿Va a la bodega?»** se contesta en dos pasos. Con **«No va a la bodega»** no sale ninguna lista: la compra se entrega a quien la pidió. Con **«Sí, va a la bodega»** aparece **«¿Cuál artículo de la bodega?»**: al escoger uno se llena solo el nombre, unidad, categoría y valor, y al recibir la compra la cantidad se suma a ese artículo.
+- Si el artículo **todavía no existe**, se escoge la primera opción, **«Artículo nuevo (todavía no está en la bodega)»**, y la app pregunta **«¿En qué bodega va?»**. El artículo se **crea al recibir la compra**, con su primera entrada en el kárdex (mínimo 1 y máximo igual a lo comprado; se pueden cambiar después con «Editar artículo»). Si ya existe uno igual en esa bodega, la app lo avisa y se escoge de la lista; si alguien lo crea mientras tanto, lo que llega se suma a ese.
 - La app no deja pedir un artículo que ya tiene una compra en curso.
 
 **Paso 2. Autorizar** (Quién decide):
 
 | Quién pidió | Quién autoriza |
 |---|---|
-| Una persona normal | **La Jefe.** Si vale el monto del Gerente o más (por defecto 1.000.000), la Jefe la aprueba y pasa al Gerente («Falta el Gerente»). |
-| **La Jefe** | **Siempre un Gerente** (cualquier valor). |
-| **Un Gerente** | **Otro Gerente.** Nadie autoriza lo suyo. |
-| Cualquiera, y **la Jefe no responde en 2 días** | **Un Gerente** puede autorizar o rechazar (queda autorizada directo). |
+| Una persona normal (también la Jefe y los Gerentes que no son «general») | **El Coordinador de compras** (Mauricio Giraldo; en pantalla dice «la Coordinadora»). Si vale **más de $5.000.000**, la compra queda en «Falta el Gerente» y después decide también el **Gerente general** (Oscar Muñoz). |
+| **El Coordinador de compras** | **Siempre el Gerente general.** Nadie autoriza lo suyo. |
+| **El Gerente general** | Nada: lo que él pide **nace autorizado**. |
+
+**La Jefe no autoriza compras.** El Gerente general también puede decidir cualquier pedido sin esperar a la Coordinadora. Ya no existe el «respaldo de 2 días».
 
 Quien autoriza ve la **tabla completa**: cada artículo con su precio, el total, a quién se compra, para qué, las cotizaciones (fotos), lo que hay en bodega y **el último precio pagado** (y avisa si ahora piden más).
 Puede **autorizar** o **rechazar** (con un motivo que ve quien pidió).
@@ -382,7 +384,7 @@ Quien decide deja su **correo** en la compra (para que nadie se haga pasar por o
 - Cómo: sobre la compra autorizada, **«Registrar compra»**: proveedor, **valor pagado** y **foto de la factura**.
 - Si pagan **más del 10 %** de lo autorizado, queda dicho en el historial y **le avisa a la Jefe** (y al Gerente si él la había autorizado).
 
-**Compra sin autorización:** si Compras compró algo sin pedir permiso, se registra como «**Sin autorizar**» y la Jefe la **marca como revisada** (con una nota).
+**Compra sin autorización:** si Compras compró algo sin pedir permiso, se registra como «**Sin autorizar**» y la Coordinadora o el Gerente general la **marcan como revisada** (con una nota).
 
 **Paso 4. Recibir.**
 - Quién: **Bodega** (y la Jefe).
@@ -446,7 +448,7 @@ La parte **Proveedores** es la lista de a quién se le compra. Cada tarjeta dice
 - El Excel del Resumen trae una hoja **Proveedores** (NIT, contacto, compras hechas, pagado este año y última compra).
 
 ### 8.5 El Panorama (solo la Jefe)
-Lo urgente en un solo lugar: artículos agotados, compras que esperan a la Jefe y al Gerente, compras hechas sin autorización, compras pagadas con más de lo autorizado, pedidos de material que llevan más de 2 días esperando, artículos bajos del mínimo, compras por comprar y por recibir. Más gráficos: gastado este mes, por persona que pidió, por categoría, por proyecto. Trae **«Cómo está cada bodega»**: una tarjeta por bodega con su valor, artículos, agotados, bajos del mínimo, pedidos por entregar, compras en curso y último conteo.
+Lo urgente en un solo lugar: artículos agotados, compras que esperan a la Coordinadora y al Gerente general, compras hechas sin autorización, compras pagadas con más de lo autorizado, pedidos de material que llevan más de 2 días esperando, artículos bajos del mínimo, compras por comprar y por recibir. Más gráficos: gastado este mes, por persona que pidió, por categoría, por proyecto. Trae **«Cómo está cada bodega»**: una tarjeta por bodega con su valor, artículos, agotados, bajos del mínimo, pedidos por entregar, compras en curso y último conteo.
 
 ### 8.6 El Resumen
 Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin autorizar»), compras por etapa, las mismas **tarjetas por bodega** del Panorama y botón de **descargar Excel**. Con el filtro **«Todas las bodegas · Riohacha · Guamal · Bogotá»** cambian el valor, lo comprado y lo que salió del mes (en una compra de varias líneas solo cuentan las de esa bodega).
@@ -634,7 +636,7 @@ Los nombres y cargos son **los reales de tu organigrama (versión 18, febrero de
 - Hay **más gente en la empresa** que no está en el archivo. Se suma con el Excel.
 
 ### Gerencia y control
-- **Oscar Muñoz y Santiago Valencia — Gerentes.** Ven el resumen del inventario y todas las compras, autorizan compras grandes o pedidas por la Jefe u otro Gerente (o por respaldo a los 2 días), y pueden pedir compras (las decide otro Gerente). Solo miran Equipos, Vehículos y Reuniones.
+- **Oscar Muñoz — Gerente general.** Autoriza las compras de más de $5.000.000 y las que pide la Coordinadora; lo que él pide nace autorizado. **Santiago Valencia y Alejandro Giraldo — Gerentes.** Ven los resúmenes y el detalle de cada compra, y pueden pedir compras (las decide la Coordinadora). Solo miran Equipos, Vehículos y Reuniones.
 - **Revisor Fiscal y Oficial de Cumplimiento — Consulta.** Solo miran inventario y vehículos. No cambian nada ni piden.
 
 ### SGI y HSE
@@ -733,7 +735,6 @@ Las personas de prueba usan una **clave pública**. Cualquiera que la conozca po
 - **Entrar con Google y los correos de confirmación** se probaron con un Firebase falso. Con el real hay que probar con un correo de verdad.
 - **El servidor de avisos nuevo** se probó con piezas falsas. Con Cloudflare real hay que crear el KV `AVISOS`, volver a pegar el Worker y volver a activar los avisos en cada teléfono.
 - **Los avisos de la campana** todavía los puede **leer** cualquiera con sesión (no los puede crear a nombre de otro). Falta cerrarlo por destinatario.
-- **El respaldo del Gerente a los 2 días** no se puede probar «en vivo»: hay que esperar 2 días (o probarlo en el emulador).
 - **Las 3 bodegas, sin probar de verdad:** las reglas nuevas con el Firebase real, los Excel nuevos abiertos en Excel o LibreOffice reales, imprimir la orden de compra en un celular real, el historial con cientos de registros reales y los avisos al teléfono con textos nuevos.
 - **Reglas y app se publican juntas:** reglas nuevas con la app vieja = no se crean pedidos ni movimientos; app nueva con reglas viejas = falla «Entregar» desde otra bodega. Además, los **datos de ejemplo versión 20** se recargan la primera vez que entre la Jefe de prueba (se pierde lo cambiado en la demo).
 - **Pedidos de material con varias líneas** y **préstamo de herramientas** (que queden «por devolver»): no se hicieron.
@@ -790,10 +791,9 @@ Las personas de prueba usan una **clave pública**. Cualquiera que la conozca po
 
 | La pidió | La autoriza |
 |---|---|
-| Una persona normal | La Jefe (y luego el Gerente si vale 1.000.000 o más) |
-| La Jefe | Un Gerente |
-| Un Gerente | Otro Gerente |
-| Cualquiera, con la Jefe sin responder 2 días | Un Gerente |
+| Una persona normal (incluida la Jefe) | El Coordinador de compras (y también el Gerente general si vale más de $5.000.000) |
+| El Coordinador de compras | El Gerente general |
+| El Gerente general | Nace autorizado |
 
 **Quién puede crear cuentas y códigos:**
 
