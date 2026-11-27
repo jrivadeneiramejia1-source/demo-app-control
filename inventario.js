@@ -71,6 +71,16 @@
   const bodegaMov = m => { if (BODEGAS.includes(m.bodega)) return m.bodega; const a = artPorId(m.articuloId); return a ? bodegaDe(a) : ''; };
   const bodegaSol = s => { if (BODEGAS.includes(s.bodega)) return s.bodega; const a = artPorId(s.articuloId); return a ? bodegaDe(a) : ''; };
   const bodegaSurteDe = s => (BODEGAS.includes(s.bodegaSurte) ? s.bodegaSurte : '');
+  // «Artículo nuevo»: una línea de compra de algo que todavía no está en la bodega (`nuevo: true`, sin `articuloId`, con la bodega donde se crea al recibirla).
+  const esNueva = l => l.nuevo === true && !l.articuloId && BODEGAS.includes(l.bodega);
+  const vaABodega = l => !!l.articuloId || esNueva(l);
+  /** El artículo de una línea: el real, o (si es nueva) uno VIRTUAL con lo que se crearía al recibirla (sin id; `_nuevo`). Sin bodega, null. */
+  const artDeLinea = (l, c) => {
+    if (l.articuloId) return artPorId(l.articuloId);
+    if (!esNueva(l)) return null;
+    return { id: '', nombre: l.que, unidad: l.unidad || 'unidades', categoria: l.categoria || (c && c.categoria) || 'Otro', cantidad: 0, costo: 0, minimo: 1, maximo: Math.max(2, num(l.cantidad)),
+      ubicacion: '', proveedor: (c && c.proveedor) || '', codigo: '', bodega: l.bodega, _nuevo: true };
+  };
   const bodegaLinea = l => { if (BODEGAS.includes(l.bodega)) return l.bodega; const a = l.articuloId ? artPorId(l.articuloId) : null; return a ? bodegaDe(a) : ''; };
   const bodegasPedidasCompra = c => Array.from(new Set(lineasDe(c).map(bodegaLinea).filter(Boolean)));
   // Una compra recibida: sus movimientos dicen a qué bodega entró cada línea (puede ser otra que la pedida). Solo los ve quien ve movimientos; si no, queda la pedida.
@@ -79,7 +89,7 @@
   const movsDeLinea = (movs, l, i) => movs.filter(m => (Array.isArray(m.partes) ? m.partes.some(p => p.i === i) : m.lineaArticuloId ? m.lineaArticuloId === l.articuloId : m.articuloId === l.articuloId));
   const cantidadDeLinea = (m, i) => (Array.isArray(m.partes) ? m.partes.filter(p => p.i === i).reduce((s, p) => s + num(p.cantidad), 0) : num(m.cantidad));
   const bodegaRealLinea = (l, movs, i) => {
-    const bs = l.articuloId ? movsDeLinea(movs, l, i).map(bodegaMov).filter(Boolean) : [];
+    const bs = vaABodega(l) ? movsDeLinea(movs, l, i).map(bodegaMov).filter(Boolean) : [];
     return bs.length ? bs[0] : bodegaLinea(l);
   };
   /** Las bodegas donde de verdad entró lo de una compra recibida (la pedida si no hay movimientos que ver). */
@@ -220,7 +230,7 @@
   const bodegaPedidaMov = m => { if (BODEGAS.includes(m.bodegaPedida)) return m.bodegaPedida; const x = m.lineaArticuloId ? artPorId(m.lineaArticuloId) : null; return x ? bodegaDe(x) : ''; };
   /** Dónde entra lo que llegó de un artículo a la bodega `dest`: él mismo, el mismo artículo de esa bodega (mismo nombre y unidad), o uno nuevo allí. Si ya hay uno con otra unidad, un error. */
   const destinoLlegada = (a, dest) => {
-    if (bodegaDe(a) === dest) return { art: a };
+    if (!a._nuevo && bodegaDe(a) === dest) return { art: a };   // un artículo nuevo (virtual) todavía no está en ninguna bodega: se busca su igual en `dest`
     const d = articulos().find(x => x.id !== a.id && bodegaDe(x) === dest && normNom(x.nombre) === normNom(a.nombre));
     if (d && !mismoArt(d, a)) return { error: `En la bodega de ${dest} ya hay «${d.nombre}» en otra unidad (${d.unidad}). Cámbiale la unidad o el nombre antes de recibirlo allí.` };
     return d ? { art: d } : { nuevo: true };
@@ -229,7 +239,7 @@
   const textoRecibir = c => {
     const bods = bodegasCompra(c);
     if (lineasDe(c).length > 1) return bods.length === 1 ? `Recibir la compra en ${bods[0]}` : 'Recibir la compra';
-    return c.articuloId ? (bods.length === 1 ? `Recibir en bodega de ${bods[0]}` : 'Recibir en bodega') : 'Marcar como recibida';
+    return c.articuloId || esNueva(lineasDe(c)[0]) ? (bods.length === 1 ? `Recibir en bodega de ${bods[0]}` : 'Recibir en bodega') : 'Marcar como recibida';
   };
   const sinPunto = t => String(t).replace(/[.\s]+$/, '');   // para unir un motivo al aviso sin dejar «..»
   const recorta = (t, max) => (String(t).length > max ? String(t).slice(0, max - 1) + '…' : String(t));
@@ -419,9 +429,11 @@
       botones = boton('comprar', 'Registrar compra', 'carrito', ` data-id="${esH(c.id)}"`, 'primary small');
     } else if (t.tipo === 'recibir') {
       icono = 'caja'; tono = 'disco';
-      titulo = a ? `Recibir en bodega: ${a.nombre}` : `Recibir y entregar: ${c.que}`;
+      const nuevas = lineasDe(c).filter(esNueva);
+      titulo = a ? `Recibir en bodega: ${a.nombre}` : nuevas.length ? `Recibir en bodega: ${c.que}` : `Recibir y entregar: ${c.que}`;
       detalle.push(cantTxt(c.cantidad, c.unidad), `comprado en ${c.proveedor || 'proveedor sin nombre'}`, c.fechaCompra ? App.fechaCorta(c.fechaCompra) : '', c.valorReal ? cop(c.valorReal) : '');
-      if (!a) extra = `<span class="meta">No va a bodega: se entrega a ${esH(c.pide)}.</span>`;
+      if (!a && nuevas.length) extra = `<span class="meta">${esH(nuevas.length === 1 && lineasDe(c).length === 1 ? `Artículo nuevo: se crea en la bodega de ${nuevas[0].bodega} al recibirla.` : `Incluye ${nuevas.length === 1 ? 'un artículo nuevo' : nuevas.length + ' artículos nuevos'}: se crea${nuevas.length === 1 ? '' : 'n'} en la bodega al recibirla.`)}</span>`;
+      else if (!a) extra = `<span class="meta">No va a bodega: se entrega a ${esH(c.pide)}.</span>`;
       botones = boton('recibir', textoRecibir(c), 'caja', ` data-id="${esH(c.id)}"`, 'primary small');
     } else {
       icono = 'aviso'; tono = 'peligro';
@@ -602,7 +614,7 @@
   /** «llegó a Bogotá»: una compra recibida cuyo artículo entró a una bodega distinta de la pedida (se sabe por sus movimientos). */
   const llegoAOtra = c => {
     if (c.estado !== 'recibido' || !veMovs()) return '';
-    const bs = Array.from(new Set(D().movimientos.filter(m => m.compraId === c.id && m.lineaArticuloId).map(bodegaMov).filter(Boolean)));
+    const bs = Array.from(new Set(D().movimientos.filter(m => m.compraId === c.id && (m.lineaArticuloId || BODEGAS.includes(m.bodegaPedida))).map(bodegaMov).filter(Boolean)));
     return bs.length ? 'llegó a ' + bs.join(' y ') : '';
   };
   function tarjetaCompra(c) {
@@ -814,6 +826,9 @@
   /** Campo de proveedor con lista para escoger (y escribir uno nuevo). Cada campo trae su propia lista con los proveedores que hay. */
   const campoProv = (id, lbl, v, ph, max, ayuda) => `<div class="field"><label for="${id}">${lbl}</label><input id="${id}" type="text" maxlength="${max || 80}" autocomplete="off" list="${id}Lista" value="${esH(v || '')}" placeholder="${esH(ph || '')}"><datalist id="${id}Lista">${provs().map(x => `<option value="${esH(x.nombre)}">${esH(x.nit || '')}</option>`).join('')}</datalist>${ayuda ? `<span class="meta" id="${id}Ay">${esH(ayuda)}</span>` : ''}</div>`;
   const campoSel = (id, lbl, ops, v) => `<div class="field"><label for="${id}">${lbl}</label><select id="${id}">${ops.map(([val, txt]) => `<option value="${esH(val)}"${val === v ? ' selected' : ''}>${esH(txt)}</option>`).join('')}</select></div>`;
+  /** La lista de artículos al pedir una compra: primero «Artículo nuevo» (todavía no está en la bodega) y después los de la bodega. */
+  const NUEVO_ART = '__nuevo';
+  const opsArtCompra = () => [[NUEVO_ART, 'Artículo nuevo (todavía no está en la bodega)']].concat(opsArt(''));
   const opsArt = vacio => (vacio ? [['', vacio]] : []).concat(articulos().slice().sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map(a => [a.id, `${a.nombre} · ${bodegaDe(a)} (${num(a.cantidad) > 0 ? 'hay ' + cantTxt(a.cantidad, a.unidad) : 'agotado'})`]));
   /** Artículos de UNA bodega para escoger (entradas y salidas: primero se escoge la bodega). */
   const opsArtBod = bod => articulos().filter(a => bodegaDe(a) === bod).sort((a, b) => String(a.nombre).localeCompare(String(b.nombre))).map(a => [a.id, `${a.nombre} (${num(a.cantidad) > 0 ? 'hay ' + cantTxt(a.cantidad, a.unidad) : 'agotado'})`]);
@@ -892,10 +907,13 @@
 
   /* ---------- acciones: compras ---------- */
   let cotizaciones = [], extrasN = 0;
+  /** La bodega que sale por defecto para un artículo nuevo: la última que escogió la persona (si es válida) y, si no, Riohacha. */
+  const bodegaNuevaDefecto = () => leerMiBodega() || BODEGAS[0];
   const MAX_EXTRA = 4, optionsHtml = (ops, v) => ops.map(([val, txt]) => `<option value="${esH(val)}"${val === v ? ' selected' : ''}>${esH(txt)}</option>`).join('');
   const filaExtra = n => `<div class="linea-extra" data-n="${n}"><b>Artículo ${n + 2}</b>
     <div class="field"><label for="lxVa${n}">¿Va a la bodega?</label><select id="lxVa${n}" data-lx="va">${optionsHtml([['no', 'No va a la bodega'], ['si', 'Sí, va a la bodega']], 'no')}</select></div>
-    <div class="field" id="lxBox${n}" hidden><label for="lxArt${n}">¿Cuál artículo de la bodega?</label><select id="lxArt${n}" data-lx="art">${optionsHtml(opsArt(''), '')}</select></div>
+    <div class="field" id="lxBox${n}" hidden><label for="lxArt${n}">¿Cuál artículo de la bodega?</label><select id="lxArt${n}" data-lx="art">${optionsHtml(opsArtCompra(), NUEVO_ART)}</select></div>
+    <div class="field" id="lxBodBox${n}" hidden><label for="lxBod${n}">¿En qué bodega va?</label><select id="lxBod${n}" data-lx="bod">${optionsHtml(BODEGAS.map(b => [b, b]), bodegaNuevaDefecto())}</select></div>
     <div class="field"><label for="lxQue${n}">Qué se va a comprar</label><input id="lxQue${n}" data-lx="que" type="text" maxlength="100" autocomplete="off"></div>
     <div class="fields cols"><div class="field"><label for="lxCant${n}">Cantidad</label><input id="lxCant${n}" data-lx="cant" type="number" inputmode="numeric" min="1" step="1" value="1"></div>
       <div class="field"><label for="lxVal${n}">Valor total (pesos)</label><input id="lxVal${n}" data-lx="val" type="number" inputmode="numeric" min="0" step="1"></div></div>
@@ -912,7 +930,8 @@
         : hagoCompras() ? `Escribe qué vas a comprar. Antes de comprar, ${quienAut} la autoriza (le llega el aviso)${aut === 'coordina' ? `; si vale más de ${A().cop(monto)}, después la autoriza el Gerente general` : ''}.`
         : `Escribe qué se va a comprar. Le llega el aviso a ${quienAut} para que la autorice${aut === 'coordina' ? `; si vale más de ${A().cop(monto)}, después la autoriza el Gerente general` : ''}.`,
       campos: campoSel('acVa', '¿Va a la bodega?', [['no', 'No va a la bodega: se entrega a quien la pide'], ['si', 'Sí, va a la bodega: se suma a un artículo']], a ? 'si' : 'no') +
-        `<div id="acArtBox"${a ? '' : ' hidden'}>${campoSel('acArt', '¿Cuál artículo de la bodega?', opsArt(''), a ? a.id : '')}<span class="meta">Si el artículo todavía no existe en la bodega, primero agrégalo en Bodega con «Agregar artículo».</span></div>` +
+        `<div id="acArtBox"${a ? '' : ' hidden'}>${campoSel('acArt', '¿Cuál artículo de la bodega?', opsArtCompra(), a ? a.id : NUEVO_ART)}<span class="meta">Escoge «Artículo nuevo» si todavía no está en la bodega: se crea cuando se reciba la compra.</span>
+          <div id="acBodNuevoBox"${a ? ' hidden' : ''}>${campoSel('acBodNuevo', '¿En qué bodega va?', BODEGAS.map(b => [b, b]), bodegaNuevaDefecto())}</div></div>` +
         campoTxt('acQue', 'Qué se va a comprar', a ? a.nombre : '', 'Ej: botas de seguridad talla 40', 100) +
         `<div class="fields cols">${campoNum('acCant', 'Cantidad', sug, 1, 99999)}${campoSel('acUni', 'Unidad', UNIDADES.map(u => [u, u]), a ? a.unidad : 'unidades')}</div>` +
         `<div class="fields cols">${campoSel('acCat', 'Categoría', CATEGORIAS.map(x => [x, x]), a && CATEGORIAS.includes(a.categoria) ? a.categoria : 'Otro')}${campoNum('acValor', 'Valor total de este artículo (pesos)', a ? num(a.costo) * sug : '', 0, null)}</div>` +
@@ -924,18 +943,30 @@
       primario: hagoCompras() ? 'Enviar para autorizar' : 'Pedir la compra', icono: 'enviar',
       listo: general ? `Listo: compra autorizada. Le llegó el aviso a ${nombreRol('compras')} para comprarla.` : hagoCompras() ? `Listo: le llegó el aviso a ${quienAut}. Cuando la autorice, haces la compra y la registras.` : `Listo: compra pedida. Le llegó el aviso a ${quienAut} para autorizarla.`,
       ops: () => {
-        const art = valor('acVa') === 'si' ? artPorId(valor('acArt')) : null, n = entero('acCant'), v = entero('acValor');
+        const nuevoP = valor('acVa') === 'si' && valor('acArt') === NUEVO_ART, art = valor('acVa') === 'si' ? artPorId(valor('acArt')) : null, n = entero('acCant'), v = entero('acValor');
         if (!valor('acQue')) return fallar('Escribe qué se va a comprar.', 'acQue');
         if (!(n > 0)) return fallar('Escribe una cantidad entera mayor que 0.', 'acCant');
         if (!(v > 0)) return fallar('Escribe el valor de este artículo en pesos, sin puntos ni comas.', 'acValor');
         if (!valor('acPara')) return fallar('Escribe para qué es la compra.', 'acPara');
-        const lineas = [{ que: valor('acQue'), cantidad: n, unidad: valor('acUni'), valor: v, articuloId: art ? art.id : '', bodega: art ? bodegaDe(art) : '' }];
+        if (nuevoP && !BODEGAS.includes(valor('acBodNuevo'))) return fallar('Escoge en qué bodega va el artículo nuevo.', 'acBodNuevo');
+        const lineas = [nuevoP ? { que: valor('acQue'), cantidad: n, unidad: valor('acUni'), valor: v, articuloId: '', bodega: valor('acBodNuevo'), nuevo: true, categoria: valor('acCat') }
+          : { que: valor('acQue'), cantidad: n, unidad: valor('acUni'), valor: v, articuloId: art ? art.id : '', bodega: art ? bodegaDe(art) : '' }], focos = ['acArt'];
         for (const f of document.querySelectorAll('#acExtra .linea-extra')) {
-          const g = k => f.querySelector(`[data-lx="${k}"]`), q = g('que').value.trim(), c = Number(g('cant').value), val = Number(g('val').value), ar = g('va').value === 'si' ? artPorId(g('art').value) : null;
+          const g = k => f.querySelector(`[data-lx="${k}"]`), q = g('que').value.trim(), c = Number(g('cant').value), val = Number(g('val').value), nv = g('va').value === 'si' && g('art').value === NUEVO_ART, ar = g('va').value === 'si' ? artPorId(g('art').value) : null;
           if (!q) return fallar('Escribe qué se va a comprar en cada artículo que agregaste.', g('que').id);
           if (!(Number.isInteger(c) && c > 0)) return fallar('La cantidad de cada artículo debe ser un número entero mayor que 0.', g('cant').id);
           if (!(Number.isInteger(val) && val > 0)) return fallar('Escribe el valor total de cada artículo en pesos, sin puntos ni comas.', g('val').id);
-          lineas.push({ que: q, cantidad: c, unidad: ar ? ar.unidad : 'unidades', valor: val, articuloId: ar ? ar.id : '', bodega: ar ? bodegaDe(ar) : '' });
+          if (nv && !BODEGAS.includes(g('bod').value)) return fallar('Escoge en qué bodega va cada artículo nuevo.', g('bod').id);
+          lineas.push(nv ? { que: q, cantidad: c, unidad: 'unidades', valor: val, articuloId: '', bodega: g('bod').value, nuevo: true, categoria: 'Otro' }
+            : { que: q, cantidad: c, unidad: ar ? ar.unidad : 'unidades', valor: val, articuloId: ar ? ar.id : '', bodega: ar ? bodegaDe(ar) : '' });
+          focos.push(g('art').id);
+        }
+        // Un artículo nuevo no puede ser uno que ya está en esa bodega (mismo nombre y unidad) ni estar dos veces en la compra.
+        for (let i = 0; i < lineas.length; i++) {
+          const l = lineas[i]; if (!l.nuevo) continue;
+          const ya = articulos().find(x => bodegaDe(x) === l.bodega && mismoArt(x, { nombre: l.que, unidad: l.unidad }));
+          if (ya) return fallar(`Ya existe «${ya.nombre}» en la bodega de ${l.bodega}: escógelo en la lista.`, focos[i]);
+          if (lineas.findIndex(x => x.nuevo && x.bodega === l.bodega && mismoArt({ nombre: x.que, unidad: x.unidad }, { nombre: l.que, unidad: l.unidad })) !== i) return fallar(`El artículo nuevo «${l.que}» está dos veces en esta compra.`, focos[i]);
         }
         const repetida = lineas.find((l, i) => l.articuloId && lineas.findIndex(x => x.articuloId === l.articuloId) !== i);
         if (repetida) return fallar(`El artículo «${repetida.que}» está dos veces en esta compra.`, 'acQue');
@@ -965,8 +996,10 @@
       });
     }
     // Al escoger un artículo de bodega se llenan solos el nombre, la unidad, la categoría y el valor.
-    $('acVa').addEventListener('change', () => { $('acArtBox').hidden = valor('acVa') !== 'si'; if (valor('acVa') === 'si') llenarDelArticulo(); });
-    $('acArt').addEventListener('change', llenarDelArticulo);
+    // Con «Artículo nuevo» no se llena nada: se pregunta en qué bodega se va a crear.
+    const verBodNuevo = () => { $('acBodNuevoBox').hidden = valor('acArt') !== NUEVO_ART; };
+    $('acVa').addEventListener('change', () => { $('acArtBox').hidden = valor('acVa') !== 'si'; verBodNuevo(); if (valor('acVa') === 'si') llenarDelArticulo(); });
+    $('acArt').addEventListener('change', () => { verBodNuevo(); llenarDelArticulo(); });
     function llenarDelArticulo() {
       const x = artPorId(valor('acArt')); if (!x) return;
       $('acQue').value = x.nombre; $('acUni').value = x.unidad; $('acCat').value = CATEGORIAS.includes(x.categoria) ? x.categoria : 'Otro';
@@ -1016,7 +1049,7 @@
     const filas = lineas.map(l => {
       const a = l.articuloId ? artPorId(l.articuloId) : null, ult = ultimoPrecio(l), cada = num(l.cantidad) > 0 ? Math.round(num(l.valor) / num(l.cantidad)) : 0;
       const sube = ult && ult.cada > 0 && cada > ult.cada * 1.1;
-      return `<tr><td><b>${esH(l.que)}</b>${bodegaLinea(l) ? `<span class="docs">${pillBod(bodegaLinea(l))}</span>` : ''}${a ? `<span class="meta">En bodega hay ${esH(cantTxt(a.cantidad, a.unidad))}</span>` : '<span class="meta">No va a bodega</span>'}${ult ? `<span class="meta${sube ? ' err-txt' : ''}">Último precio pagado: ${esH(cop(ult.cada))} c/u${ult.proveedor ? ' en ' + esH(ult.proveedor) : ''}${ult.fecha ? ', ' + esH(App.fechaCorta(ult.fecha)) : ''}${sube ? ' (ahora piden más)' : ''}</span>` : ''}</td>
+      return `<tr><td><b>${esH(l.que)}</b>${bodegaLinea(l) ? `<span class="docs">${pillBod(bodegaLinea(l))}</span>` : ''}${a ? `<span class="meta">En bodega hay ${esH(cantTxt(a.cantidad, a.unidad))}</span>` : esNueva(l) ? `<span class="meta">${esH(c.estado === 'recibido' ? `Artículo nuevo de la bodega de ${l.bodega}` : `Artículo nuevo: se crea en la bodega de ${l.bodega} al recibirla`)}</span>` : '<span class="meta">No va a bodega</span>'}${ult ? `<span class="meta${sube ? ' err-txt' : ''}">Último precio pagado: ${esH(cop(ult.cada))} c/u${ult.proveedor ? ' en ' + esH(ult.proveedor) : ''}${ult.fecha ? ', ' + esH(App.fechaCorta(ult.fecha)) : ''}${sube ? ' (ahora piden más)' : ''}</span>` : ''}</td>
         <td>${esH(String(num(l.cantidad)))} ${esH(l.unidad || '')}</td><td>${esH(cop(cada))}</td><td>${esH(cop(l.valor))}</td></tr>`;
     }).join('');
     const cots = Array.isArray(c.cotizaciones) ? c.cotizaciones.filter(x => /^data:image\/jpeg;base64,[A-Za-z0-9+/]+={0,2}$/.test(typeof x === 'string' ? x : '')) : [];
@@ -1042,7 +1075,7 @@
       const mas = num(l.valor) > 0 && pag > num(l.valor) * 1.1;
       let rec;
       if (!recibida) rec = '<span class="meta">Falta recibir</span>';
-      else if (!l.articuloId) rec = `<span class="meta">No va a bodega${c.entregadoA ? ': se entregó a ' + esH(c.entregadoA) : ''}</span>`;
+      else if (!vaABodega(l)) rec =`<span class="meta">No va a bodega${c.entregadoA ? ': se entregó a ' + esH(c.entregadoA) : ''}</span>`;
       else if (!veMovs()) rec = '<span class="meta">—</span>';
       else {
         // Lo que llegó a otra bodega también cuenta: ese movimiento guarda el artículo pedido (lineaArticuloId).
@@ -1189,7 +1222,7 @@
         // Más del 10 % sobre lo autorizado: queda dicho en el historial y le avisa a la Coordinadora (y al Gerente general si él la había autorizado).
         const sobre = num(c.valorAprox) > 0 && v > num(c.valorAprox) * 1.1, pct = Math.round((v / Math.max(1, num(c.valorAprox)) - 1) * 100);
         return [...opsProv, ['mezclar', 'compras', c.id, { estado: 'comprado', proveedor: provNom, proveedorId: provId, valorReal: v, fechaCompra: A().hoyISO(), factura: fotoFactura || c.factura || '', historial: paso(c, `Compró en ${provNom} por ${A().cop(v)}${sobre ? ` (${pct} % más de lo autorizado)` : ''}`) }],
-          aviso('asistente', 'Compra en camino: hay que recibirla', `${persona().nombre} compró ${cantTxt(c.cantidad, c.unidad)} de ${c.que} en ${provNom}. ${a ? 'Recíbela en bodega cuando llegue.' : `Cuando llegue, entrégala a ${c.pide}.`}`),
+          aviso('asistente', 'Compra en camino: hay que recibirla', `${persona().nombre} compró ${cantTxt(c.cantidad, c.unidad)} de ${c.que} en ${provNom}. ${a || lineasDe(c).some(esNueva) ? 'Recíbela en bodega cuando llegue.' : `Cuando llegue, entrégala a ${c.pide}.`}`),
           c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Ya se compró', `Se compró ${c.que} en ${provNom}.`) : null,
           sobre ? aviso('coordcompras', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null,
           sobre && c.estado === 'autorizado' && c.autorizaJefe && c.autoriza !== c.autorizaJefe ? aviso('gerente', 'Pagaron más de lo autorizado', `${c.que}: autorizado ${A().cop(c.valorAprox)}, pagado ${A().cop(v)} (${pct} % más).`) : null];
@@ -1227,15 +1260,16 @@
     partes.forEach(p => { costo = promedio(hay, costo, p.n, p.unit); hay += p.n; });
     const unit = Math.round(pagoTotal / total);
     const base = { tipo: 'entrada', motivo: 'compra', cantidad: total, persona: c.proveedor || '', nota, compraId: c.id };
-    const extra = Object.assign(otras.length ? { lineaArticuloId: otras[0].a.id, motivoBodega: recorta(motivos.join('; '), 160) } : {},
-      partes.length > 1 ? { partes: partes.map(p => ({ i: p.i, cantidad: p.n })) } : {});   // qué línea de la compra puso cuánto (para el cuadro de la compra)
+    // Si lo pedido es un artículo nuevo (sin id) no hay `lineaArticuloId`: el movimiento dice para qué bodega se pidió (`bodegaPedida`).
+    const extra = Object.assign(otras.length ? Object.assign(otras[0].a.id ? { lineaArticuloId: otras[0].a.id } : { bodegaPedida: bodegaLinea(otras[0].l) }, { motivoBodega: recorta(motivos.join('; '), 160) }) : {},
+      partes.length > 1 || partes.some(p => p.a._nuevo) ? { partes: partes.map(p => ({ i: p.i, cantidad: p.n })) } : {});   // qué línea de la compra puso cuánto (para el cuadro de la compra); en un artículo nuevo siempre
     if (d.art) {
       const t = d.art;
-      return { ops: mover(t, total, Object.assign({ costoUnit: unit, costoNuevo: costo, articuloId: t.id, articulo: t.nombre, saldo: num(t.cantidad) + total }, base, extra)) };
+      return { creado: false, ops: mover(t, total, Object.assign({ costoUnit: unit, costoNuevo: costo, articuloId: t.id, articulo: t.nombre, saldo: num(t.cantidad) + total }, base, extra)) };
     }
     const id = window.nube.idNuevo('ar'), movId = window.nube.idNuevo('mo');
     const codigoAlla = a.codigo && !articulos().some(x => x.codigo === a.codigo && bodegaDe(x) === dest) ? a.codigo : '';
-    return { ops: [['set', 'articulos', id, { nombre: a.nombre, codigo: codigoAlla, categoria: a.categoria, unidad: a.unidad, cantidad: total, ultimoMov: movId, minimo: num(a.minimo), maximo: num(a.maximo), ubicacion: '', costo, proveedor: a.proveedor || '', bodega: dest }],
+    return { creado: true, ops: [['set', 'articulos', id, { nombre: a.nombre, codigo: codigoAlla, categoria: a.categoria, unidad: a.unidad, cantidad: total, ultimoMov: movId, minimo: num(a.minimo), maximo: num(a.maximo), ubicacion: '', costo, proveedor: a.proveedor || '', bodega: dest }],
       movimiento(Object.assign({ bodega: dest, costoUnit: unit, articuloId: id, articulo: a.nombre, saldo: total }, base, extra), movId)] };
   }
   /** «Llegó a la bodega»: la pedida por defecto; si es otra, aparece el porqué y se dice qué pasará allí (se suma al artículo que ya está o se crea). */
@@ -1245,12 +1279,12 @@
   function recibirVarios(c) {
     const lineas = lineasDe(c);
     if (lineas.some(l => l.articuloId && !artPorId(l.articuloId))) { A().toast('Un artículo de esta compra ya no existe en bodega.'); return; }
-    const hayFuera = lineas.some(l => !l.articuloId);
-    const peds = lineas.map(l => (l.articuloId ? bodegaLinea(l) || bodegaDe(artPorId(l.articuloId)) : ''));
+    const hayFuera = lineas.some(l => !vaABodega(l));
+    const peds = lineas.map(l => (vaABodega(l) ? bodegaLinea(l) || bodegaDe(artDeLinea(l, c)) : ''));
     abrirAccion({
       titulo: 'Recibir la compra', sub: `${c.que}: comprada en ${c.proveedor || 'el proveedor'}. Escribe cuánto llegó de cada artículo y a qué bodega.`,
-      campos: lineas.map((l, i) => campoNum('rl' + i, esH(`Llegó: ${l.que} (compradas ${num(l.cantidad)})`), num(l.cantidad), 0, 99999, l.articuloId ? 'Se suma a la bodega.' : 'No va a bodega.')
-        + (l.articuloId ? campoLlegada('rb' + i, 'rbBox' + i, 'rm' + i, esH(`Llegó a la bodega: ${l.que}`), artPorId(l.articuloId), peds[i]) : '')).join('') +
+      campos: lineas.map((l, i) => campoNum('rl' + i, esH(`Llegó: ${l.que} (compradas ${num(l.cantidad)})`), num(l.cantidad), 0, 99999, l.articuloId ? 'Se suma a la bodega.' : esNueva(l) ? 'Artículo nuevo: se crea en la bodega.' : 'No va a bodega.')
+        + (vaABodega(l) ? campoLlegada('rb' + i, 'rbBox' + i, 'rm' + i, esH(`Llegó a la bodega: ${l.que}`), artDeLinea(l, c), peds[i]) : '')).join('') +
         (hayFuera ? campoTxt('acQuien', 'A quién se entregó lo que no va a bodega', c.pide, '', 60) : '') + campoTxt('acNota', 'Nota (opcional)', '', 'Ej: llegaron en buen estado', 160),
       primario: 'Recibir la compra', icono: 'caja', listo: 'Listo: compra recibida. Lo que va a bodega ya se sumó.',
       ops: () => {
@@ -1259,17 +1293,17 @@
         if (hayFuera && !valor('acQuien')) return fallar('Escribe a quién se entregó lo que no va a bodega.', 'acQuien');
         // A qué bodega llegó cada línea (y el porqué si no es la pedida); solo lo que llegó de verdad (más de 0) lo pide.
         for (let i = 0; i < lineas.length; i++) {
-          if (!lineas[i].articuloId || !(llegaron[i] > 0)) continue;
+          if (!vaABodega(lineas[i]) || !(llegaron[i] > 0)) continue;
           const dest = valor('rb' + i);
           if (!BODEGAS.includes(dest)) return fallar('Escoge a qué bodega llegó cada artículo.', 'rb' + i);
           if (dest !== peds[i] && valor('rm' + i).length < 5) return fallar(`Escribe por qué «${lineas[i].que}» llegó a otra bodega (lo verá quien pidió y queda en el registro).`, 'rm' + i);
         }
-        const ops = [], faltan = [], donde = [], llegoA = [], grupos = new Map();
+        const ops = [], faltan = [], donde = [], llegoA = [], creados = [], grupos = new Map();
         // Lo pagado se reparte entre las líneas en proporción a lo que valía cada una al pedirla; cada unidad entra a ese precio.
         const suma = lineas.reduce((s, l) => s + num(l.valor), 0), pagado = num(c.valorReal), factor = pagado > 0 && suma > 0 ? pagado / suma : 1;
         // Las líneas que llegan al MISMO artículo de una bodega se juntan en una sola entrada (un solo movimiento por artículo).
         for (let i = 0; i < lineas.length; i++) {
-          const l = lineas[i], n = llegaron[i], a = l.articuloId ? artPorId(l.articuloId) : null;
+          const l = lineas[i], n = llegaron[i], a = artDeLinea(l, c);
           if (n < num(l.cantidad)) faltan.push(`${l.que}: ${n} de ${num(l.cantidad)}`);
           if (!a || n === 0) continue;
           const dest = valor('rb' + i), otra = dest !== peds[i], motivoBod = otra ? valor('rm' + i) : '';
@@ -1285,32 +1319,35 @@
           const r = entradaCompra(c, g.partes, g.dest, [valor('acNota'), ...g.partes.filter(p => p.n < num(p.l.cantidad)).map(p => g.partes.length > 1 ? `${p.l.que}: llegaron ${p.n} de ${num(p.l.cantidad)}` : `Llegaron ${p.n} de ${num(p.l.cantidad)}`), detalle].filter(Boolean).join('. '));
           if (r.error) return fallar(r.error, 'rb' + g.i);
           ops.push(...r.ops);
+          const nuevos = g.partes.filter(p => p.a._nuevo);
+          if (r.creado && nuevos.length) creados.push(`Artículo nuevo creado en la bodega de ${g.dest}: ${nuevos.map(p => p.l.que).join(', ')}`);
         }
-        const nota = [valor('acNota'), faltan.length ? 'Llegó menos: ' + faltan.join('; ') : '', ...donde.map(o => `${o.que} llegó a ${o.dest} (se pidió para ${o.ped}): ${sinPunto(o.motivo)}`)].filter(Boolean).join('. ');
+        const nota = [valor('acNota'), faltan.length ? 'Llegó menos: ' + faltan.join('; ') : '', ...creados, ...donde.map(o => `${o.que} llegó a ${o.dest} (se pidió para ${o.ped}): ${sinPunto(o.motivo)}`)].filter(Boolean).join('. ');
         const aBod = llegoA.length ? ` a ${llegoA.length > 1 ? 'las bodegas' : 'la bodega'} de ${llegoA.join(' y ')}` : '';
         return [['mezclar', 'compras', c.id, { estado: 'recibido', entregadoA: hayFuera ? valor('acQuien') : '', historial: paso(c, `Recibida${nota ? '. ' + nota : ''}`) }]].concat(ops,
-          [c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', recorta(`${c.que} ya llegó${aBod}.${donde.length ? ' ' + donde.map(o => `${o.que} se pidió para ${o.ped}: ${sinPunto(o.motivo)}.`).join(' ') : ''}`, 780)) : null],
+          [c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', recorta(`${c.que} ya llegó${aBod}.${creados.length ? ' ' + creados.map(x => sinPunto(x) + '.').join(' ') : ''}${donde.length ? ' ' + donde.map(o => `${o.que} se pidió para ${o.ped}: ${sinPunto(o.motivo)}.`).join(' ') : ''}`, 780)) : null],
           faltan.length ? [aviso('coordcompras', 'Llegó menos de lo comprado', `${c.que}. ${faltan.join('; ')}.`)] : []);
       }
     });
     // Al escoger otra bodega para una línea, aparece su porqué y se dice qué pasará allí.
     lineas.forEach((l, i) => {
       const sel = $('rb' + i); if (!sel) return;
-      const a = artPorId(l.articuloId), mostrar = () => {
-        const dest = sel.value, otra = dest !== peds[i], d = otra ? destinoLlegada(a, dest) : { art: a };
+      const a = artDeLinea(l, c), mostrar = () => {
+        const dest = sel.value, otra = dest !== peds[i], d = otra || a._nuevo ? destinoLlegada(a, dest) : { art: a };
         $('rbBox' + i).hidden = !otra;
-        $('rb' + i + 'Ay').textContent = !otra ? '' : d.error ? d.error : d.art ? `En ${dest} ya hay ${cantTxt(d.art.cantidad, d.art.unidad)}: se le suma lo que llegó.` : `En ${dest} todavía no está este artículo: se crea allí.`;
+        $('rb' + i + 'Ay').textContent = !otra && !a._nuevo ? '' : d.error ? d.error : d.art ? `En ${dest} ya hay ${cantTxt(d.art.cantidad, d.art.unidad)}: se le suma lo que llegó.` : `En ${dest} todavía no está este artículo: se crea allí.`;
       };
       sel.addEventListener('change', mostrar);
+      if (a._nuevo) mostrar();
     });
   }
   function recibirUno(c) {
-    const a = c.articuloId ? artPorId(c.articuloId) : null;
+    const l = lineasDe(c)[0], a = artDeLinea(l, c) || (c.articuloId ? artPorId(c.articuloId) : null);
     if (c.articuloId && !a) { A().toast('Ese artículo ya no existe en bodega.'); return; }
-    const l = lineasDe(c)[0], ped = a ? bodegaLinea(l) || bodegaDe(a) : '';
+    const ped = a ? bodegaLinea(l) || bodegaDe(a) : '';
     abrirAccion({
       titulo: a ? 'Recibir en bodega' : 'Marcar como recibida',
-      sub: a ? `${c.que}: compradas ${cantTxt(c.cantidad, c.unidad)} en ${c.proveedor || 'el proveedor'}, para la bodega de ${ped}. Ahora hay ${cantTxt(a.cantidad, a.unidad)}.` : `${c.que}: no va a bodega. Se entrega a ${c.pide}.`,
+      sub: a ? `${c.que}: compradas ${cantTxt(c.cantidad, c.unidad)} en ${c.proveedor || 'el proveedor'}, para la bodega de ${ped}. ${a._nuevo ? 'Es un artículo nuevo: se crea al recibirlo.' : `Ahora hay ${cantTxt(a.cantidad, a.unidad)}.`}` : `${c.que}: no va a bodega. Se entrega a ${c.pide}.`,
       campos: (a ? campoNum('acCant', `Cantidad que llegó (${esH(a.unidad)})`, c.cantidad, 1, 99999, 'Si llegó menos de lo comprado, escribe lo que llegó.') + campoLlegada('acBodLlego', 'acMotivoBodBox', 'acMotivoBod', 'Llegó a la bodega', a, ped)
         : campoTxt('acQuien', 'A quién se entregó', c.pide, '', 60)) + campoTxt('acNota', 'Nota (opcional)', '', 'Ej: llegaron en buen estado', 160),
       primario: a ? 'Recibir en bodega' : 'Marcar como recibida', icono: 'caja', listo: a ? 'Listo: recibido en bodega. La cantidad ya se sumó.' : 'Listo: compra recibida y entregada.',
@@ -1320,31 +1357,34 @@
           return [['mezclar', 'compras', c.id, { estado: 'recibido', entregadoA: valor('acQuien'), historial: paso(c, `Entregado a ${valor('acQuien')}${valor('acNota') ? '. ' + valor('acNota') : ''}`) }],
             aviso(c.pideRol, 'Llegó tu compra', `${c.que} ya llegó y se entregó a ${valor('acQuien')}.`)];
         }
-        const act = artPorId(a.id) || a, n = entero('acCant'), dest = valor('acBodLlego') || ped, otra = dest !== ped, motivoBod = valor('acMotivoBod');
+        const act = (a.id && artPorId(a.id)) || a, n = entero('acCant'), dest = valor('acBodLlego') || ped, otra = dest !== ped, motivoBod = valor('acMotivoBod');
         if (!(n > 0)) return fallar('Escribe una cantidad entera mayor que 0.', 'acCant');
         if (!BODEGAS.includes(dest)) return fallar('Escoge a qué bodega llegó.', 'acBodLlego');
         if (otra && motivoBod.length < 5) return fallar('Escribe por qué llegó a otra bodega (lo verá quien pidió y queda en el registro).', 'acMotivoBod');
         // Cada unidad entra a lo que se pagó por ella (total pagado ÷ cantidad comprada) y el costo del artículo que recibe pasa a ser el promedio.
         const unit = num(c.valorReal) > 0 && num(c.cantidad) > 0 ? Math.round(num(c.valorReal) / num(c.cantidad)) : num(act.costo);
         const nota = [valor('acNota'), n < num(c.cantidad) ? `Llegaron ${n} de ${num(c.cantidad)}` : ''].filter(Boolean).join('. ');
-        const r = entradaCompra(c, [{ l, a: act, n, unit, motivo: otra ? motivoBod : '' }], dest, nota);
+        const r = entradaCompra(c, [{ i: 0, l, a: act, n, unit, motivo: otra ? motivoBod : '' }], dest, nota);
         if (r.error) return fallar(r.error, 'acBodLlego');
+        const nuevoCreado = a._nuevo && r.creado;
         accion.listo = otra ? `Listo: recibido en la bodega de ${dest}. La cantidad ya se sumó allí.` : 'Listo: recibido en bodega. La cantidad ya se sumó.';
         return [
-          ['mezclar', 'compras', c.id, { estado: 'recibido', historial: paso(c, `Recibido en bodega: ${cantTxt(n, a.unidad)}${otra ? `. Llegó a ${dest} (se pidió para ${ped}): ${sinPunto(motivoBod)}` : ''}${nota ? '. ' + nota : ''}`) }],
+          ['mezclar', 'compras', c.id, { estado: 'recibido', historial: paso(c, `${nuevoCreado ? `Artículo nuevo creado en la bodega de ${dest}` : 'Recibido en bodega'}: ${cantTxt(n, a.unidad)}${otra ? `. Llegó a ${dest} (se pidió para ${ped}): ${sinPunto(motivoBod)}` : ''}${nota ? '. ' + nota : ''}`) }],
           ...r.ops,
-          c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', recorta(`${c.que} ya está en la bodega de ${dest}${otra ? ` (se pidió para ${ped}). ${sinPunto(motivoBod)}.` : '.'}`, 780)) : null,
+          c.pideRol !== 'asistente' ? aviso(c.pideRol, 'Llegó tu compra', recorta(`${c.que} ya está en la bodega de ${dest}${nuevoCreado ? ' (artículo nuevo creado)' : ''}${otra ? ` (se pidió para ${ped}). ${sinPunto(motivoBod)}.` : '.'}`, 780)) : null,
           n < num(c.cantidad) ? aviso('coordcompras', 'Llegó menos de lo comprado', `${c.que}: llegaron ${n} de ${num(c.cantidad)}.`) : null
         ];
       }
     });
     if (a) {
       const sel = $('acBodLlego');
-      sel.addEventListener('change', () => {
-        const dest = sel.value, otra = dest !== ped, d = otra ? destinoLlegada(a, dest) : { art: a };
+      const mostrar = () => {
+        const dest = sel.value, otra = dest !== ped, d = otra || a._nuevo ? destinoLlegada(a, dest) : { art: a };
         $('acMotivoBodBox').hidden = !otra;
-        $('acBodLlegoAy').textContent = !otra ? '' : d.error ? d.error : d.art ? `En ${dest} ya hay ${cantTxt(d.art.cantidad, d.art.unidad)}: se le suma lo que llegó.` : `En ${dest} todavía no está este artículo: se crea allí.`;
-      });
+        $('acBodLlegoAy').textContent = !otra && !a._nuevo ? '' : d.error ? d.error : d.art ? `En ${dest} ya hay ${cantTxt(d.art.cantidad, d.art.unidad)}: se le suma lo que llegó.` : `En ${dest} todavía no está este artículo: se crea allí.`;
+      };
+      sel.addEventListener('change', mostrar);
+      if (a._nuevo) mostrar();
     }
   }
   function marcarRevisada(c) {
@@ -2243,9 +2283,12 @@
   // Los selectores de las líneas extra de una compra llenan solos el nombre y el valor, como el primero.
   $('acCampos').addEventListener('change', e => {
     const va = e.target.closest('select[data-lx="va"]');
-    if (va) { const f0 = va.closest('.linea-extra'); f0.querySelector('[id^="lxBox"]').hidden = va.value !== 'si'; if (va.value !== 'si') return; }
+    if (va) { const f0 = va.closest('.linea-extra'); f0.querySelector('[id^="lxBox"]').hidden = va.value !== 'si'; if (va.value !== 'si') { f0.querySelector('[id^="lxBodBox"]').hidden = true; return; } }
     const sel = va ? va.closest('.linea-extra').querySelector('select[data-lx="art"]') : e.target.closest('select[data-lx="art"]'); if (!sel) return;
-    const f = sel.closest('.linea-extra'), x = artPorId(sel.value); if (!f || !x) return;
+    const f = sel.closest('.linea-extra'); if (!f) return;
+    // «Artículo nuevo»: pregunta la bodega y no llena nada.
+    const bb = f.querySelector('[id^="lxBodBox"]'); if (bb) bb.hidden = sel.value !== NUEVO_ART;
+    const x = artPorId(sel.value); if (!x) return;
     const n = Math.max(1, num(x.maximo) - num(x.cantidad));
     f.querySelector('[data-lx="que"]').value = x.nombre; f.querySelector('[data-lx="cant"]').value = n; f.querySelector('[data-lx="val"]').value = num(x.costo) * n;
   });
