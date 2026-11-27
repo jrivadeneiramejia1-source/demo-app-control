@@ -368,12 +368,12 @@
     $('inicioSub').textContent = p.cargo && p.cargo !== p.rolTxt ? `${p.cargo} · ${p.rolTxt}` : p.rolTxt;
     const n = pendientes();
     const todas = [
-      { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: ['gerente', 'jefe', 'asistente', 'coordcompras', 'consulta'] },
-      { mod: 'inventario', k: 'i-ent', n: n.inv.porEntregar, lbl: 'Pedidos de material por entregar', icono: 'entrega', tono: 'listo', roles: ['jefe', 'asistente'] },
+      { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: () => ['gerente', 'jefe', 'bodega', 'coordina', 'ver'].includes(permiso('inventario')) },
+      { mod: 'inventario', k: 'i-ent', n: n.inv.porEntregar, lbl: 'Pedidos de material por entregar', icono: 'entrega', tono: 'listo', roles: () => ['jefe', 'bodega'].includes(permiso('inventario')) },
       { mod: 'inventario', k: 'i-aut', n: n.inv.porAutorizarMias, lbl: 'Compras que te toca autorizar', icono: 'carrito', tono: 'org', roles: () => permiso('inventario') === 'coordina' || (permiso('inventario') === 'gerente' && tieneExtra('general')) },
-      { mod: 'inventario', k: 'i-com', n: n.inv.porComprar, lbl: 'Compras autorizadas por hacer', icono: 'carrito', tono: 'listo', roles: ['compras'] },
-      { mod: 'inventario', k: 'i-cur', n: n.inv.enCurso, lbl: 'Compras en curso', icono: 'carrito', tono: 'listo', roles: ['gerente', 'coordcompras', 'financiero', 'consulta'] },
-      { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['gerente', 'jefe', 'coordcompras', 'compras', 'financiero', 'consulta'] },
+      { mod: 'inventario', k: 'i-com', n: n.inv.porComprar, lbl: 'Compras autorizadas por hacer', icono: 'carrito', tono: 'listo', roles: () => permiso('inventario') === 'compra' || (permiso('inventario') === 'bodega' && tieneExtra('compra')) },
+      { mod: 'inventario', k: 'i-cur', n: n.inv.enCurso, lbl: 'Compras en curso', icono: 'carrito', tono: 'listo', roles: () => ['gerente', 'coordina', 'finanzas', 'ver'].includes(permiso('inventario')) },
+      { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: () => ['gerente', 'jefe', 'coordina', 'compra', 'finanzas', 'ver'].includes(permiso('inventario')) },
       { mod: 'inventario', k: 'i-mis', n: n.inv.misPedidos, lbl: 'Tus pedidos de material en espera', icono: 'caja', tono: 'listo', roles: () => ['pide', 'finanzas'].includes(permiso('inventario')) },
       { mod: 'vehiculos', k: 'i-nov', n: n.novedades, lbl: 'Novedades de carros sin revisar', icono: 'carro', tono: 'org', roles: ['jefe', 'carros', 'asistente'] },
       { mod: 'vehiculos', k: 'i-via', n: n.veh.mias, lbl: 'Viajes por registrar', icono: 'llave', tono: 'listo', roles: ['conductor'] },
@@ -420,7 +420,9 @@
     // Los avisos del inventario van a la función de cada quien (bodega, compras, jefe, gerente), que sale de su nivel y no solo de su rol.
     const fn = window.Inventario ? window.Inventario.funcion() : '';
     // Bodega con el permiso extra «compra» también recibe los avisos de Compras.
-    return S.datos.avisos.filter(a => a.para === rol || a.para === 'todos' || (fn && a.para === fn) || (a.para === 'compras' && rol === 'asistente' && tieneExtra('compra'))).sort((a, b) => String(b.en).localeCompare(String(a.en)));
+    // La función «coordina» recibe lo que se avisa a la Coordinadora de compras (rol «coordcompras»), aunque la persona tenga otro rol.
+    const paraFn = fn === 'coordina' ? 'coordcompras' : fn;
+    return S.datos.avisos.filter(a => a.para === rol || a.para === 'todos' || (paraFn && a.para === paraFn) || (a.para === 'compras' && permiso('inventario') === 'bodega' && tieneExtra('compra'))).sort((a, b) => String(b.en).localeCompare(String(a.en)));
   };
   // Cada persona marca SUS avisos como leídos (la marca es su id de cuenta), aunque haya varias personas con el mismo rol.
   const yo = () => nube.uid();
@@ -530,7 +532,7 @@
     $('btnAvisos').onclick = abrirAvisos;
     $('btnSalir').onclick = async () => { cerrarHoja('shPersona'); await nube.salir(); };
     // «Personas y permisos» (gente.js, 34 KB) solo lo usa la Jefe: se descarga la primera vez que lo abre.
-    $('btnGente').onclick = () => { cerrarHoja('shPersona'); UI.cargarScript('gente.js?v=10').then(() => window.Gente.abrir(), () => toast('No se pudo abrir el panel. Revisa la conexión y vuelve a intentar.')); };
+    $('btnGente').onclick = () => { cerrarHoja('shPersona'); UI.cargarScript('gente.js?v=11').then(() => window.Gente.abrir(), () => toast('No se pudo abrir el panel. Revisa la conexión y vuelve a intentar.')); };
     $('entradaModo').addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return; modoEntrada = b.dataset.modo; $('entradaErr').hidden = true; pintarModoEntrada(); });
     $('ctCambiar').onclick = () => { modoCuenta = modoCuenta === 'crear' ? 'entrar' : 'crear'; $('ctErr').hidden = true; pintarModoEntrada(); };
     $('ctForm').addEventListener('submit', e => { e.preventDefault(); enviarCuenta(); });

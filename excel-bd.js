@@ -292,7 +292,8 @@
       const cfg = cfgs[a.dataset.xbdArchivo](), e = st(cfg.clave);
       if (!cfg.puedeSubir()) return;
       e.error = '';
-      try { const filas = await leerArchivo(cfg, a.files && a.files[0]); e.previa = filas ? { crudas: filas } : null; }
+      const archivo = a.files && a.files[0]; a.value = '';   // se limpia para poder subir el mismo archivo otra vez
+      try { const filas = await leerArchivo(cfg, archivo); e.previa = filas ? { crudas: filas } : null; }
       catch (er) { e.previa = null; e.error = er && er.message === 'xlsx' ? 'No se pudo cargar el lector de Excel. Revisa la conexión y vuelve a intentar.' : (er && er.message) || 'No se pudo leer el archivo.'; }
       repintar();
     });

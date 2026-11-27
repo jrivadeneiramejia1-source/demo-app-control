@@ -316,11 +316,13 @@ try {
     ['900000009-5', /termina en -0, no en -5/, '900000009 da 0 (396 entre 11 deja 0, y el dígito es ese mismo)'],
     ['900000001-7', /termina en -2, no en -7/, '900000001 da 2 (372 entre 11 deja 9, y 11 - 9 = 2)'],
     ['900000004', /Falta el dígito de verificación[\s\S]*900000004-4/, 'un NIT sin dígito: dice cuál le toca'],
-    ['9000000044', /Escríbelo con guion[\s\S]*900000004-4/, 'un NIT con el dígito pegado: dice dónde va el guion'],
+    ['9000000045', /Falta el dígito de verificación[\s\S]*9000000045-/, 'un NIT pegado cuyo último número no es el dígito de verificación: pide el dígito'],
     ['abc', /El NIT va con su dígito de verificación/, 'letras']]) {
     await t.page.fill('#pvNit', nit);
     log(`NIT ${nit}: ${que}`, re.test(await errPv()), await texto(t.page, '#acErr'));
   }
+  await t.page.fill('#pvNit', '9000000044'); await t.page.dispatchEvent('#pvNit', 'change');
+  log('un NIT pegado con su dígito de verificación correcto (9000000044) se arregla solo: 900000004-4', await t.page.evaluate(() => document.getElementById('pvNit').value === '900000004-4'));
   await t.page.fill('#pvNit', '900.000.001-2');
   log('un NIT bueno (con puntos) que ya tiene otro proveedor dice de quién es: así se sabe que el dígito se aceptó', /Ese NIT ya lo tiene «Ferretería El Faro»/.test(await errPv()), await texto(t.page, '#acErr'));
   await t.page.fill('#pvNit', '900000002-1'); await t.page.fill('#pvTel', 'abc');

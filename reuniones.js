@@ -709,7 +709,7 @@
           aviso('jefe', 'Acta registrada', `${r.comunidad}: ${plural(asis, 'asistente', 'asistentes')}. ${obs.slice(0, 120)}`)];
       } });
     $('rcFoto').addEventListener('change', async e => {
-      const f = e.target.files && e.target.files[0]; if (!f) return;
+      const f = e.target.files && e.target.files[0]; e.target.value = ''; if (!f) return;
       $('rcFotoTxt').textContent = 'Preparando la foto…';
       try { fotoActa = await window.Inventario.leerFoto(f); const v = $('rcFotoVer'); v.src = fotoActa; v.hidden = false; $('rcFotoTxt').textContent = 'Cambiar foto'; $('reErr').hidden = true; }
       catch (er) { fotoActa = ''; $('rcFotoTxt').textContent = 'Tomar o escoger foto'; fallar(er.message === 'grande' ? 'La foto es muy pesada. Toma otra más de cerca.' : 'Ese archivo no es una foto. Escoge una imagen.'); }

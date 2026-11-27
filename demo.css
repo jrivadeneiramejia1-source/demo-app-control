@@ -400,3 +400,7 @@ main:has(> #vInventario.ancha:not([hidden])) { max-width: min(1240px, 100%); }
 .hoy-lista li { display: flex; gap: 10px; align-items: center; }
 .hoy-n { display: grid; min-width: 0; font-weight: 700; }
 .hoy-n .meta { font-weight: 400; }
+/* Tarjetas que se tocan para ir a otra pantalla (por ejemplo, «Cómo está cada bodega» abre sus existencias). */
+.card.clic { cursor: pointer; transition: box-shadow .2s, border-color .15s; }
+.card.clic:hover { border-color: var(--control-line, #6b7f88); box-shadow: 0 2px 8px rgba(11, 64, 88, .12); }
+.card.clic:focus-visible { outline: 3px solid var(--focus, #1c6e93); outline-offset: 2px; }

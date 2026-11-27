@@ -571,7 +571,7 @@
   // Fotos: cada input con data-foto se achica y se guarda en «fotos» (o en fotoNov para la novedad).
   async function alEscogerFoto(e) {
     const inp = e.target.closest('input[data-foto]'); if (!inp) return;
-    const f = inp.files && inp.files[0], id = inp.dataset.foto; if (!f) return;
+    const f = inp.files && inp.files[0], id = inp.dataset.foto; inp.value = ''; if (!f) return;
     const txt = $(id + 'Txt'), ver = $(id + 'Ver');
     txt.textContent = 'Preparando…';
     try {
