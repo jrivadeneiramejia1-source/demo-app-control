@@ -40,21 +40,6 @@
 .entrada-cab { display: flex; flex-direction: column; gap: 4px; }
 .entrada-cab .meta { margin: 0; }
 
-/* Etiqueta "Versión pagada": se toca para ver qué cambia pagando */
-.pagada {
-  display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 10px 14px; border-radius: 14px; text-align: left;
-  font: inherit; font-size: .88rem; font-weight: 650; color: var(--listo); background: var(--listo-bg); border: 1px dashed var(--listo);
-  transition: transform .12s ease, border-color .15s;
-}
-.pagada .ph { width: 20px; height: 20px; flex: none; }
-.pagada:active { transform: scale(.99); }
-.pagada-tabla { display: flex; flex-direction: column; gap: 10px; }
-.pagada-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.pagada-fila > div { border-radius: 14px; padding: 12px; font-size: .9rem; display: flex; flex-direction: column; gap: 4px; }
-.pagada-fila .hoy { background: var(--surface-2); }
-.pagada-fila .pago { background: var(--listo-bg); color: var(--fg); }
-.pagada-fila small { font-size: .72rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); }
-.pagada-fila .pago small { color: var(--listo); }
 .costo { font-size: .9rem; margin: 0; }
 
 /* Encabezado de cada módulo: título y permiso de la persona */
@@ -111,7 +96,7 @@
 .aviso-it .punto { width: 10px; height: 10px; border-radius: 50%; background: var(--sol); flex: none; margin-top: 6px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .persona-btn, .pagada { transition: none; }
+  .persona-btn { transition: none; }
 }
 
 /* Datos de cada tarjeta: el icono va en la misma línea que el texto */

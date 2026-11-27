@@ -100,7 +100,7 @@ try {
   log('el buscador no distingue tildes («angel» encuentra a Ángel Ortiz)', await hasta(t.page, () => [...document.querySelectorAll('#entradaLista .persona-card')].filter(c => !c.hidden).map(c => c.textContent).join().includes('Ángel Ortiz')));
   await t.page.fill('#entradaLista .filtro-personas', '');
   log('al borrar la búsqueda vuelven las 46', await hasta(t.page, () => [...document.querySelectorAll('#entradaLista .persona-card')].filter(c => !c.hidden).length === 46));
-  log('la entrada tiene la etiqueta Versión pagada', await visible(t.page, '#vEntrada .pagada'));
+  log('la entrada ya no tiene la franja «Versión pagada»', !(await t.page.$('#vEntrada .pagada')));
   log('entra como Carolina Castillo (Jefe)', await entrar(t.page, 'jefe'));
   log('siembra los datos y llena el tablero', await datosListos(t.page));
   await esp(900); // las cifras cuentan hasta su valor
@@ -559,11 +559,7 @@ try {
   await t.page.click('#vehSecciones [data-sec="hacer"]');
   await t.page.click('.tab[data-vista="reuniones"]');
   log('Reuniones: la Jefe ve lo que toca a cada quien y las 2 próximas', await hasta(t.page, () => /Le toca a/.test(document.getElementById('reuContenido').textContent) && Number(document.querySelector('#sumReuniones .num')?.textContent) >= 0) && await (async () => { await esp(900); return (await cifra(t.page, 'sumReuniones', 0)) === 2 && (await cifra(t.page, 'sumReuniones', 2)) === 1; })());
-  log('cada módulo tiene su etiqueta Versión pagada', await t.page.evaluate(() => ['vEquipos', 'vInventario', 'vVehiculos', 'vReuniones', 'vInicio'].every(v => document.querySelector('#' + v + ' .pagada'))));
-  await t.page.click('#vReuniones .pagada');
-  log('la etiqueta abre la hoja con demo frente a pagando', await hasta(t.page, () => !document.getElementById('shPagada').hidden && /Outlook/.test(document.getElementById('pagadaCuerpo').textContent)));
-  await t.page.keyboard.press('Escape');
-  log('Escape cierra la hoja', await hasta(t.page, () => document.getElementById('shPagada').hidden));
+  log('ningún módulo ni el Inicio tiene la franja «Versión pagada» ni su hoja', await t.page.evaluate(() => !document.querySelector('.pagada, [data-pagada], #shPagada')));
 
   console.log('4. Cambio de persona y permisos');
   log('cambia a Oscar Farfán (Conductor)', await cambiar(t.page, 'conductor'));

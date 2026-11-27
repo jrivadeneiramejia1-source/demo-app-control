@@ -1,5 +1,5 @@
 /* app.js — Demo de la app de control (fases 1 y 2): entrada con cuentas de prueba, cambio de persona en vivo,
-   menú de los cuatro módulos con datos inventados, campana de avisos y etiquetas "Versión pagada".
+   menú de los cuatro módulos con datos inventados, campana de avisos.
    Equipos, Vehículos y Reuniones solo muestran datos en esta fase. El Inventario (consumibles, bodega y compras) vive en inventario.js. */
 (function () {
   'use strict';
@@ -464,26 +464,6 @@
     if (window.Gente) window.Gente.pintar();
   }
 
-  /* ---------- versión pagada ---------- */
-  const PAGADA = {
-    entrada: ['Entrada y permisos', 'Personas de prueba para mostrar cada rol en vivo, y cuentas propias que se crean con el código del rol.', 'Solo cuentas propias: cada persona entra con su correo y su clave, y el código de su rol decide qué ve. Sin personas de prueba públicas.'],
-    inicio: ['La app completa', 'Gratis, con datos de prueba. Los avisos llegan a la campana y al teléfono.', 'Unos USD 20 a 28 al mes: el agente lee el correo real, cuentas con el correo de cada persona y fotos en un almacenamiento aparte.'],
-    equipos: ['Equipos', 'Las fotos de las hojas se guardan comprimidas dentro de la base de datos.', 'Las fotos van a un almacenamiento aparte (Cloud Storage): más calidad y la base no se llena.'],
-    inventario: ['Inventario y compras', 'Todo funciona: pedir, autorizar, comprar con foto de la factura, recibir, entregar y contar. Avisos a la campana y al teléfono.', 'Las fotos de facturas van a un almacenamiento aparte (más calidad y la base no se llena), avisos también por correo o Teams, y cuentas con el correo real de cada persona.'],
-    vehiculos: ['Vehículos', 'Los vencimientos del SOAT y la técnico-mecánica se ven en rojo y amarillo dentro de la app.', 'Avisos automáticos al teléfono antes de que venza el SOAT o la revisión.'],
-    reuniones: ['Reuniones y agente', 'Correos de ejemplo pegados en la app; Gemini gratis los lee.', 'El agente lee solo el buzón real de Outlook, con n8n y el permiso de TI.'],
-    avisos: ['Avisos', 'La campana dentro de la app y notificaciones al teléfono (gratis, con un servidor pequeño de Cloudflare).', 'Además, avisos por correo o por Teams.']
-  };
-  function abrirPagada(k) {
-    const x = PAGADA[k] || PAGADA.inicio;
-    $('shPagadaT').textContent = 'Versión pagada: ' + x[0];
-    $('pagadaCuerpo').innerHTML = `<div class="pagada-tabla"><div class="pagada-fila">
-      <div class="hoy"><small>En la demo (gratis)</small>${esH(x[1])}</div>
-      <div class="pago"><small>Pagando</small>${esH(x[2])}</div></div>
-      <p class="costo meta">Costo aproximado de la versión pagada: Firebase USD 0 a 3 al mes y el agente (n8n con Gemini) unos USD 20 a 25 al mes.</p></div>`;
-    abrirHoja('shPagada');
-  }
-
   /* ---------- hojas y confirmación ---------- */
   function abrirHoja(id) { $(id).hidden = false; }
   function cerrarHoja(id) { delete vigiladas[id]; const el = $(id); if (el && !el.hidden) el.hidden = true; }
@@ -590,7 +570,6 @@
       pintarTodo();
     });
     document.addEventListener('click', e => {
-      const p = e.target.closest('[data-pagada]'); if (p) { abrirPagada(p.dataset.pagada); return; }
       if (e.target.closest('[data-cerrar]')) { const bd = e.target.closest('.backdrop'); if (bd) pedirCerrar(bd); return; }
       // Tocar el fondo oscuro cierra la hoja (salvo la confirmación, que se responde con un botón).
       if (e.target.classList && e.target.classList.contains('backdrop') && !e.target.classList.contains('confirm')) pedirCerrar(e.target);

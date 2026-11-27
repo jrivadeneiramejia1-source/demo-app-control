@@ -86,7 +86,6 @@
         <button class="btn ghost" type="button" id="ctOlvide">Olvidé mi clave</button>
       </form>
     </div>
-    <button class="pagada" type="button" data-pagada="entrada"><span data-ico="pagada"></span>Versión pagada: solo cuentas de la empresa (invitadas por la Jefe), sin personas de prueba</button>
     <div class="err" id="entradaErr" role="alert" hidden></div>
   </section>
 
@@ -119,7 +118,6 @@
     <div class="summary" id="sumInicio"></div>
     <div class="section-label">Módulos</div>
     <div class="modulos" id="modulosLista"></div>
-    <button class="pagada" type="button" data-pagada="inicio"><span data-ico="pagada"></span>Versión pagada: unos USD 20 a 28 al mes, con el correo real y avisos al teléfono</button>
   </section>
 
   <!-- EQUIPOS -->
@@ -134,7 +132,6 @@
     <div id="eqContenido" class="inv-contenido" tabindex="-1"></div>
     <button class="btn ghost small" type="button" id="btnNuevoEq"><span data-ico="mas"></span>Registrar equipo nuevo</button>
     <button class="btn ghost small" type="button" id="btnExcelEq"><span data-ico="excel"></span>Descargar Excel</button>
-    <button class="pagada" type="button" data-pagada="equipos"><span data-ico="pagada"></span>Versión pagada: las actas firmadas en un almacenamiento aparte y copia en PDF por correo</button>
   </section>
 
   <!-- INVENTARIO (consumibles y bodega, con las compras adentro) -->
@@ -148,7 +145,6 @@
     <div class="chips secciones" id="invSecciones" role="group" aria-label="Partes del inventario"></div>
     <input class="search" id="qInventario" type="search" placeholder="Buscar artículo, categoría o ubicación" autocomplete="off" aria-label="Buscar artículo" hidden>
     <div id="invContenido" class="inv-contenido" tabindex="-1"></div>
-    <button class="pagada" type="button" data-pagada="inventario"><span data-ico="pagada"></span>Versión pagada: fotos de facturas en un almacenamiento aparte y avisos también por correo o Teams</button>
   </section>
 
   <!-- VEHÍCULOS -->
@@ -157,7 +153,6 @@
     <div class="summary cuatro" id="sumVehiculos"></div>
     <div class="chips secciones" id="vehSecciones" role="group" aria-label="Partes de vehículos"></div>
     <div id="vehContenido" class="inv-contenido" tabindex="-1"></div>
-    <button class="pagada" type="button" data-pagada="vehiculos"><span data-ico="pagada"></span>Versión pagada: avisos al teléfono antes de que venza el SOAT, aunque nadie abra la app</button>
   </section>
 
   <!-- REUNIONES -->
@@ -167,7 +162,6 @@
     <div class="chips secciones" id="reuSecciones" role="group" aria-label="Partes de reuniones"></div>
     <div id="reuContenido" class="inv-contenido" tabindex="-1"></div>
     <button class="btn ghost small" type="button" id="btnExcelReu"><span data-ico="excel"></span>Descargar Excel</button>
-    <button class="pagada" type="button" data-pagada="reuniones"><span data-ico="pagada"></span>Versión pagada: el agente lee solo el buzón real de Outlook</button>
   </section>
 </main>
 
@@ -231,18 +225,7 @@
     <h2 id="shAvisosT">Avisos</h2>
     <p class="sub" id="shAvisosSub"></p>
     <div class="list" id="avisosLista"></div>
-    <button class="pagada" type="button" data-pagada="avisos"><span data-ico="pagada"></span>Versión pagada: avisos también por correo o por Teams</button>
     <div class="sheet-actions"><div class="row"><button class="btn" type="button" data-cerrar>Cerrar</button></div></div>
-  </div>
-</div>
-
-<!-- HOJA: VERSIÓN PAGADA -->
-<div class="backdrop" id="shPagada" hidden>
-  <div class="sheet" aria-labelledby="shPagadaT">
-    <div class="grab" aria-hidden="true"></div>
-    <h2 id="shPagadaT">Versión pagada</h2>
-    <div id="pagadaCuerpo"></div>
-    <div class="sheet-actions"><div class="row"><button class="btn primary" type="button" data-cerrar>Entendido</button></div></div>
   </div>
 </div>
 
