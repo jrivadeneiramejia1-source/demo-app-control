@@ -223,7 +223,7 @@ service cloud.firestore {
             && bajaOk(nuevo().bajaPedida) && nuevo().bajaPedida.porRol == rol() && historialEqSigue() && esEncargadoEq())
         // Solo la Jefe da de baja: aprueba lo pedido (sin cambiarlo) o la hace directa. El equipo pasa a «baja» con la fecha y quién la aprobó.
         || (soloCambia(['estado', 'bajaPedida', 'bajaPor', 'bajaEn', 'historial']) && nuevo().estado == 'baja' && antes().estado in ['bodega', 'recibido']
-            && bajaOk(nuevo().bajaPedida) && nuevo().bajaPedida == antes().get('bajaPedida', nuevo().bajaPedida)
+            && bajaOk(nuevo().bajaPedida) && nuevo().bajaPedida == (antes().get('bajaPedida', null) == null ? nuevo().bajaPedida : antes().bajaPedida)
             && (antes().get('bajaPedida', null) != null || nuevo().bajaPedida.porRol == rol()) && nuevo().bajaPor is string && esFecha(nuevo().bajaEn)
             && historialEqSigue() && esJefe())
         // La Jefe también puede no aprobar lo pedido: la solicitud se quita y el equipo sigue igual.
@@ -252,7 +252,8 @@ service cloud.firestore {
         || (revisaActas() && antes().revision == 'pendiente' && antes().porRol != rol() && nuevo().revision in ['ok', 'problema']
             && soloCambia(['revision', 'revisadaPor', 'revisadaEn', 'notaRevision']))
         || (esEncargadoEq() && antes().revision == 'problema' && nuevo().revision == 'pendiente'
-            && soloCambia(['persona', 'cedula', 'proyecto', 'codigoProyecto', 'firmaPersona', 'revision', 'revisadaPor', 'revisadaEn'])
+            && soloCambia(['persona', 'cedula', 'proyecto', 'codigoProyecto', 'firmaPersona', 'revision', 'revisadaPor', 'revisadaEn', 'notaRevision'])
+            && nuevo().get('notaRevision', '') == ''
             && nuevo().persona is string && nuevo().persona.size() >= 5 && nuevo().persona.size() <= 80
             && nuevo().cedula is string && nuevo().cedula.matches('^[0-9]{5,12}$') && firmaOk(nuevo().firmaPersona))
         // Devolución: una más al final (las anteriores iguales), con su firma; el acta vuelve a revisión.

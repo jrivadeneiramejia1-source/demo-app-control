@@ -51,14 +51,16 @@
     const grupo = pred => { const ks = Object.keys(rev).filter(pred); if (!ks.length) return 'sin revisar'; const mal = ks.filter(k => !rev[k]); return mal.length ? `${mal.length} mal (${mal.map(k => (NOMBRE_REV[k] || k).toLowerCase()).join(', ')})` : 'bien'; };
     return { criticos: grupo(esCritico), otros: grupo(k => !esCritico(k)) };
   }
-  const CONDUCTORES = ['Oscar Farfán', 'Rafael Ospino', 'Hernán Brito'];
+  const CONDUCTORES_DEMO = ['Oscar Farfán', 'Rafael Ospino', 'Hernán Brito'];
+  /** Los conductores: los de la demo y, si la Jefe real puede ver las cuentas, las personas con rol Conductor que están activas. */
+  const listaConductores = () => Array.from(new Set(CONDUCTORES_DEMO.concat((D().usuarios || []).filter(u => u && u.rol === 'conductor' && u.activo !== false && u.nombre).map(u => String(u.nombre)))));
   const QUIEN_ENTREGA = ['Wilson Muñoz', 'Andrés Beltrán'];
   let seccion = '', rolPintado = '', guardando = false, accion = null, pushPendientes = [], fotos = {}, fotoNov = '', fotoTan = '', periodo = 'mes', buscar = '';
   // Historial completo de la hoja de vida: filtro, orden y el carro al que pertenecen (se reinician al abrir otro carro).
   let lineaFiltro = 'todo', lineaOrden = 'nuevo', lineaVeh = '';
 
   /* ---------- datos derivados ---------- */
-  const vehPorId = id => D().vehiculos.find(v => v.id === id) || null;
+  const vehPorId = id => window.UI.indice(D().vehiculos).get(id) || null;
   const novDe = id => D().novedades.filter(n => n.vehiculoId === id).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
   const entDe = id => D().entregas.filter(e => e.vehiculoId === id).sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
   const tanDe = id => D().tanqueos.filter(t => t.vehiculoId === id).sort((a, b) => num(a.km) - num(b.km) || String(a.fecha).localeCompare(String(b.fecha)));
@@ -76,10 +78,10 @@
     const kmFalta = num(m.cadaKm) > 0 ? num(m.ultimoKm) + num(m.cadaKm) - num(v.km) : null;
     const venceEl = num(m.cadaDias) > 0 && /^\d{4}-\d{2}-\d{2}$/.test(m.ultimaFecha || '') ? masDias(m.ultimaFecha, num(m.cadaDias)) : '';
     const diasFalta = venceEl ? dias(venceEl) : null;
-    const vencido = (kmFalta != null && kmFalta <= 0) || (diasFalta != null && diasFalta < 0);
+    const vencido = (kmFalta != null && kmFalta <= 0) || (diasFalta != null && diasFalta <= 0);   // el día que vence ya «toca»
     const pronto = !vencido && ((kmFalta != null && kmFalta <= MTTO_PRONTO_KM) || (diasFalta != null && diasFalta <= MTTO_PRONTO_DIAS));
     // Se dice lo que hizo que toque: si ya tocaba, lo que ya se pasó; si falta poco, lo que está cerca; si está al día, las dos cuentas.
-    const kmMal = kmFalta != null && kmFalta <= 0, diasMal = diasFalta != null && diasFalta < 0;
+    const kmMal = kmFalta != null && kmFalta <= 0, diasMal = diasFalta != null && diasFalta <= 0;
     const kmCerca = kmFalta != null && kmFalta <= MTTO_PRONTO_KM, diasCerca = diasFalta != null && diasFalta <= MTTO_PRONTO_DIAS;
     const faltan = [], pasado = [];
     if (kmFalta != null && (vencido ? kmMal : pronto ? kmCerca : true)) { if (kmFalta > 0) faltan.push(km(kmFalta)); else pasado.push(kmFalta < 0 ? `se pasó ${km(-kmFalta)}` : 'ya llegó a los km'); }
@@ -91,7 +93,7 @@
   const mttosPend = () => D().vehiculos.flatMap(v => mttosDe(v).map(m => ({ v, m, e: estMtto(m, v) }))).filter(x => x.e.est !== 'ok')
     .sort((a, b) => (a.e.est === b.e.est ? String(a.v.placa).localeCompare(String(b.v.placa)) : a.e.est === 'vencido' ? -1 : 1));
   /* ---------- combustible: tanqueos, rendimiento y costo ---------- */
-  const TAN_RARO = 0.75, TAN_MIN_TRAMOS = 2, TAN_PRECIO_MIN = 5000, TAN_PRECIO_MAX = 40000;
+  const TAN_RARO = 0.75, TAN_MUY_ALTO = 1.6, TAN_MIN_TRAMOS = 2, TAN_PRECIO_MIN = 5000, TAN_PRECIO_MAX = 40000;
   const nGal = v => Number(v || 0).toLocaleString('es-CO', { maximumFractionDigits: 2 });
   const nKmGal = v => Number(v || 0).toLocaleString('es-CO', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   /** Tramos de rendimiento (los tanqueos van ordenados por km): de un tanque lleno al siguiente, los km recorridos entre los galones echados
@@ -105,8 +107,11 @@
       if (ancla && !(num(t.km) > num(ancla.km))) return;   // otro tanque lleno con el mismo km: no cierra tramo y sus galones se suman al siguiente
       if (ancla && g > 0) {
         const k = num(t.km) - num(ancla.km), prom = out.length >= TAN_MIN_TRAMOS ? sumKm / sumGal : 0;
-        out.push({ t, km: k, galones: g, valor: val, kmGal: k / g, costoKm: val / k, prom, raro: prom > 0 && k / g < prom * TAN_RARO });
-        sumKm += k; sumGal += g;
+        // «Muy alto»: rindió muchísimo más que lo normal, casi seguro porque falta anotar un tanqueo (los galones de ese tramo quedaron cortos).
+        const raro = prom > 0 && k / g < prom * TAN_RARO, muyAlto = prom > 0 && k / g > prom * TAN_MUY_ALTO;
+        out.push({ t, km: k, galones: g, valor: val, kmGal: k / g, costoKm: val / k, prom, raro, muyAlto });
+        // Un tramo atípico no se suma al promedio base: si no, un solo error estropea lo «normal» de ese carro para siempre.
+        if (!raro && !muyAlto) { sumKm += k; sumGal += g; }
       }
       ancla = t; g = 0; val = 0;
     });
@@ -133,7 +138,7 @@
   const PREFIJO_REV = 'Revisión antes de salir:';
   const reporteSinRevisar = v => D().novedades.find(n => n.vehiculoId === v.id && !n.revisada && String(n.descripcion || '').startsWith(PREFIJO_REV)) || null;
   const ultimaSalida = v => entDe(v.id).find(e => e.tipo === 'salida') || null;
-  const reunionPorId = id => D().reuniones.find(r => r.id === id) || null;
+  const reunionPorId = id => window.UI.indice(D().reuniones).get(id) || null;
   /** Viajes de reunión con carro asignado que todavía no terminan (para el conductor). */
   function viajes() {
     return D().necesidades.filter(n => n.tipo === 'viaje' && n.vehiculoId && ['pendiente', 'listo'].includes(n.estado)).filter(n => {
@@ -144,7 +149,8 @@
   }
   const salioEn = n => D().entregas.some(e => e.reunionId === n.reunionId && e.vehiculoId === n.vehiculoId && e.tipo === 'salida');
   // Los viajes le llegan al rol Conductor (en la demo hay un solo conductor con cuenta).
-  const misViajes = () => viajes();
+  // Con cuentas propias, cada conductor ve solo SUS viajes (por su correo o, si el viaje no lo trae, por su nombre); en la demo hay un solo conductor con cuenta y ve todos.
+  const misViajes = () => viajes().filter(n => !esConductor() || persona().prueba || (n.responsableCorreo ? String(n.responsableCorreo).toLowerCase() === miCorreo().toLowerCase() : (!n.conductor || n.conductor === persona().nombre)));
   /* ---------- reservas de carro (viajes que no son reuniones) ---------- */
   const reservas = () => D().reservas || [];
   const resPorId = id => reservas().find(r => r.id === id) || null;
@@ -182,8 +188,19 @@
       .flatMap(n => (Array.isArray(n.vehiculos) ? n.vehiculos : []).map(x => x && x.vehiculoId)));
     // Un carro con una reserva aprobada ese día tampoco está libre (menos para la misma reserva, que lo cambia).
     reservas().filter(r => r.estado === 'aprobada' && r.fecha === fecha && r.id !== reservaId).forEach(r => ocupados.add(r.vehiculoId));
-    return D().vehiculos.filter(v => v.estado !== 'en-taller' && !ocupados.has(v.id) && String(v.soat) >= fecha && String(v.tecno) >= fecha)
+    // Tampoco está libre un carro con un problema grave reportado en la revisión que nadie ha revisado.
+    return D().vehiculos.filter(v => v.estado !== 'en-taller' && !ocupados.has(v.id) && !reporteSinRevisar(v) && String(v.soat) >= fecha && String(v.tecno) >= fecha)
       .sort((a, b) => String(a.placa).localeCompare(String(b.placa)));
+  }
+
+  /* ---------- reservas «zombi»: pedidas cuya fecha ya pasó y nadie respondió ---------- */
+  let zombisFirma = '';
+  function limpiarZombis() {
+    if (!esAdmin() || A().cargando('reservas')) return;
+    const vencidas = reservas().filter(r => r.estado === 'pedida' && String(r.fecha) < A().hoyISO());
+    const firma = vencidas.map(r => r.id).join('|'); if (!firma || firma === zombisFirma) return;
+    zombisFirma = firma;
+    window.nube.lote(vencidas.map(r => ['mezclar', 'reservas', r.id, { estado: 'cancelada', canceladaPor: 'La app (la fecha ya pasó sin respuesta)', canceladaEn: A().hoyISO() }])).catch(() => { zombisFirma = ''; });
   }
 
   /* ---------- avisos de vencimiento (dentro de la app) ---------- */
@@ -199,8 +216,8 @@
       const nombre = k === 'soat' ? 'SOAT' : 'técnico-mecánica', d = dias(v[k]);
       const id = `doc-${v.id}-${k}-${v[k]}`.replace(/[^A-Za-z0-9-]/g, '');
       if (D().avisos.some(a => a.id === id)) return;
-      const txt = d < 0 ? `La ${nombre} del ${v.placa} venció hace ${-d} días. Ese carro no debe salir.` : `La ${nombre} del ${v.placa} vence en ${d} días.`;
-      ['jefe', 'carros', 'asistente'].forEach(rol => ops.push(['set', 'avisos', `${id}-${rol}`, { para: rol, titulo: d < 0 ? `${nombre} vencido` : `${nombre} por vencer`, texto: txt, en: ahora(), modulo: 'vehiculos', leido: {}, deUid: window.nube.uid() }]));
+      const txt = d == null ? `El ${v.placa} no tiene anotada la fecha de la ${nombre}. Anótala en «Documentos».` : d < 0 ? `La ${nombre} del ${v.placa} venció hace ${-d} días. Ese carro no debe salir.` : d === 0 ? `La ${nombre} del ${v.placa} vence hoy.` : `La ${nombre} del ${v.placa} vence en ${d} días.`;
+      ['jefe', 'carros', 'asistente'].forEach(rol => ops.push(['set', 'avisos', `${id}-${rol}`, { para: rol, titulo: d == null ? `${nombre} sin fecha` : d < 0 ? `${nombre} vencido` : `${nombre} por vencer`, texto: txt, en: ahora(), modulo: 'vehiculos', leido: {}, deUid: window.nube.uid() }]));
     }));
     const nuevos = ops.filter(o => !D().avisos.some(a => a.id === o[2]));
     if (nuevos.length) window.nube.lote(nuevos).catch(() => {});
@@ -232,7 +249,7 @@
     const c = $('vehContenido');
     if (['vehiculos', 'novedades', 'entregas', 'tanqueos', 'reservas'].some(App.cargando)) { UI.poner(c, UI.esqueleto(3)); return; }
     if (UI.poner(c, ({ hacer: htmlHacer, carros: () => htmlCarros(f), novedades: () => htmlNovedades(f), tanqueos: htmlTanqueos, resumen: htmlResumen, reportes: htmlReportes })[seccion]())) window.llenarIconos(c);
-    avisarVencimientos();
+    avisarVencimientos(); limpiarZombis();
   }
   const boton = (acc, txt, icono, id, clase, extra) => `<button class="btn ${clase || 'small'}" type="button" data-accion="${acc}" data-id="${esH(id)}"${extra || ''}>${icono ? `<span data-ico="${icono}"></span>` : ''}${esH(txt)}</button>`;
   const docPill = (nombre, f) => { const e = estDoc(f), d = dias(f); return A().pill(`${nombre}: ${e === 'vencido' ? `venció hace ${-d} días` : e === 'pronto' ? `vence en ${d} días` : e === 'sin' ? 'sin fecha' : A().fechaCorta(f)}`, e === 'vencido' ? 's-peligro' : e === 'pronto' ? 's-org' : 's-disco', e === 'ok' ? 'check' : 'aviso'); };
@@ -241,7 +258,7 @@
   /* --- Lo que me toca --- */
   function htmlHacer() {
     let h = '';
-    if (puedeReportar()) h += `<div class="barra-botones">${boton('novedad', 'Reportar una novedad', 'aviso', '', 'primary')}${boton('pedircarro', 'Pedir un carro', 'carro', '', 'small')}${boton('tanqueo', 'Registrar tanqueo', 'pagada', '', 'small')}</div>`;
+    if (puedeReportar()) h += `<div class="barra-botones">${boton('novedad', 'Reportar una novedad', 'aviso', '', 'primary')}${boton('pedircarro', 'Pedir un carro', 'carro', '', 'small')}${boton('tanqueo', 'Registrar tanqueo', 'gasolina', '', 'small')}</div>`;
     if (esAdmin()) {
       const pa = porAprobar();
       h += `<div class="section-label">Carros por aprobar (${pa.length})</div>`;
@@ -285,7 +302,7 @@
     return `<div class="card tarea st-${tono}"><div class="tarea-t"><b>${conPlaca ? `<span class="placa">${esH(v.placa)}</span> ` : ''}${esH(m.tarea)}</b>
       <span class="meta">${esH(cada)}. Último: ${esH(km(m.ultimoKm))}${m.ultimaFecha ? ' · ' + esH(A().fechaCorta(m.ultimaFecha)) : ''}${num(m.ultimoCosto) ? ' · costó ' + esH(A().cop(m.ultimoCosto)) : ''}</span></div>
       <span class="docs">${A().pill(e.est === 'vencido' ? `Toca ya: ${e.texto}` : e.est === 'pronto' ? `Pronto: ${e.texto}` : `Al día: ${e.texto}`, e.est === 'vencido' ? 's-peligro' : e.est === 'pronto' ? 's-org' : 's-disco', e.est === 'ok' ? 'check' : 'mantenimiento')}</span>
-      ${esAdmin() ? `<div class="tarea-pie">${boton('mttohecho', 'Hecho', 'check', v.id, e.est === 'ok' ? 'small' : 'primary small', ` data-mtto="${esH(m.id)}"`)}${conPlaca ? boton('ver', 'Hoja de vida', '', v.id, 'ghost small') : boton('mttoquitar', 'Quitar del plan', '', v.id, 'ghost small', ` data-mtto="${esH(m.id)}"`)}</div>` : ''}</div>`;
+      ${esAdmin() ? `<div class="tarea-pie">${boton('mttohecho', 'Hecho', 'check', v.id, e.est === 'ok' ? 'small' : 'primary small', ` data-mtto="${esH(m.id)}"`)}${conPlaca ? boton('ver', 'Hoja de vida', '', v.id, 'ghost small') : boton('mttoeditar', 'Editar tarea', 'lapiz', v.id, 'ghost small', ` data-mtto="${esH(m.id)}"`) + boton('mttoquitar', 'Quitar del plan', '', v.id, 'ghost small', ` data-mtto="${esH(m.id)}"`)}</div>` : ''}</div>`;
   }
   /** Un pedido de carro. modo: «decidir» (Transporte, Bodega o la Jefe aprueban o rechazan), «reservada» (con la salida y la llegada) o «mia» (lo que yo pedí). */
   function tarjetaReserva(r, modo) {
@@ -368,13 +385,15 @@
         <span class="meta">${esH(nGal(t.galones))} galones${t.lleno === false ? ' (no llenó el tanque)' : ''} · ${esH(km(t.km))} · ${esH(t.por)} · ${esH(A().hace(t.fecha))}</span>
         ${x ? `<span class="meta">Rindió ${esH(nKmGal(x.kmGal))} km por galón${x.raro ? ` (lo normal: ${esH(nKmGal(x.prom))})` : ''} · el combustible costó ${esH(A().cop(Math.round(x.costoKm)))} por km</span>` : ''}</div></div>
       ${x && x.raro ? `<span class="docs">${A().pill(`Consumo raro: ${Math.round((1 - x.kmGal / x.prom) * 100)} % menos de lo normal`, 's-peligro', 'aviso')}</span>` : ''}
+      ${x && x.muyAlto ? `<span class="docs">${A().pill('Rindió demasiado: ¿falta anotar un tanqueo?', 's-org', 'aviso')}</span>` : ''}
+      ${esJefe() ? `<div class="tarea-pie">${boton('edtan', 'Corregir', 'lapiz', t.id, 'ghost small')}${boton('bortan', 'Borrar', 'borrar', t.id, 'ghost small')}</div>` : ''}
     </div>`;
   }
   function htmlTanqueos() {
     const ts = D().tanqueos.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
     const tramos = new Map(); D().vehiculos.forEach(v => tramosVeh(v.id).forEach(x => tramos.set(x.t.id, x)));
-    const h = puedeReportar() ? `<div class="barra-botones">${boton('tanqueo', 'Registrar tanqueo', 'pagada', '', 'primary')}</div>` : '';
-    if (!ts.length) return h + UI.vacio('pagada', 'Todavía no hay tanqueos', puedeReportar() ? 'Cuando un carro eche combustible, registra el tanqueo con la foto del recibo.' : '');
+    const h = puedeReportar() ? `<div class="barra-botones">${boton('tanqueo', 'Registrar tanqueo', 'gasolina', '', 'primary')}</div>` : '';
+    if (!ts.length) return h + UI.vacio('gasolina', 'Todavía no hay tanqueos', puedeReportar() ? 'Cuando un carro eche combustible, registra el tanqueo con la foto del recibo.' : '');
     const raros = ts.filter(t => tramos.get(t.id) && tramos.get(t.id).raro).length;
     return h + (raros ? `<div class="aviso peligro" role="status"><span><b>${raros} ${raros === 1 ? 'tanqueo con consumo raro' : 'tanqueos con consumo raro'}:</b> el carro rindió mucho menos de lo normal. Revisa el recibo y pregunta qué pasó.</span></div>` : '')
       + `<div class="list">${ts.slice(0, 40).map(t => tarjetaTanqueo(t, tramos.get(t.id))).join('')}</div>`
@@ -475,14 +494,16 @@
       const f = window.Inventario.fechaLocal, r = datosReporte(), hojas = [], gen = `Generado el ${A().hoyISO()}.`;
       const TIT = { Carros: ['Carros', 'Estado, kilometraje y salidas de cada carro.'], 'Salidas y llegadas': ['Salidas y llegadas', 'Cada salida con su llegada, kilómetros y revisión.'],
         Novedades: ['Novedades', 'Lo que reportaron los conductores, con su costo y si ya se revisó.'], 'Por conductor': ['Por conductor', 'Resumen de cada conductor.'],
-        Tanqueos: ['Tanqueos', 'Cada vez que un carro echó combustible, con lo que rindió entre un tanque lleno y el siguiente.'] };
+        Tanqueos: ['Tanqueos', 'Cada vez que un carro echó combustible, con lo que rindió entre un tanque lleno y el siguiente.'],
+        Reservas: ['Reservas de carros', 'Los carros pedidos para viajes que no son reuniones: quién los pidió, para dónde, el carro, el conductor y cómo terminó.'] };
       const hoja = (nombre, filas) => hojas.push(window.Excel.deObjetos(nombre, TIT[nombre][0], `${TIT[nombre][1]} ${gen}`, filas));
       hoja('Carros', r.porCarro.map(x => ({ Placa: x.v.placa, Carro: `${x.v.marca} ${x.v.modelo} ${x.v.anio}`, Estado: (EST[x.v.estado] || [x.v.estado])[0], Conductor: x.v.conductor, Kilometraje: num(x.v.km), Salidas: x.salidas, 'Km recorridos': x.km, 'Con problemas': x.problemas, Novedades: x.novedades, 'Costo novedades': x.costo, 'Costo mantenimientos': x.mtt, 'Costo combustible': x.comb, 'Costo total': x.total, 'Km por galón': x.kmGal ? Math.round(x.kmGal * 10) / 10 : '', 'Costo combustible por km': x.costoKm ? Math.round(x.costoKm) : '', 'SOAT vence': x.v.soat, 'Técnico-mecánica vence': x.v.tecno })));
-      hoja('Salidas y llegadas', r.vs.map(x => ({ Placa: x.v.placa, Conductor: x.salida.conductor, Reunión: x.reunion, Salió: f(x.salida.fecha, true), 'Km salida': num(x.salida.km), 'Combustible salida': x.salida.combustible, Entregó: x.salida.con, Llegó: x.llegada ? f(x.llegada.fecha, true) : 'Todavía no', 'Km llegada': x.llegada ? num(x.llegada.km) : '', 'Combustible llegada': x.llegada ? x.llegada.combustible : '', Recibió: x.llegada ? x.llegada.con : '', 'Km recorridos': x.km, Horas: x.horas, Revisión: x.problemas ? 'Con problemas' : 'Bien', 'Críticos (salida)': textoRevision(x.salida.revision).criticos, 'Otros (salida)': textoRevision(x.salida.revision).otros, 'Críticos (llegada)': x.llegada ? textoRevision(x.llegada.revision).criticos : '', 'Otros (llegada)': x.llegada ? textoRevision(x.llegada.revision).otros : '', Observaciones: [x.salida.observaciones, x.llegada && x.llegada.observaciones].filter(Boolean).join(' · ') })));
+      hoja('Salidas y llegadas', r.vs.map(x => ({ Placa: x.v.placa, Conductor: x.salida.conductor, Reunión: x.reunion, 'Destino de la reserva': x.salida.reservaId ? ((resPorId(x.salida.reservaId) || {}).destino || '') : '', Salió: f(x.salida.fecha, true), 'Km salida': num(x.salida.km), 'Combustible salida': x.salida.combustible, Entregó: x.salida.con, Llegó: x.llegada ? f(x.llegada.fecha, true) : 'Todavía no', 'Km llegada': x.llegada ? num(x.llegada.km) : '', 'Combustible llegada': x.llegada ? x.llegada.combustible : '', Recibió: x.llegada ? x.llegada.con : '', 'Km recorridos': x.km, Horas: x.horas, Revisión: x.problemas ? 'Con problemas' : 'Bien', 'Críticos (salida)': textoRevision(x.salida.revision).criticos, 'Otros (salida)': textoRevision(x.salida.revision).otros, 'Críticos (llegada)': x.llegada ? textoRevision(x.llegada.revision).criticos : '', 'Otros (llegada)': x.llegada ? textoRevision(x.llegada.revision).otros : '', Observaciones: [x.salida.observaciones, x.llegada && x.llegada.observaciones].filter(Boolean).join(' · ') })));
       hoja('Novedades', r.ns.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).map(n => ({ Fecha: f(n.fecha, true), Placa: n.placa, Tipo: TIPO_NOV[n.tipo] || n.tipo, Qué: n.descripcion, Km: num(n.km), Reportó: n.reporta, Costo: num(n.costo), Revisada: n.revisada ? 'Sí' : 'No', 'Revisó': n.revisadaPor, Nota: n.nota })));
       const tramos = new Map(); D().vehiculos.forEach(v => tramosVeh(v.id).forEach(x => tramos.set(x.t.id, x)));
       hoja('Tanqueos', r.ts.map(t => { const x = tramos.get(t.id); return { Fecha: f(t.fecha, true), Placa: t.placa, Km: num(t.km), Galones: num(t.galones), Valor: num(t.valor), 'Tanque lleno': t.lleno === false ? 'No' : 'Sí',
         'Km por galón': x ? Math.round(x.kmGal * 10) / 10 : '', 'Costo combustible por km': x ? Math.round(x.costoKm) : '', 'Consumo raro': x ? (x.raro ? 'Sí' : 'No') : '', Registró: t.por }; }));
+      hoja('Reservas', reservas().filter(x => enPeriodo(x.fecha)).slice().sort((a, b) => porFecha(b, a)).map(x => ({ Fecha: x.fecha, Hora: x.hora, Destino: x.destino, Motivo: x.motivo, Pidió: x.por, Estado: ({ pedida: 'Por aprobar', aprobada: 'Aprobada', rechazada: 'Rechazada', cancelada: 'Cancelada' })[x.estado] || x.estado, Placa: x.placa || '', Conductor: x.conductor || '', 'Decidió': x.decidePor || '', 'Motivo del rechazo': x.motivoRechazo || '', Salió: salioRes(x) ? 'Sí' : 'No', Llegó: llegoRes(x) ? 'Sí' : 'No' })));
       hoja('Por conductor', r.porConductor.map(x => ({ Conductor: x.c, Salidas: x.salidas, 'Km recorridos': x.km, 'Con problemas': x.problemas, 'Novedades reportadas': x.novedades })));
       await window.Excel.descargar({ archivo: `Vehiculos ${A().hoyISO()}`, hojas });
       A().toast('Listo: Excel descargado');
@@ -499,19 +520,37 @@
   const filaRev = ([k, t]) => `<div class="rev-fila"><span class="rev-t" id="vrt_${k}">${esH(t)}</span><div class="seg" role="radiogroup" aria-labelledby="vrt_${k}"><label><input type="radio" name="vr_${k}" value="bien"><span>Bien</span></label><label><input type="radio" name="vr_${k}" value="mal"><span>Mal</span></label></div></div>`;
   const revisionMarcada = () => { const r = {}; REVISION.forEach(([k]) => { const x = document.querySelector(`#veCampos input[name="vr_${k}"]:checked`); if (x) r[k] = x.value === 'bien'; }); return r; };
   /** En una salida, si un punto crítico está mal: aviso «no debe salir» y el botón pasa a «Reportar y no salir». */
+  /** «Faltan N de 15 puntos»: cuántos puntos de la revisión faltan por marcar, con un botón que lleva al primero. */
+  function pintarFalta() {
+    const c = $('vsFalta'); if (!c) return;
+    const hechos = revisionMarcada(), faltan = REVISION.filter(([k]) => !(k in hechos));
+    c.innerHTML = faltan.length ? `<div class="aviso"><span><b>Faltan ${faltan.length} de ${REVISION.length} puntos</b> por marcar en la revisión.</span> ${boton('irpunto', 'Ir al primero', 'flecha', '', 'small')}</div>` : `<p class="meta">Los ${REVISION.length} puntos de la revisión están marcados.</p>`;
+    window.llenarIconos(c);
+  }
   function alCambiarRevision() {
     if (!accion || !accion.esSalida) return;
     const mal = REV_CRITICOS.filter(([k]) => revisionMarcada()[k] === false).map(([, t]) => t.toLowerCase());
     const al = $('vsAlerta'), pri = $('vePrimario');
+    if ($('vsFotoProbBox')) $('vsFotoProbBox').hidden = !mal.length;
+    pintarFalta();
     if (al) al.innerHTML = mal.length ? `<div class="aviso peligro" role="alert"><span><b>Este carro no debe salir:</b> ${esH(mal.join(', '))} ${mal.length === 1 ? 'está mal' : 'están mal'}. Cuenta qué falla en observaciones y toma una foto del problema: se le avisa a Transporte, Bodega y la Jefe.</span></div>` : '';
     pri.innerHTML = mal.length ? window.ico('aviso') + 'Reportar y no salir' : (accion.icono ? window.ico(accion.icono) : '') + esH(accion.primario);
   }
   const campoFoto = (id, lbl) => `<div class="field foto-campo"><span class="lbl">${esH(lbl)}</span><label class="btn foto-btn"><span data-ico="camara"></span><span id="${id}Txt">Tomar foto</span><input id="${id}" class="archivo-oculto" type="file" accept="image/*" capture="environment" data-foto="${id}"></label><img id="${id}Ver" class="nov-foto" alt="${esH(lbl)}" hidden></div>`;
   const valor = id => ($(id) ? $(id).value.trim() : '');
   const entero = id => { const v = valor(id); return /^\d+$/.test(v) ? Number(v) : NaN; };
+  /** Pesos escritos por una persona: vacío = 0; acepta «150000», «150.000» o «$ 150.000»; cualquier otra cosa da NaN (no se guarda en silencio como $ 0). */
+  const pesos = id => {
+    const el = $(id); if (!el) return 0;
+    const v = el.value.trim().replace(/^\$\s*/, '');
+    if (v === '') return el.validity && el.validity.badInput ? NaN : 0;
+    if (/^\d+$/.test(v)) return Number(v);
+    if (/^\d{1,3}(\.\d{3})+$/.test(v)) return Number(v.replace(/\./g, ''));
+    return NaN;
+  };
   // Decimal con coma o punto y hasta 2 decimales (los galones: 12,5).
   const decimal = id => { const v = valor(id).replace(',', '.'); return /^\d{1,3}(\.\d{1,2})?$/.test(v) ? Number(v) : NaN; };
-  function fallar(msg, id) { const e = $('veErr'); e.textContent = msg; e.hidden = false; if (id && $(id)) $(id).focus(); return false; }
+  function fallar(msg, id) { const e = $('veErr'); e.textContent = msg; e.hidden = false; window.UI.marcarInvalido(id ? $(id) : null, 'veErr'); if (id && $(id)) $(id).focus(); return false; }
   function abrir(o) {
     accion = o;
     $('veT').textContent = o.titulo; $('veSub').textContent = o.sub || '';
@@ -535,6 +574,7 @@
   async function guardar() {
     if (guardando || !accion || !accion.ops) return;
     $('veErr').hidden = true;
+    if (preparando) return fallar('Espera un momento: todavía se está preparando una foto.');
     if (accion.base) {
       const act = vehPorId(accion.base.id);
       if (!act || act.estado !== accion.base.estado || num(act.km) !== num(accion.base.km) || historial(act).length !== historial(accion.base).length) return fallar('El carro cambió mientras tenías esto abierto. Ciérralo y ábrelo otra vez.');
@@ -557,20 +597,23 @@
   }
   function notificar(envios) {
     if (!window.Push || !envios.length) return;
-    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#vehiculos', etiqueta: 'vehiculos' })).catch(() => {}));
+    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#vehiculos', etiqueta: window.Push.etiqueta('vehiculos', e.titulo, e.texto) })).catch(() => {}));
   }
   // Fotos: cada input con data-foto se achica y se guarda en «fotos» (o en fotoNov para la novedad).
+  let preparando = 0;   // fotos que todavía se están achicando: mientras tanto no se guarda (si no, se guardaría sin la foto)
   async function alEscogerFoto(e) {
     const inp = e.target.closest('input[data-foto]'); if (!inp) return;
-    const f = inp.files && inp.files[0], id = inp.dataset.foto; if (!f) return;
+    const f = inp.files && inp.files[0], id = inp.dataset.foto; inp.value = ''; if (!f) return;
     const txt = $(id + 'Txt'), ver = $(id + 'Ver');
     txt.textContent = 'Preparando…';
+    preparando++; if ($('vePrimario')) $('vePrimario').disabled = true;
     try {
       const grande = id === 'vnFoto' || id === 'vqFoto';   // la novedad y el recibo llevan una sola foto más grande; las 5 de la salida, pequeñas
-      const dato = await window.Inventario.leerFoto(f, grande ? 1280 : 720, grande ? 300000 : 140000);
+      const dato = await window.Inventario.leerFoto(f, grande ? 1280 : 720, grande ? 300000 : 100000);
       if (id === 'vnFoto') fotoNov = dato; else if (id === 'vqFoto') fotoTan = dato; else fotos[id] = dato;
       ver.src = dato; ver.hidden = false; txt.textContent = 'Cambiar'; $('veErr').hidden = true;
     } catch (er) { txt.textContent = 'Tomar foto'; fallar(er.message === 'grande' ? 'La foto es muy pesada. Toma otra más de cerca.' : 'Ese archivo no es una foto.'); }
+    finally { preparando = Math.max(0, preparando - 1); if (!preparando && $('vePrimario') && !guardando) $('vePrimario').disabled = false; }
   }
 
   /* ---------- acciones ---------- */
@@ -586,17 +629,45 @@
         (esAdmin() ? campoNum('vnCosto', 'Costo (si ya se sabe)', '', 0, 100000000) : ''),
       primario: 'Reportar', icono: 'enviar', listo: 'Listo: novedad reportada. Ya les llegó el aviso.',
       ops: () => {
-        const veh = vehPorId(valor('vnVeh')), kmv = entero('vnKm'), desc = valor('vnDesc'), costo = esAdmin() ? (entero('vnCosto') || 0) : 0;
+        const veh = vehPorId(valor('vnVeh')), kmv = entero('vnKm'), desc = valor('vnDesc'), costo = esAdmin() ? pesos('vnCosto') : 0;
         if (!veh) return fallar('Escoge el carro.', 'vnVeh');
         if (!(kmv >= 0)) return fallar('Escribe el kilometraje.', 'vnKm');
         if (kmv + 5000 < num(veh.km)) return fallar(`El kilometraje parece bajo: el carro va en ${km(veh.km)}.`, 'vnKm');
         if (desc.length < 5) return fallar('Cuenta qué pasó.', 'vnDesc');
+        if (!(costo >= 0)) return fallar('Escribe el costo en pesos, solo números (ejemplo: 150000).', 'vnCosto');
         if (!fotoNov) return fallar('Falta la foto de la novedad.');
         const tipo = valor('vnTipo');
         return [['set', 'novedades', window.nube.idNuevo('no'), { vehiculoId: veh.id, placa: veh.placa, tipo, fecha: ahora(), km: kmv, descripcion: desc, foto: fotoNov,
           reporta: persona().nombre, reportaRol: miRol(), costo, revisada: false, revisadaPor: '', revisadaEn: '', nota: '' }]]
           .concat(['jefe', 'carros', 'asistente', 'gerente'].map(rol => aviso(rol, 'Novedad en un carro', `${persona().nombre} reportó ${(TIPO_NOV[tipo] || 'una novedad').toLowerCase()} en el ${veh.placa}: ${desc.slice(0, 100)}`)));
       } });
+  }
+  /** La Jefe corrige un tanqueo mal anotado (kilometraje, galones, valor o si llenó): así un error no bloquea al carro. La foto no se cambia. */
+  function corregirTanqueo(t) {
+    abrir({ titulo: `Corregir el tanqueo del ${t.placa}`, sub: `Lo anotó ${t.por} ${A().hace(t.fecha)}. Cambia solo lo que esté mal.`,
+      campos: `<div class="fields cols">${campoNum('vqKm', 'Kilometraje', t.km, 0, 2000000)}<div class="field"><label for="vqGal">Galones</label><input id="vqGal" type="text" inputmode="decimal" maxlength="6" autocomplete="off" value="${esH(String(num(t.galones)).replace('.', ','))}"></div></div>` +
+        campoNum('vqValor', 'Lo que se pagó, en pesos', t.valor, 0, 5000000) + marca('vqLleno', 'Llenó el tanque hasta arriba', t.lleno !== false),
+      primario: 'Guardar la corrección', icono: 'check', listo: 'Listo: tanqueo corregido.',
+      ops: () => {
+        const kmv = entero('vqKm'), g = decimal('vqGal'), pagado = entero('vqValor'), lleno = $('vqLleno').checked;
+        const otros = tanDe(t.vehiculoId).filter(x => x.id !== t.id), antes = otros.filter(x => num(x.km) <= num(t.km)).slice(-1)[0], despues = otros.find(x => num(x.km) > num(t.km));
+        if (!(kmv >= 0)) return fallar('Escribe el kilometraje (solo números).', 'vqKm');
+        if (antes && kmv < num(antes.km)) return fallar(`No puede ser menor que el tanqueo anterior (${km(antes.km)}).`, 'vqKm');
+        if (despues && kmv > num(despues.km)) return fallar(`No puede ser mayor que el tanqueo siguiente (${km(despues.km)}).`, 'vqKm');
+        if (!(g >= 0.5 && g <= 100)) return fallar('Escribe los galones (de 0,5 a 100), por ejemplo 12,5.', 'vqGal');
+        if (!(pagado > 0 && pagado <= 5000000)) return fallar('Escribe lo que se pagó en pesos, sin puntos ni comas.', 'vqValor');
+        const precio = pagado / g;
+        if (precio < TAN_PRECIO_MIN || precio > TAN_PRECIO_MAX) return fallar(`Eso da ${A().cop(Math.round(precio))} por galón. Revisa los galones y lo que se pagó.`, 'vqValor');
+        const v = vehPorId(t.vehiculoId);
+        return [['mezclar', 'tanqueos', t.id, { km: kmv, galones: g, valor: pagado, lleno }],
+          v ? ['mezclar', 'vehiculos', v.id, { historial: paso(v, `Corrigió un tanqueo: ${km(kmv)}, ${nGal(g)} galones, ${A().cop(pagado)}`) }] : null];
+      } });
+  }
+  function borrarTanqueo(t) {
+    abrir({ titulo: `Borrar el tanqueo del ${t.placa}`, sub: `${A().cop(t.valor)} · ${nGal(t.galones)} galones · ${km(t.km)} (${A().hace(t.fecha)}).`,
+      campos: '<div class="note">Se borra el tanqueo y con él su foto del recibo. Los rendimientos del carro se calculan otra vez sin él. No se puede deshacer.</div>',
+      primario: 'Borrar el tanqueo', icono: 'borrar', listo: 'Listo: tanqueo borrado.',
+      ops: () => { const v = vehPorId(t.vehiculoId); return [['borrar', 'tanqueos', t.id], v ? ['mezclar', 'vehiculos', v.id, { historial: paso(v, `Borró un tanqueo de ${A().cop(t.valor)} (${km(t.km)})`) }] : null]; } });
   }
   /** Un tanqueo: kilometraje, galones, lo pagado y la foto del recibo. Si rinde mucho menos de lo normal del carro, avisa a Transporte, Bodega y la Jefe. */
   function tanqueo(v) {
@@ -626,6 +697,7 @@
         const nuevo = { vehiculoId: veh.id, placa: veh.placa, fecha: ahora(), km: kmv, galones: g, valor: pagado, lleno, foto: fotoTan, por: persona().nombre, porRol: miRol() };
         const x = tramosDe(tanDe(veh.id).concat([Object.assign({ id }, nuevo)])).find(y => y.t.id === id);
         const ops = [['set', 'tanqueos', id, nuevo]];
+        if (x && x.muyAlto) A().toast(`Ojo: el ${veh.placa} rindió ${nKmGal(x.kmGal)} km por galón, mucho más de lo normal (${nKmGal(x.prom)}). Puede que falte anotar un tanqueo.`);
         if (x && x.raro) {
           const txt = `El ${veh.placa} rindió ${nKmGal(x.kmGal)} km por galón; lo normal es ${nKmGal(x.prom)}. Tanqueó ${persona().nombre}.`;
           accion.listo = 'Listo: tanqueo guardado. El consumo salió raro y ya les llegó el aviso.';
@@ -642,7 +714,8 @@
         (v && v.estado === 'disponible' ? marca('vrTaller', 'Mandar el carro al taller', n.tipo === 'choque') : v && v.estado === 'en-uso' ? '<p class="meta">El carro está en uso. Si hay que llevarlo al taller, hazlo después de que llegue.</p>' : ''),
       primario: 'Marcar como revisada', icono: 'check', listo: 'Listo: novedad revisada.', base: v ? Object.assign({}, v) : null,
       ops: () => {
-        const costo = entero('vrCosto') || 0, nota = valor('vrNota');
+        const costo = pesos('vrCosto'), nota = valor('vrNota');
+        if (!(costo >= 0)) return fallar('Escribe el costo en pesos, solo números (ejemplo: 150000).', 'vrCosto');
         const ops = [['mezclar', 'novedades', n.id, { costo, nota, revisada: true, revisadaPor: persona().nombre, revisadaEn: ahora() }]];
         if (v && $('vrTaller') && $('vrTaller').checked) ops.push(['mezclar', 'vehiculos', v.id, { estado: 'en-taller', conductor: '', historial: paso(v, `Entró al taller: ${TIPO_NOV[n.tipo] || 'novedad'}`) }]);
         if (n.reportaRol && n.reportaRol !== miRol()) ops.push(aviso(n.reportaRol, 'Revisaron tu novedad', `${persona().nombre} revisó ${(TIPO_NOV[n.tipo] || 'la novedad').toLowerCase()} del ${n.placa}${nota ? ': ' + nota : '.'}`));
@@ -704,6 +777,21 @@
         return [['mezclar', 'vehiculos', v.id, { mttos: mttosDe(act).concat([nueva]), historial: paso(act, `Plan de mantenimiento: agregó «${tarea}» (${cada})`) }]];
       } });
   }
+  /** Cambiar cada cuánto se hace una tarea (o su nombre) sin perder lo ya hecho: la última vez y los costos de antes se quedan. */
+  function mttoEditar(v, mid) {
+    const m = mttosDe(v).find(x => x.id === mid); if (!m) return null;
+    abrir({ titulo: `Editar «${m.tarea}»`, sub: `${v.placa}. Cambia el nombre o cada cuánto se hace. La última vez que se hizo y lo que costó antes se quedan como están.`,
+      campos: campoTxt('vtTarea', 'Qué se hace', m.tarea, '', 60) + `<div class="fields cols">${campoNum('vtCadaKm', 'Cada cuántos km (0 = no aplica)', num(m.cadaKm), 0, 200000)}${campoNum('vtCadaDias', 'Cada cuántos días (0 = no aplica)', num(m.cadaDias), 0, 3650)}</div>`,
+      primario: 'Guardar cambios', icono: 'check', listo: 'Listo: tarea cambiada.', base: Object.assign({}, v),
+      ops: () => {
+        const act = vehPorId(v.id) || v, tarea = valor('vtTarea'), cadaKm = entero('vtCadaKm'), cadaDias = entero('vtCadaDias');
+        if (tarea.length < 3) return fallar('Escribe qué se hace (por ejemplo, cambio de aceite).', 'vtTarea');
+        if (!(cadaKm >= 0) || !(cadaDias >= 0)) return fallar('Escribe cada cuánto: solo números (0 si no aplica).', 'vtCadaKm');
+        if (cadaKm === 0 && cadaDias === 0) return fallar('Escribe cada cuántos km o cada cuántos días (al menos uno).', 'vtCadaKm');
+        if (!mttosDe(act).some(x => x.id === mid)) return fallar('Esa tarea ya no está en el plan.');
+        return [['mezclar', 'vehiculos', v.id, { mttos: mttosDe(act).map(x => (x.id === mid ? Object.assign({}, x, { tarea, cadaKm, cadaDias }) : x)), historial: paso(act, `Plan de mantenimiento: cambió «${m.tarea}» (${cadaKm > 0 ? 'cada ' + km(cadaKm) : ''}${cadaKm > 0 && cadaDias > 0 ? ' o ' : ''}${cadaDias > 0 ? 'cada ' + cadaDias + ' días' : ''})`) }]];
+      } });
+  }
   function mttoQuitar(v, mid) {
     const m = mttosDe(v).find(x => x.id === mid); if (!m) return null;
     abrir({ titulo: `Quitar «${m.tarea}» del plan`, sub: `${v.placa}. Se quita del plan; el historial del carro guarda que se quitó.`, campos: '<p class="meta">Si solo cambió cada cuánto se hace, quítala y agrégala otra vez con los datos nuevos.</p>',
@@ -745,7 +833,7 @@
     libresHoy();
   }
   function aprobarCarro(r) {
-    const libres = libresPara(r.fecha, '', r.id), conds = Array.from(new Set((r.porRol === 'conductor' ? [r.por] : []).concat(CONDUCTORES)));
+    const libres = libresPara(r.fecha, '', r.id), conds = Array.from(new Set((r.porRol === 'conductor' ? [r.por] : []).concat(listaConductores())));
     abrir({ titulo: 'Aprobar el carro', sub: `${r.destino}: ${A().fechaCorta(r.fecha)}, ${r.hora}. Pidió ${r.por} (${r.motivo}).`,
       campos: libres.length ? campoSel('vrVeh', 'Carro libre ese día', libres.map(v => [v.id, `${v.placa} · ${v.marca} ${v.modelo}${v.estado === 'en-uso' ? ' (ahora en uso)' : ''}`]), libres[0].id) + campoSel('vrCond', 'Conductor', conds.map(x => [x, x]), conds[0])
         + '<p class="meta">Solo salen carros que no están en el taller, con el SOAT y la técnico-mecánica al día ese día, y sin otra reserva ni reunión.</p>'
@@ -759,6 +847,9 @@
         const veh = libresPara(act.fecha, '', act.id).find(x => x.id === valor('vrVeh')), cond = valor('vrCond');
         if (!veh) return fallar('Ese carro ya no está libre ese día. Cierra esto y vuelve a abrirlo.', 'vrVeh');
         if (cond.length < 3) return fallar('Escoge el conductor.', 'vrCond');
+        const otro = reservas().find(x => x.id !== act.id && x.estado === 'aprobada' && x.fecha === act.fecha && x.conductor === cond)
+          || D().necesidades.find(n => n.tipo === 'viaje' && n.conductor === cond && n.fechaReunion === act.fecha && ['pendiente', 'listo'].includes(n.estado) && n.vehiculoId);
+        if (otro) return fallar(`${cond} ya tiene otro viaje ese día${otro.destino ? ' (' + otro.destino + ')' : otro.comunidad ? ' (a la ' + otro.comunidad + ')' : ''}. Escoge otro conductor.`, 'vrCond');
         const txt = `${veh.placa} para el ${A().fechaCorta(act.fecha)} a las ${act.hora} (${act.destino}). Conductor: ${cond}.`;
         return [['mezclar', 'reservas', act.id, { estado: 'aprobada', vehiculoId: veh.id, placa: veh.placa, conductor: cond, decidePor: persona().nombre, decideCorreo: miCorreo(), decideEn: A().hoyISO() }]]
           .concat(Array.from(new Set([act.porRol, 'conductor'])).map(rol => aviso(rol, rol === 'conductor' && act.porRol !== 'conductor' ? 'Te tocó un viaje' : 'Te aprobaron el carro', txt)));
@@ -800,8 +891,8 @@
     // Si no es un viaje de reunión, puede ser una reserva aprobada: la que se tocó o, al salir desde la hoja de vida, la de hoy de ese carro (la llegada sigue la de su salida).
     const reserva = viaje ? null : reservaId ? resPorId(reservaId) : salida ? reservas().find(r => r.estado === 'aprobada' && r.vehiculoId === v.id && r.fecha === A().hoyISO() && !salioRes(r)) || null : (ultima && ultima.reservaId ? resPorId(ultima.reservaId) : null);
     const ligada = reserva && reserva.estado === 'aprobada' && reserva.vehiculoId === v.id ? reserva : null;
-    const condDefecto = viaje ? viaje.conductor : ligada && salida ? ligada.conductor : salida ? (esConductor() ? persona().nombre : CONDUCTORES[0]) : (v.conductor || '');
-    const conductores = Array.from(new Set([condDefecto, persona().nombre].concat(CONDUCTORES).filter(Boolean)));
+    const condDefecto = viaje ? viaje.conductor : ligada && salida ? ligada.conductor : salida ? (esConductor() ? persona().nombre : listaConductores()[0]) : (v.conductor || '');
+    const conductores = Array.from(new Set([condDefecto, persona().nombre].concat(listaConductores()).filter(Boolean)));
     abrir({ titulo: `${salida ? 'Salida' : 'Llegada'} del ${v.placa}`, sub: viaje ? `Viaje a la ${viaje.comunidad}. Conductor: ${viaje.conductor || 'sin asignar'}.` : ligada ? `Viaje a ${ligada.destino}. Conductor: ${ligada.conductor}.` : `${v.marca} ${v.modelo}. Va en ${km(v.km)}.`,
       campos: (esConductor() && salida ? '' : campoSel('vsCond', 'Conductor', conductores.map(x => [x, x]), condDefecto)) +
         `<div class="fields cols">${campoNum('vsKm', 'Kilometraje', '', 0, 2000000)}${campoSel('vsComb', 'Combustible', COMBUSTIBLE, salida ? 'lleno' : '1/2')}</div>` +
@@ -810,6 +901,7 @@
         (salida ? '' : '<p class="meta">Revisión al llegar: marca solo lo que notes (los puntos que no marques no se cuentan).</p>') +
         `<div class="field"><span class="lbl">${salida ? 'Revisión antes de salir: lo más importante' : 'Revisión: lo más importante'}</span>${REV_CRITICOS.map(filaRev).join('')}</div>` +
         `<div class="field"><span class="lbl">${salida ? 'Revisión antes de salir: lo demás' : 'Revisión: lo demás'}</span>${REV_OTROS.map(filaRev).join('')}</div><div id="vsAlerta"></div>` +
+        (salida ? `<div id="vsFalta" role="status"></div><div id="vsFotoProbBox" hidden>${campoFoto('vf_problema', 'Foto del problema (obligatoria si el carro no sale)')}</div>` : '') +
         `<div class="field"><label for="vsObs">Observaciones</label><textarea id="vsObs" rows="2" maxlength="300" placeholder="Ej: llegó con poco combustible"></textarea></div>`,
       primario: salida ? 'Registrar salida' : 'Registrar llegada', icono: 'llave', listo: salida ? 'Listo: salida registrada. Transporte y Bodega ya saben.' : 'Listo: llegada registrada. El carro quedó disponible.',
       base: Object.assign({}, v), esSalida: salida,
@@ -818,9 +910,9 @@
         if (salida) {
           const rev0 = revisionMarcada(), criticos = REV_CRITICOS.filter(([k]) => rev0[k] === false).map(([, t]) => t);
           if (criticos.length) {
-            const obs0 = valor('vsObs'), f0 = LADOS.map(([k]) => fotos['vf_' + k]).find(Boolean);
+            const obs0 = valor('vsObs'), f0 = fotos.vf_problema;   // la foto del problema es aparte de las 5 de la salida
             if (obs0.length < 5) return fallar(`Este carro no debe salir (${criticos.join(', ').toLowerCase()}). Cuenta qué falla en observaciones.`, 'vsObs');
-            if (!f0) return fallar('Toma al menos una foto del problema (cualquiera de las 5).');
+            if (!f0) return fallar('Toma una foto del problema (botón «Foto del problema»).', 'vf_problema');
             const desc = `${PREFIJO_REV} ${criticos.join(', ').toLowerCase()} mal. ${obs0}`.slice(0, 300);
             accion.listo = 'Listo: problema reportado. El carro no salió y ya les llegó el aviso.';
             return [['set', 'novedades', window.nube.idNuevo('no'), { vehiculoId: v.id, placa: v.placa, tipo: 'mantenimiento', fecha: ahora(), km: num(v.km), descripcion: desc, foto: f0,
@@ -856,9 +948,10 @@
         if (malos.length) ['jefe', 'gerente'].forEach(rol => ops.push(aviso(rol, 'Un carro tiene problemas', `${txt} ${obs}`)));
         return ops;
       } });
+    if (salida) pintarFalta();
   }
   function asignar(v) {
-    abrir({ titulo: `Conductor del ${v.placa}`, sub: 'El conductor que tiene el carro asignado.', campos: campoSel('vaCond', 'Conductor', [['', 'Sin conductor']].concat(CONDUCTORES.map(x => [x, x])), v.conductor || ''),
+    abrir({ titulo: `Conductor del ${v.placa}`, sub: 'El conductor que tiene el carro asignado.', campos: campoSel('vaCond', 'Conductor', [['', 'Sin conductor']].concat(listaConductores().map(x => [x, x])), v.conductor || ''),
       primario: 'Guardar', icono: 'check', listo: 'Listo: conductor guardado.', base: Object.assign({}, v),
       ops: () => [['mezclar', 'vehiculos', v.id, { conductor: valor('vaCond'), historial: paso(v, valor('vaCond') ? `Asignado a ${valor('vaCond')}` : 'Quedó sin conductor') }]] });
   }
@@ -967,7 +1060,12 @@
     const ns = novDe(v.id), es = entDe(v.id).slice(0, 6);
     if (lineaVeh !== v.id) { lineaVeh = v.id; lineaFiltro = 'todo'; lineaOrden = 'nuevo'; }
     const bts = [];
-    if (puedeReportar()) { bts.push(boton('novedad', 'Reportar novedad', 'aviso', v.id, 'small')); bts.push(boton('tanqueo', 'Registrar tanqueo', 'pagada', v.id, 'small')); }
+    // Reservas que vienen (aprobadas, con el carro ya puesto) y el aviso de un problema grave sin revisar.
+    const proximas = reservas().filter(r => r.vehiculoId === v.id && r.estado === 'aprobada' && String(r.fecha) >= A().hoyISO() && !llegoRes(r)).sort(porFecha).slice(0, 5);
+    const pendRev = reporteSinRevisar(v);
+    const htmlProx = (pendRev ? `<div class="aviso peligro" role="alert"><span><b>Este carro no debe salir:</b> tiene un problema reportado en la revisión que nadie ha revisado (${esH(String(pendRev.descripcion).slice(PREFIJO_REV.length).trim().slice(0, 120))}). Se revisa en Novedades.</span></div>` : '')
+      + (proximas.length ? `<div class="section-label">Reservas próximas (${proximas.length})</div><ul class="necesidades-l">${proximas.map(r => `<li><span class="nf-t"><b>${esH(A().fechaCorta(r.fecha))}, ${esH(r.hora)} · ${esH(r.destino)}</b><span class="meta">Conductor: ${esH(r.conductor || 'sin asignar')} · pidió ${esH(r.por)}</span></span></li>`).join('')}</ul>` : '');
+    if (puedeReportar()) { bts.push(boton('novedad', 'Reportar novedad', 'aviso', v.id, 'small')); bts.push(boton('tanqueo', 'Registrar tanqueo', 'gasolina', v.id, 'small')); }
     if ((esAdmin() || esConductor()) && v.estado === 'disponible') bts.push(boton('salida', 'Registrar salida', 'llave', v.id, 'primary small'));
     if (v.estado === 'en-uso' && (esAdmin() || (esConductor() && (v.conductor === persona().nombre || !persona().prueba)))) bts.push(boton('llegada', 'Registrar llegada', 'llave', v.id, 'primary small'));
     if (esAdmin()) {
@@ -977,7 +1075,7 @@
     }
     const fotosDe = e => LADOS.map(([k, t]) => { const f = foto(e.fotos && e.fotos[k]); return f ? `<img class="ent-foto" src="${esH(f)}" alt="${esH(t)} (${esH(e.placa)})">` : ''; }).join('');
     abrir({ titulo: `${v.placa} · ${v.marca} ${v.modelo}`, sub: `${v.anio}${v.color ? ' · ' + v.color : ''}`,
-      campos: `<div class="row">${App.pill(st[0], st[1])}</div>
+      campos: `<div class="row">${App.pill(st[0], st[1])}</div>${htmlProx}
         <dl class="datos"><dt>Conductor</dt><dd>${esH(v.conductor || 'Sin conductor')}</dd><dt>Kilometraje</dt><dd>${esH(km(v.km))}</dd></dl>
         <div class="docs">${docPill('SOAT', v.soat)}${docPill('Técnico-mecánica', v.tecno)}</div>
         ${bts.length ? `<div class="tarea-pie">${bts.join('')}</div>` : ''}
@@ -1010,6 +1108,8 @@
       filtroveh: () => { const s = A().S; s.filtro.vehiculos = !id || s.filtro.vehiculos === id ? '' : id; if (b.dataset.modo === 'todo') buscar = ''; A().pintarTodo(); return true; },
       novedad: () => puedeReportar() ? novedad(v) : null,
       tanqueo: () => puedeReportar() ? tanqueo(v) : null,
+      edtan: () => { const t = D().tanqueos.find(x => x.id === id); return t && esJefe() ? (corregirTanqueo(t), true) : null; },
+      bortan: () => { const t = D().tanqueos.find(x => x.id === id); return t && esJefe() ? (borrarTanqueo(t), true) : null; },
       revisar: () => n && !n.revisada && esAdmin() ? revisar(n) : null,
       docs: () => v && esAdmin() ? docs(v) : null,
       estado: () => v && esAdmin() ? estado(v) : null,
@@ -1017,6 +1117,13 @@
       mttohecho: () => v && esAdmin() ? mttoHecho(v, b.dataset.mtto) : null,
       mttonuevo: () => v && esAdmin() && mttosDe(v).length < 10 ? mttoNuevo(v) : null,
       mttoquitar: () => v && esAdmin() ? mttoQuitar(v, b.dataset.mtto) : null,
+      mttoeditar: () => v && esAdmin() ? mttoEditar(v, b.dataset.mtto) : null,
+      irpunto: () => {
+        const hechos = revisionMarcada(), k = (REVISION.find(([x]) => !(x in hechos)) || [])[0], r = k && document.querySelector(`#veCampos input[name="vr_${k}"]`);
+        if (!r) return true;
+        try { r.closest('.rev-fila').scrollIntoView({ block: 'center' }); } catch (e) { /* sin desplazar */ }
+        r.focus(); return true;
+      },
       salida: () => v && v.estado === 'disponible' && (esAdmin() || esConductor()) ? entrega(v, 'salida', b.dataset.viaje, b.dataset.reserva) : null,
       llegada: () => v && v.estado === 'en-uso' && (esAdmin() || esConductor()) ? entrega(v, 'llegada', b.dataset.viaje, b.dataset.reserva) : null,
       pedircarro: () => puedeReportar() ? (pedirCarro(), true) : null,
@@ -1029,12 +1136,51 @@
     // Si se abrió desde la hoja de vida, al terminar se vuelve a ella.
     if (desde && accion) accion.volver = desde;
   }
+  /* ---------- visor de fotos a pantalla completa (recibos, novedades y las 5 fotos de salida o llegada) ---------- */
+  let visor = null;
+  function cerrarVisor() {
+    if (!visor) return;
+    document.removeEventListener('keydown', visor.tecla, true);
+    // Primero se oculta (así comun.js lo da por cerrado: quita el fondo inerte y la marca «con-hoja») y justo después se quita de la página.
+    const el = visor.el; el.hidden = true; queueMicrotask(() => el.remove());
+    const foco = visor.antes; visor = null; try { if (foco && foco.isConnected) foco.focus({ preventScroll: true }); } catch (e) { /* sin foco */ } }
+  function abrirVisor(fotos, i) {
+    cerrarVisor();
+    const el = document.createElement('div'); el.className = 'visor'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', 'Foto a pantalla completa');
+    const varias = fotos.length > 1;
+    el.innerHTML = `<button type="button" class="visor-x" data-v="x" aria-label="Cerrar la foto">${window.ico('x')}</button>${varias ? `<button type="button" class="visor-n visor-ant" data-v="ant" aria-label="Foto anterior">‹</button><button type="button" class="visor-n visor-sig" data-v="sig" aria-label="Foto siguiente">›</button>` : ''}<img class="visor-img" alt=""><p class="visor-pie" role="status"></p>`;
+    document.body.appendChild(el);
+    const img = el.querySelector('.visor-img'), pie = el.querySelector('.visor-pie');
+    const poner = k => { visor.i = (k + fotos.length) % fotos.length; img.src = fotos[visor.i].src; img.alt = fotos[visor.i].alt; pie.textContent = `${fotos[visor.i].alt}${varias ? ` · ${visor.i + 1} de ${fotos.length}` : ''}`; };
+    // Escape y las flechas son del visor: no cierran ni mueven lo que hay detrás.
+    const tecla = ev => {
+      if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); cerrarVisor(); }
+      else if (varias && ev.key === 'ArrowRight') { ev.preventDefault(); ev.stopPropagation(); poner(visor.i + 1); }
+      else if (varias && ev.key === 'ArrowLeft') { ev.preventDefault(); ev.stopPropagation(); poner(visor.i - 1); }
+    };
+    visor = { el, tecla, i: i, antes: document.activeElement };
+    document.addEventListener('keydown', tecla, true);
+    el.addEventListener('click', ev => { const b = ev.target.closest('[data-v]'); if (b && b.dataset.v === 'ant') poner(visor.i - 1); else if (b && b.dataset.v === 'sig') poner(visor.i + 1); else if (!ev.target.closest('.visor-img')) cerrarVisor(); });
+    poner(i); el.querySelector('.visor-x').focus();
+  }
+  // Tocar una foto de un recibo, de una novedad o de una salida o llegada la abre grande; las de una misma salida van una tras otra.
+  const alTocarFoto = e => {
+    const im = e.target.closest && e.target.closest('img.nov-foto, img.factura, img.ent-foto'); if (!im) return;
+    const grupo = im.classList.contains('ent-foto') && im.parentElement ? Array.from(im.parentElement.querySelectorAll('img.ent-foto')) : [im];
+    abrirVisor(grupo.map(x => ({ src: x.src, alt: x.alt })), Math.max(0, grupo.indexOf(im)));
+  };
+  $('vehContenido').addEventListener('click', alTocarFoto);
+  $('veCampos').addEventListener('click', alTocarFoto);
   $('vehContenido').addEventListener('click', alTocar);
   $('veCampos').addEventListener('click', e => { if (e.target.closest('[data-accion]')) alTocar(e); });
   $('veCampos').addEventListener('change', alEscogerFoto);
   $('veCampos').addEventListener('change', e => { if (e.target.matches && e.target.matches('input[type="radio"][name^="vr_"]')) alCambiarRevision(); });
   // El buscador repinta 300 ms después de la última tecla y deja el cursor donde estaba.
-  const buscarLuego = UI.retardar(() => { const q = $('qVeh'), pos = q ? q.selectionStart : 0; pintar(); const n = $('qVeh'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} } }, 300);
+  const buscarLuego = UI.retardar(() => {
+    const q = $('qVeh'), pos = q ? q.selectionStart : 0, seguia = !!q && document.activeElement === q;
+    pintar();
+    const n = $('qVeh'); if (n && seguia && $('shVeh').hidden) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} }
+  }, 300);
   $('vehContenido').addEventListener('input', e => { if (e.target.id === 'qVeh') { buscar = e.target.value; buscarLuego(); } });
   $('veForm').addEventListener('submit', e => { e.preventDefault(); guardar(); });
 
@@ -1043,7 +1189,7 @@
     clave: 'vehiculos', hoja: 'Carros', titulo: 'Base de datos: carros', sub: 'Una fila por carro', archivo: 'Base de datos Carros',
     acciones: ['Agregar', 'Cambiar', 'Eliminar'], puedeSubir: esJefe, puedeEliminar: esJefe,
     columnas: [
-      { t: 'Placa', k: 'placa', clave: true, obligatoria: true, fija: true, unico: true, mayus: true, max: 10, ancho: 12 },
+      { t: 'Placa', k: 'placa', clave: true, obligatoria: true, fija: true, unico: true, normaliza: v => String(v == null ? '' : v).toUpperCase().replace(/[^A-Z0-9]/g, ''), mayus: true, max: 10, ancho: 12 },
       { t: 'Marca', k: 'marca', obligatoria: true, max: 30, ancho: 16 }, { t: 'Modelo', k: 'modelo', obligatoria: true, max: 40, ancho: 18 },
       { t: 'Año', k: 'anio', tipo: 'entero', min: 1990, max: 2100, obligatoria: true }, { t: 'Color', k: 'color', max: 20, ancho: 14 },
       { t: 'Kilometraje', k: 'km', tipo: 'entero', min: 0, obligatoria: true },
@@ -1063,6 +1209,9 @@
       if (!v) return 'Ese carro ya no existe.';
       if (v.estado === 'en-uso') return 'Está en uso: espera a que llegue.';
       if (D().entregas.some(e => e.vehiculoId === id) || D().novedades.some(n => n.vehiculoId === id)) return 'Tiene salidas, llegadas o novedades registradas: se guardan como rastro.';
+      if (D().tanqueos.some(t => t.vehiculoId === id)) return 'Tiene tanqueos registrados (con sus recibos): se guardan como rastro.';
+      if (reservas().some(r => r.vehiculoId === id)) return 'Tiene reservas de carro: se guardan como rastro.';
+      if (D().necesidades.some(n => n.vehiculoId === id || (Array.isArray(n.vehiculos) && n.vehiculos.some(x => x && x.vehiculoId === id)))) return 'Está asignado a una reunión o a un viaje: se guarda como rastro.';
       return null;
     },
     opsAgregar: x => [['set', 'vehiculos', 've-' + String(x.v.placa).toLowerCase().replace(/[^a-z0-9]/g, ''), { placa: x.v.placa, marca: x.v.marca, modelo: x.v.modelo, anio: x.v.anio, color: x.v.color, conductor: '', km: x.v.km, soat: x.v.soat, tecno: x.v.tecno, estado: 'disponible',

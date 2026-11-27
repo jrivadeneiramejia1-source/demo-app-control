@@ -112,8 +112,13 @@
       if (!soportado() || !configurado() || Notification.permission !== 'granted') return { ok: false, motivo: 'inactivo' };
       if (!window.nube || !window.nube.token) return { ok: false, motivo: NUBE_NO };
       const reg = await navigator.serviceWorker.getRegistration();
-      const sub = reg && await reg.pushManager.getSubscription();
+      let sub = reg && await reg.pushManager.getSubscription();
       if (!sub) { lsSet(false); return { ok: false, motivo: 'inactivo' }; }
+      // Si la llave VAPID de config.js cambió desde que se suscribió este teléfono, esa suscripción ya no sirve: se renueva con la llave nueva.
+      if (cfg().vapid && !mismaLlave(sub, b64uABytes(cfg().vapid))) {
+        await sub.unsubscribe();
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uABytes(cfg().vapid) });
+      }
       await guardar(sub);
       lsSet(true);
       return { ok: true, motivo: '' };
@@ -146,5 +151,12 @@
     } catch (e) { return { ok: false, enviados: 0, motivo: (e && (e.motivo || e.message)) || 'error' }; }
   }
 
-  window.Push = Object.freeze({ soportado, estado, activar, actualizarRol, desactivar, enviar });
+  /** Etiqueta de una notificación: una por evento (módulo + un resumen corto del aviso), para que dos avisos distintos del mismo módulo
+      no se pisen y el mismo aviso repetido sí se reemplace. */
+  function etiqueta(modulo, titulo, texto) {
+    let h = 5381; const t = String(titulo || '') + '|' + String(texto || '');
+    for (let i = 0; i < t.length; i++) h = ((h * 33) ^ t.charCodeAt(i)) >>> 0;
+    return `${String(modulo || 'aviso').slice(0, 20)}-${h.toString(36)}`;
+  }
+  window.Push = Object.freeze({ soportado, estado, activar, actualizarRol, desactivar, enviar, etiqueta });
 })();

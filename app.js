@@ -15,6 +15,7 @@
   const S = {
     persona: null,
     vista: 'inicio',
+    quien: '',
     datos: { equipos: [], hojas: [], tareasEq: [], compras: [], articulos: [], movimientos: [], solicitudes: [], vehiculos: [], novedades: [], entregas: [], tanqueos: [], reservas: [], proveedores: [], reuniones: [], necesidades: [], avisos: [], usuarios: [], codigos: [], codigosDireccion: [], buzon: [], ajustesApp: [], invitaciones: [] },
     llegaron: new Set(),   // colecciones que ya respondieron al menos una vez
     suscritas: new Set(),  // colecciones a las que esta persona se suscribió (las demás no las puede leer y nunca «cargan»)
@@ -113,7 +114,7 @@
     if (S.entrando) return;
     const err = $('ctErr'), crear = modoCuenta === 'crear';
     const nombre = $('ctNombre').value.trim(), correo = $('ctCorreo').value.trim(), clave = $('ctClave').value, codigo = nube.limpiarCodigo($('ctCodigo').value);
-    const falla = (msg, id) => { err.textContent = msg; err.hidden = false; if (id) $(id).focus(); };
+    const falla = (msg, id) => { err.textContent = msg; err.hidden = false; UI.marcarInvalido(id ? $(id) : null, 'ctErr'); if (id) $(id).focus(); };
     err.hidden = true;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correo)) return falla('Escribe tu correo.', 'ctCorreo');
     if (!clave) return falla('Escribe la clave.', 'ctClave');
@@ -125,13 +126,22 @@
     S.entrando = true; $('ctBoton').disabled = true;
     try {
       if (!crear) { await nube.entrarCuenta(correo, clave); return; }
-      if (!conCodigo) { await nube.crearCuenta(correo, clave); return; }   // sigue la pantalla de confirmar el correo
-      S.registrando = { nombre, codigo };
-      await nube.crearCuenta(correo, clave);
-      try { await nube.usarCodigo(nombre, codigo); }
-      catch (e) { S.registrando = null; $('cuNombre').value = nombre; $('cuCodigo').value = $('ctCodigo').value; mostrarCuenta({ sinPerfil: true, correo }, nube.explicar(e)); }
-    } catch (e) { S.registrando = null; falla(nube.explicar(e)); }
+      // Con código: se guardan el nombre y el código en la memoria y se aplican solos cuando el correo quede confirmado
+      // (Firebase solo deja crear el perfil con el correo confirmado: hacerlo antes daba un falso «Ese código no sirve»).
+      S.pendienteCodigo = conCodigo ? { nombre, codigo, correo: correo.toLowerCase() } : null;
+      await nube.crearCuenta(correo, clave);   // sigue la pantalla de confirmar el correo
+    } catch (e) { S.pendienteCodigo = null; falla(nube.explicar(e)); }
     finally { S.entrando = false; $('ctBoton').disabled = false; $('ctClave').value = ''; }
+  }
+  async function aplicarCodigoPendiente(p, pend, mia) {
+    S.pendienteCodigo = null; S.registrando = true;
+    try { await nube.usarCodigo(pend.nombre, pend.codigo); }
+    catch (e) {
+      S.registrando = null;
+      if (mia !== S.sesion) return;
+      $('cuNombre').value = pend.nombre; $('cuCodigo').value = pend.codigo;
+      mostrarCuenta({ sinPerfil: true, correo: p.correo }, nube.explicar(e));
+    }
   }
   // Cuenta sin rol todavía (código malo o sin escribir) o con el acceso quitado por el Jefe.
   function mostrarCuenta(p, msg) {
@@ -182,12 +192,22 @@
     const mia = ++S.sesion;
     dejarDeEscuchar();
     cerrarHoja('shPersona');
+    // Otra persona en el mismo teléfono (o cerró sesión): se borran los datos de la anterior y lo que tenía a medias (vistas previas de Excel, fotos).
+    const quien = p ? String(p.correo || '').toLowerCase() : '';
+    if (quien !== S.quien) {
+      S.quien = quien;
+      Object.keys(S.datos).forEach(k => { S.datos[k] = []; });
+      window.dispatchEvent(new CustomEvent('app:persona-cambio'));
+    }
     if (!p || !(p.sinPerfil || p.sinAcceso || p.sinConfirmar)) S.errCuenta = '';
     if (!p) { $('cuNombre').value = ''; $('cuCodigo').value = ''; $('ctNombre').value = ''; $('ctCodigo').value = ''; $('ctCodigoD').open = false; }
-    if (!p) { S.persona = null; S.registrando = null; error(S.motivoSalida || ''); S.motivoSalida = ''; pintarEntrada(); mostrar('vEntrada'); return; }
+    if (!p) { S.persona = null; S.registrando = null; S.pendienteCodigo = null; error(S.motivoSalida || ''); S.motivoSalida = ''; pintarEntrada(); mostrar('vEntrada'); return; }
     if (p.sinPerfil || p.sinAcceso || p.sinConfirmar) {
       S.persona = null;
       if (p.sinPerfil && S.registrando) return;   // se está guardando el código recién escrito: espera el perfil
+      // Correo ya confirmado y había un código guardado al crear la cuenta: se aplica ahora.
+      const pend = S.pendienteCodigo;
+      if (p.sinPerfil && pend && String(p.correo || '').toLowerCase() === pend.correo) { aplicarCodigoPendiente(p, pend, mia); return; }
       mostrarCuenta(p, p.error || ''); return;
     }
     S.registrando = null;
@@ -328,6 +348,17 @@
     pintarTodo();
   }
   const cargando = col => S.suscritas.has(col) && !S.llegaron.has(col);
+  /** Tocar una notificación con la app ya abierta (llega por mensaje del sw.js o porque cambió el # de la dirección): abre ese módulo. */
+  function abrirDesdeAviso(url) {
+    if (!S.persona) return;
+    let pedida;
+    try { pedida = (new URL(url || location.href, location.href).hash || '').slice(1); } catch (e) { return; }
+    if (!VISTAS[pedida] || !puedeVer(pedida)) return;
+    irA(pedida);
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* sin limpiar la dirección */ }
+  }
+  window.addEventListener('hashchange', () => abrirDesdeAviso(location.href));
+  try { if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', e => { if (e.data && e.data.tipo === 'abrir') abrirDesdeAviso(e.data.url); }); } catch (e) { /* sin service worker */ }
 
   // Cuenta lo pendiente de cada módulo para la persona que tiene la sesión.
   function pendientes() {
@@ -348,12 +379,12 @@
     $('inicioSub').textContent = p.cargo && p.cargo !== p.rolTxt ? `${p.cargo} · ${p.rolTxt}` : p.rolTxt;
     const n = pendientes();
     const todas = [
-      { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: ['gerente', 'jefe', 'asistente', 'coordcompras', 'consulta'] },
-      { mod: 'inventario', k: 'i-ent', n: n.inv.porEntregar, lbl: 'Pedidos de material por entregar', icono: 'entrega', tono: 'listo', roles: ['jefe', 'asistente'] },
+      { mod: 'inventario', k: 'i-bod', n: n.inv.faltan, lbl: 'Artículos agotados o bajos', icono: 'caja', tono: 'peligro', roles: () => ['gerente', 'jefe', 'bodega', 'coordina', 'ver'].includes(permiso('inventario')) },
+      { mod: 'inventario', k: 'i-ent', n: n.inv.porEntregar, lbl: 'Pedidos de material por entregar', icono: 'entrega', tono: 'listo', roles: () => ['jefe', 'bodega'].includes(permiso('inventario')) },
       { mod: 'inventario', k: 'i-aut', n: n.inv.porAutorizarMias, lbl: 'Compras que te toca autorizar', icono: 'carrito', tono: 'org', roles: () => permiso('inventario') === 'coordina' || (permiso('inventario') === 'gerente' && tieneExtra('general')) },
-      { mod: 'inventario', k: 'i-com', n: n.inv.porComprar, lbl: 'Compras autorizadas por hacer', icono: 'carrito', tono: 'listo', roles: ['compras'] },
-      { mod: 'inventario', k: 'i-cur', n: n.inv.enCurso, lbl: 'Compras en curso', icono: 'carrito', tono: 'listo', roles: ['gerente', 'coordcompras', 'financiero', 'consulta'] },
-      { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: ['gerente', 'jefe', 'coordcompras', 'compras', 'financiero', 'consulta'] },
+      { mod: 'inventario', k: 'i-com', n: n.inv.porComprar, lbl: 'Compras autorizadas por hacer', icono: 'carrito', tono: 'listo', roles: () => permiso('inventario') === 'compra' || (permiso('inventario') === 'bodega' && tieneExtra('compra')) },
+      { mod: 'inventario', k: 'i-cur', n: n.inv.enCurso, lbl: 'Compras en curso', icono: 'carrito', tono: 'listo', roles: () => ['gerente', 'coordina', 'finanzas', 'ver'].includes(permiso('inventario')) },
+      { mod: 'inventario', k: 'i-sin', n: n.inv.sinAutorizar, lbl: 'Compras sin autorizar', icono: 'aviso', tono: 'peligro', roles: () => ['gerente', 'jefe', 'coordina', 'compra', 'finanzas', 'ver'].includes(permiso('inventario')) },
       { mod: 'inventario', k: 'i-mis', n: n.inv.misPedidos, lbl: 'Tus pedidos de material en espera', icono: 'caja', tono: 'listo', roles: () => ['pide', 'finanzas'].includes(permiso('inventario')) },
       { mod: 'vehiculos', k: 'i-nov', n: n.novedades, lbl: 'Novedades de carros sin revisar', icono: 'carro', tono: 'org', roles: ['jefe', 'carros', 'asistente'] },
       { mod: 'vehiculos', k: 'i-via', n: n.veh.mias, lbl: 'Viajes por registrar', icono: 'llave', tono: 'listo', roles: ['conductor'] },
@@ -400,7 +431,9 @@
     // Los avisos del inventario van a la función de cada quien (bodega, compras, jefe, gerente), que sale de su nivel y no solo de su rol.
     const fn = window.Inventario ? window.Inventario.funcion() : '';
     // Bodega con el permiso extra «compra» también recibe los avisos de Compras.
-    return S.datos.avisos.filter(a => a.para === rol || a.para === 'todos' || (fn && a.para === fn) || (a.para === 'compras' && rol === 'asistente' && tieneExtra('compra'))).sort((a, b) => String(b.en).localeCompare(String(a.en)));
+    // La función «coordina» recibe lo que se avisa al Coordinador de compras (rol «coordcompras»), aunque la persona tenga otro rol.
+    const paraFn = fn === 'coordina' ? 'coordcompras' : fn;
+    return S.datos.avisos.filter(a => a.para === rol || a.para === 'todos' || (paraFn && a.para === paraFn) || (a.para === 'compras' && permiso('inventario') === 'bodega' && tieneExtra('compra'))).sort((a, b) => String(b.en).localeCompare(String(a.en)));
   };
   // Cada persona marca SUS avisos como leídos (la marca es su id de cuenta), aunque haya varias personas con el mismo rol.
   const yo = () => nube.uid();
@@ -510,7 +543,7 @@
     $('btnAvisos').onclick = abrirAvisos;
     $('btnSalir').onclick = async () => { cerrarHoja('shPersona'); await nube.salir(); };
     // «Personas y permisos» (gente.js, 34 KB) solo lo usa la Jefe: se descarga la primera vez que lo abre.
-    $('btnGente').onclick = () => { cerrarHoja('shPersona'); UI.cargarScript('gente.js?v=9').then(() => window.Gente.abrir(), () => toast('No se pudo abrir el panel. Revisa la conexión y vuelve a intentar.')); };
+    $('btnGente').onclick = () => { cerrarHoja('shPersona'); UI.cargarScript('gente.js?v=11').then(() => window.Gente.abrir(), () => toast('No se pudo abrir el panel. Revisa la conexión y vuelve a intentar.')); };
     $('entradaModo').addEventListener('click', e => { const b = e.target.closest('[data-modo]'); if (!b) return; modoEntrada = b.dataset.modo; $('entradaErr').hidden = true; pintarModoEntrada(); });
     $('ctCambiar').onclick = () => { modoCuenta = modoCuenta === 'crear' ? 'entrar' : 'crear'; $('ctErr').hidden = true; pintarModoEntrada(); };
     $('ctForm').addEventListener('submit', e => { e.preventDefault(); enviarCuenta(); });

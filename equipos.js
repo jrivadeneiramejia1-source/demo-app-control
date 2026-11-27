@@ -45,7 +45,7 @@
 
   /* ---------- datos derivados ---------- */
   const equipos = () => D().equipos.slice().sort((a, b) => String(a.serial).localeCompare(String(b.serial)));
-  const eqPorId = id => D().equipos.find(e => e.id === id) || null;
+  const eqPorId = id => window.UI.indice(D().equipos).get(id) || null;
   const hojaPorId = id => D().hojas.find(h => h.id === id) || null;
   const lista = v => (Array.isArray(v) ? v.filter(x => x && typeof x === 'object') : []);
   const devueltos = h => new Set(lista(h.devoluciones).flatMap(d => (Array.isArray(d.equipos) ? d.equipos : [])));
@@ -325,11 +325,12 @@
   const campoSel = (id, lbl, ops, v) => `<div class="field"><label for="${esH(id)}">${lbl}</label><select id="${esH(id)}">${ops.map(([val, t]) => `<option value="${esH(val)}"${val === v ? ' selected' : ''}>${esH(t)}</option>`).join('')}</select></div>`;
   const marca = (id, lbl, ok, extra) => `<label class="marca-fila"><input type="checkbox" id="${esH(id)}"${ok ? ' checked' : ''}${extra || ''}><span>${lbl}</span></label>`;
   const valor = id => ($(id) ? $(id).value.trim() : '');
-  function fallar(msg, id) { const e = $('eqErr'); e.textContent = msg; e.hidden = false; if (id && $(id)) $(id).focus(); return false; }
+  function fallar(msg, id) { const e = $('eqErr'); e.textContent = msg; e.hidden = false; window.UI.marcarInvalido(id ? $(id) : null, 'eqErr'); if (id && $(id)) $(id).focus(); return false; }
   function abrir(o) {
     accion = o;
     $('eqT').textContent = o.titulo; $('eqSub').textContent = o.sub || '';
     $('eqCampos').innerHTML = o.campos || '';
+    $('eqCampos').querySelectorAll('table').forEach(t => { if (!t.parentElement.classList.contains('tabla-scroll')) { const w = document.createElement('div'); w.className = 'tabla-scroll'; t.replaceWith(w); w.appendChild(t); } });
     window.llenarIconos($('eqCampos'));
     const pri = $('eqPrimario'); pri.hidden = !o.primario; pri.disabled = false;
     pri.innerHTML = o.primario ? (o.icono ? window.ico(o.icono) : '') + esH(o.primario) : '';
@@ -341,6 +342,7 @@
   }
   function aviso(para, titulo, txt, soloActas) {
     if (!para || para === miRol()) return null;
+    txt = String(txt || ''); if (txt.length > 780) txt = txt.slice(0, 777) + '…';   // las reglas no dejan avisos de más de 800 letras: un acta grande no debe fallar por esto
     pushPendientes.push({ para, titulo, texto: txt, soloActas: !!soloActas });
     return ['set', 'avisos', window.nube.idNuevo('av'), { para, titulo, texto: txt, en: ahora(), modulo: 'equipos', leido: {}, deUid: window.nube.uid() }];
   }
@@ -356,12 +358,14 @@
     const lote = ops.filter(Boolean), envios = pushPendientes.slice();
     guardando = true; $('eqPrimario').disabled = true;
     try {
-      if (lote.length) await window.nube.lote(lote);
+      // Hasta 400 escrituras por lote (el límite de Firebase es 500): una verificación de muchos equipos se parte sola.
+      for (let i = 0; i < lote.length; i += 400) await window.nube.lote(lote.slice(i, i + 400));
       A().cerrarHoja('shEq');
       try { $('eqContenido').focus({ preventScroll: true }); } catch (e) {}
       A().toast(accion.listo);
-      const volver = accion.volver;
+      const volver = accion.volver, despues = accion.alGuardar;
       accion = null;
+      if (despues) despues();
       notificar(envios);
       if (volver) setTimeout(() => { const e = eqPorId(volver); if (e && $('shEq').hidden) ver(e); }, 350);
     } catch (e) {
@@ -372,29 +376,36 @@
   }
   function notificar(envios) {
     if (!window.Push || !envios.length) return;
-    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#equipos', etiqueta: 'equipos', exige: e.soloActas && e.para === 'soporte' ? 'actas' : undefined })).catch(() => {}));
+    envios.forEach(e => Promise.resolve(window.Push.enviar(e.para, { titulo: e.titulo, texto: e.texto, url: './#equipos', etiqueta: window.Push.etiqueta('equipos', e.titulo, e.texto), exige: e.soloActas && e.para === 'soporte' ? 'actas' : undefined })).catch(() => {}));
   }
 
   /* ---------- firma en la pantalla ---------- */
   const campoFirma = (id, lbl, cc) => `<div class="field firma-campo"><span class="lbl">${esH(lbl)}</span>
       <canvas id="${esH(id)}" class="firma-pad" width="600" height="200" aria-label="${esH(lbl)}: firma con el dedo"></canvas>
-      <div class="row"><span class="meta" id="${esH(id)}Txt">Firma con el dedo dentro del cuadro.</span>${boton('borrarfirma', 'Borrar', 'borrar', id, 'ghost small')}</div>
+      <div class="row"><span class="meta" id="${esH(id)}Txt">Firma con el dedo dentro del cuadro.</span>${boton('deshacerfirma', 'Deshacer', 'atras', id, 'ghost small')}${boton('borrarfirma', 'Borrar', 'borrar', id, 'ghost small')}</div>
       ${cc ? `<span class="meta">C.C. <b id="${esH(id)}CC">${esH(cc)}</b></span>` : ''}</div>`;
   const pads = {};
-  /** Prepara un cuadro de firma: se dibuja con el dedo o el mouse. */
+  const FIRMA_AYUDA = 'Firma con el dedo dentro del cuadro.';
+  /** Prepara un cuadro de firma: se dibuja con el dedo o el mouse. Guarda cada trazo para poder deshacer el último. */
   function activarFirma(id) {
     const cv = $(id); if (!cv) return;
-    const ctx = cv.getContext('2d'), pad = { puntos: 0 };
-    ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#13212b';
-    ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
-    let antes = null;
+    const ctx = cv.getContext('2d'), pad = { puntos: 0, trazos: [] };
+    const blanco = () => { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.lineWidth = 3.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#13212b'; };
+    const rayar = (a, b) => { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
+    const texto = () => { const t = $(id + 'Txt'); if (t) t.textContent = pad.puntos ? 'Firma lista.' : FIRMA_AYUDA; };
+    blanco();
+    pad.deshacer = () => { pad.trazos.pop(); blanco(); pad.puntos = 0; pad.trazos.forEach(tr => { for (let i = 1; i < tr.length; i++) { rayar(tr[i - 1], tr[i]); pad.puntos++; } }); texto(); };
+    pad.borrar = () => { pad.trazos = []; pad.puntos = 0; blanco(); texto(); };
+    let antes = null, trazo = null;
     const punto = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * cv.width / r.width, y: (e.clientY - r.top) * cv.height / r.height }; };
-    cv.onpointerdown = e => { e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {} antes = punto(e); };
-    cv.onpointermove = e => { if (!antes) return; e.preventDefault(); const p = punto(e); ctx.beginPath(); ctx.moveTo(antes.x, antes.y); ctx.lineTo(p.x, p.y); ctx.stroke(); pad.puntos++; antes = p; const t = $(id + 'Txt'); if (t) t.textContent = 'Firma lista.'; };
-    cv.onpointerup = cv.onpointercancel = () => { antes = null; };
+    // Solo cuenta el primer dedo: la palma o un segundo dedo apoyados en la pantalla no dibujan.
+    cv.onpointerdown = e => { if (e.isPrimary === false) return; e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (x) {} antes = punto(e); trazo = [antes]; pad.trazos.push(trazo); };
+    cv.onpointermove = e => { if (!antes || e.isPrimary === false) return; e.preventDefault(); const p = punto(e); rayar(antes, p); trazo.push(p); pad.puntos++; antes = p; texto(); };
+    cv.onpointerup = cv.onpointercancel = e => { if (e && e.isPrimary === false) return; antes = null; trazo = null; };
     pads[id] = pad;
   }
-  function borrarFirma(id) { const cv = $(id); if (!cv) return; const ctx = cv.getContext('2d'); ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height); pads[id] = { puntos: 0 }; const t = $(id + 'Txt'); if (t) t.textContent = 'Firma con el dedo dentro del cuadro.'; }
+  function borrarFirma(id) { if (pads[id]) pads[id].borrar(); }
+  function deshacerFirma(id) { if (pads[id]) pads[id].deshacer(); }
   const firmada = id => !!(pads[id] && pads[id].puntos >= 8);
   /** La firma como imagen pequeña (PNG). */
   function leerFirma(id) {
@@ -434,6 +445,7 @@
         if (p.length < 5) return fallar('Escribe el nombre completo de quien recibe.', 'ehPersona');
         if (ced.length < 5 || ced.length > 12) return fallar('Escribe la cédula (solo números).', 'ehCedula');
         if (!ids.length) return fallar('Escoge al menos un equipo.');
+        if (ids.length > 20) return fallar(`Un acta lleva hasta 20 equipos y marcaste ${ids.length}. Haz otra acta con los demás.`);
         if (cambiaron(ids)) return fallar('Un equipo cambió mientras tenías esto abierto. Ciérralo y ábrelo otra vez.');
         if (!firmada('ehFirmaP')) return fallar('Falta la firma de quien recibe.');
         const fp = leerFirma('ehFirmaP'); if (fp.length > MAX_FIRMA) return fallar('La firma quedó muy pesada. Bórrala y fírmala más sencilla.');
@@ -450,7 +462,9 @@
   function devolucion(clave) {
     const conEquipos = personas().filter(p => p.hojas.some(h => porDevolver(h).some(x => { const e = eqPorId(x.id); return e && e.estado === 'asignado'; })));
     if (!conEquipos.length) { A().toast('Nadie tiene equipos por devolver.'); return null; }
-    const elegido = conEquipos.find(p => p.clave === clave) || conEquipos[0];
+    // Si pidieron los equipos de una persona concreta y no tiene acta abierta, se avisa (no se abre la devolución de otra persona).
+    const elegido = clave ? conEquipos.find(p => p.clave === clave) : conEquipos[0];
+    if (!elegido) { A().toast('Esa persona tiene equipos asignados, pero ninguno con el acta de entrega abierta. Revisa sus actas o corrige el equipo desde su hoja de vida.'); return null; }
     abrir({ titulo: 'Devolución de equipos', sub: 'Se anota en la misma acta de la entrega, con la fecha de devolución y la firma. Lo que llega queda en Recibidos.',
       campos: campoSel('ehQuien', 'Quién devuelve', conEquipos.map(p => [p.clave, `${p.nombre}${p.cedula ? ' · C.C. ' + p.cedula : ''}`]), elegido.clave) +
         campoTxt('ehFecha', 'Fecha de devolución', hoy(), '', 10, 'date') + `<div class="acc-rap">${boton('escanear', 'Escanear un equipo', 'codigo', '', 'small', ' data-modo="devolucion"')}</div><div class="field" id="ehLista"></div>` +
@@ -528,22 +542,23 @@
   function corregir(h) {
     abrir({ titulo: `Corregir acta ${numActa(h)}`, sub: `Problema: ${h.notaRevision || 'sin nota'}`,
       campos: `<div class="fields cols">${campoTxt('ehPersona', 'Nombre', h.persona, '', 80)}${campoTxt('ehCedula', 'Cédula', h.cedula, '', 12)}</div>` +
-        `<div class="fields cols">${campoSel('ehProy', 'Proyecto', PROYECTOS.map(p => [p[0], p[0]]), h.proyecto)}${campoTxt('ehCodigo', 'Código del proyecto', h.codigoProyecto, '', 20)}</div>` +
+        `<div class="fields cols">${campoSel('ehProy', 'Proyecto', (PROYECTOS.some(p => p[0] === h.proyecto) || !h.proyecto ? PROYECTOS.map(p => p[0]) : [h.proyecto].concat(PROYECTOS.map(p => p[0]))).map(n => [n, n]), h.proyecto || PROYECTOS[0][0])}${campoTxt('ehCodigo', 'Código del proyecto', h.codigoProyecto, '', 20)}</div>` +
         '<p class="meta">Si el problema es la firma de la entrega, que la persona firme otra vez (si no, déjalo en blanco):</p>' + campoFirma('ehFirmaP', 'Firma de quien recibe (otra vez)', ''),
       primario: 'Mandar otra vez a Soporte', icono: 'enviar', listo: 'Listo: el acta volvió a Soporte para revisarla.', baseHoja: Object.assign({}, h),
       ops: () => {
         const ced = valor('ehCedula').replace(/\D/g, ''), p = valor('ehPersona');
         if (p.length < 5 || ced.length < 5 || ced.length > 12) return fallar('Revisa el nombre y la cédula.');
-        const cambio = { persona: p, cedula: ced, proyecto: valor('ehProy'), codigoProyecto: valor('ehCodigo'), revision: 'pendiente', revisadaPor: '', revisadaEn: '' };
+        const cambio = { persona: p, cedula: ced, proyecto: valor('ehProy'), codigoProyecto: valor('ehCodigo'), revision: 'pendiente', revisadaPor: '', revisadaEn: '', notaRevision: '' };
         if (firmada('ehFirmaP')) { cambio.firmaPersona = leerFirma('ehFirmaP'); if (cambio.firmaPersona.length > MAX_FIRMA) return fallar('La firma quedó muy pesada. Bórrala y fírmala más sencilla.'); }
         const ops = [['mezclar', 'hojas', h.id, cambio]];
         // Si cambió el nombre o la cédula, los equipos que siguen con esa persona quedan con el dato corregido.
-        porDevolver(h).forEach(x => { const e = eqPorId(x.id); if (e && e.estado === 'asignado' && (e.asignadoA !== p || e.asignadoCedula !== ced)) ops.push(['mezclar', 'equipos', e.id, { asignadoA: p, asignadoCedula: ced, historial: conPaso(e, { tipo: 'correccion', persona: p, nota: `Se corrigió el acta ${numActa(h)}`, hojaId: h.id }) }]); });
+        porDevolver(h).forEach(x => { const e = eqPorId(x.id); if (e && e.estado === 'asignado' && (e.asignadoA !== p || e.asignadoCedula !== ced || (e.proyecto || '') !== valor('ehProy'))) ops.push(['mezclar', 'equipos', e.id, { asignadoA: p, asignadoCedula: ced, proyecto: valor('ehProy'), historial: conPaso(e, { tipo: 'correccion', persona: p, nota: `Se corrigió el acta ${numActa(h)}`, hojaId: h.id }) }]); });
         return ops.concat([aviso('soporte', 'Acta corregida para revisar', `${persona().nombre} corrigió el acta ${numActa(h)} de ${p}.`, true)]);
       } });
     activarFirma('ehFirmaP');
   }
   function programar(e) {
+    if (!activos().length) { A().toast('No hay equipos para programarles tareas.'); return true; }
     const ops = activos().map(x => [x.id, `${x.serial} · ${x.tipo} ${x.marca} (${x.estado === 'bodega' ? 'bodega' : x.asignadoA || x.estado})`]);
     const manana = (() => { const d = new Date(hoy() + 'T12:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
     abrir({ titulo: 'Programar mantenimiento o backup', sub: 'Le llega al Encargado de equipos con aviso.',
@@ -583,12 +598,12 @@
   }
   function nuevo() {
     abrir({ titulo: 'Registrar equipo nuevo', sub: 'Queda en bodega, listo para entregar.',
-      campos: `<div class="fields cols">${campoTxt('ehSerial', 'Serial', '', 'Ej: DEMO-0013', 30)}${campoSel('ehTipo', 'Tipo', TIPOS_EQ.map(t => [t, t]), 'Portátil')}</div>` +
+      campos: `<div class="fields cols"><div class="field"><label for="ehSerial">Serial</label><div class="con-scan"><input id="ehSerial" type="text" maxlength="40" autocomplete="off" placeholder="Ej: DEMO-0013"><button type="button" class="btn small" data-accion="escanear" data-modo="nuevo">Escanear</button></div></div>${campoSel('ehTipo', 'Tipo', TIPOS_EQ.map(t => [t, t]), 'Portátil')}</div>` +
         `<div class="fields cols">${campoTxt('ehMarca', 'Marca', '', 'Ej: Lenovo', 40)}${campoTxt('ehModelo', 'Modelo', '', 'Ej: ThinkPad E14', 60)}</div>` + campoTxt('ehObs', 'Observaciones', '', '', 160) + camposCompra({}),
       primario: 'Registrar', icono: 'mas', listo: 'Listo: equipo registrado en bodega.',
       ops: () => {
         const serial = valor('ehSerial').toUpperCase(), marcaV = valor('ehMarca'), modelo = valor('ehModelo');
-        if (!/^[A-Z0-9-]{4,30}$/.test(serial)) return fallar('Escribe el serial (letras, números y guiones).', 'ehSerial');
+        if (!/^[A-Z0-9-]{4,30}$/.test(serial)) return fallar('Escribe el serial (letras, números y guiones, de 4 a 30 caracteres).', 'ehSerial');
         if (D().equipos.some(e => normSerial(e.serial) === normSerial(serial))) return fallar('Ya hay un equipo con ese serial (los guiones, los puntos y los espacios no cuentan).', 'ehSerial');
         if (!marcaV) return fallar('Escribe la marca.', 'ehMarca');
         const compra = leerCompra(); if (typeof compra === 'string') return false;
@@ -669,26 +684,32 @@
   /* ---------- verificar equipos (contar con el escáner) ---------- */
   const ALCANCES = [['bodega', 'Los que están en bodega y en Recibidos'], ['asignado', 'Los asignados a personas'], ['todos', 'Todos']];
   const esperados = () => activos().filter(e => verif.alcance === 'todos' || (verif.alcance === 'asignado' ? e.estado === 'asignado' : e.estado !== 'asignado'));
-  const filaVerif = e => `<li><span class="serial-chip">${esH(e.serial)}</span> <span class="meta">${esH(e.tipo)} ${esH(e.marca)} · ${esH(quienTiene(e))}</span></li>`;
+  const filaVerif = (e, conX) => `<li><span class="serial-chip">${esH(e.serial)}</span> <span class="meta">${esH(e.tipo)} ${esH(e.marca)} · ${esH(quienTiene(e))}${conX && !esperados().some(x => x.id === e.id) ? ' · fuera de lo que escogiste' : ''}</span>${conX ? `<button type="button" class="btn-x" data-accion="verquitar" data-id="${esH(e.id)}" aria-label="Quitar ${esH(e.serial)} de los verificados" title="Quitar">×</button>` : ''}</li>`;
+  /* El avance de una verificación se guarda en el teléfono (un día): si se cierra la hoja o se acaba la batería, se sigue donde iba. */
+  const LS_VERIF = 'equipos.verificacion';
+  const leerVerif = () => { try { const j = JSON.parse(localStorage.getItem(LS_VERIF) || 'null'); if (!j || !Array.isArray(j.ids) || Date.now() - Date.parse(j.en) > 864e5) { localStorage.removeItem(LS_VERIF); return null; } return j; } catch (e) { return null; } };
+  const guardarVerif = () => { try { if (verif && verif.hechos.size) localStorage.setItem(LS_VERIF, JSON.stringify({ alcance: verif.alcance, ids: Array.from(verif.hechos), en: new Date().toISOString() })); else localStorage.removeItem(LS_VERIF); } catch (e) { /* sin guardar: igual se puede seguir */ } };
+  const borrarVerif = () => { try { localStorage.removeItem(LS_VERIF); } catch (e) { /* nada */ } };
   /** Lo que se ve debajo del escáner: el resumen en vivo («Verificados 18 · Sin encontrar 2») y las dos listas. */
   function pintarVerif() {
     const c = $('evLista'); if (!c || !verif) return;
     const hechos = Array.from(verif.hechos).map(eqPorId).filter(Boolean), faltan = esperados().filter(e => !verif.hechos.has(e.id));
     c.innerHTML = `<p class="ver-resumen" role="status"><b>Verificados ${hechos.length}</b> · <b>Sin encontrar ${faltan.length}</b></p>` +
-      `<div class="section-label">Verificados (${hechos.length})</div>${hechos.length ? `<ul class="ver-lista">${hechos.slice().reverse().map(filaVerif).join('')}</ul>` : '<p class="meta">Todavía no has escaneado ninguno.</p>'}` +
+      `<div class="section-label">Verificados (${hechos.length})</div>${hechos.length ? `<ul class="ver-lista">${hechos.slice().reverse().map(x => filaVerif(x, true)).join('')}</ul>` : '<p class="meta">Todavía no has escaneado ninguno.</p>'}` +
       `<div class="section-label">Sin encontrar todavía (${faltan.length})</div>${faltan.length ? `<ul class="ver-lista">${faltan.map(filaVerif).join('')}</ul>` : '<p class="meta">Ya está todo lo que esperabas.</p>'}`;
   }
   function verificar() {
     verif = { alcance: 'bodega', hechos: new Set() };
+    const previo = leerVerif(), retomados = previo ? previo.ids.filter(id => { const e = eqPorId(id); return e && e.estado !== 'baja'; }) : [];
+    if (retomados.length) { verif.alcance = ALCANCES.some(a => a[0] === previo.alcance) ? previo.alcance : 'bodega'; retomados.forEach(id => verif.hechos.add(id)); }
     const viejos = activos().filter(sinVerificar).length;
     abrir({ titulo: 'Verificar equipos', sub: viejos ? `${viejos} ${viejos === 1 ? 'equipo lleva' : 'equipos llevan'} más de 6 meses sin verificarse.` : 'Todos se verificaron en los últimos 6 meses.',
-      campos: campoSel('evAlcance', 'Qué vas a revisar', ALCANCES, 'bodega') + `<div class="acc-rap">${boton('verescanear', 'Escanear equipos', 'codigo', '', 'primary small')}</div>` +
+      campos: (retomados.length ? `<div class="note">Sigues donde ibas: ya llevas ${retomados.length} ${retomados.length === 1 ? 'verificado' : 'verificados'} (guardados en este teléfono). Tócalos con la × si alguno no va.</div>` : '') + campoSel('evAlcance', 'Qué vas a revisar', ALCANCES, verif.alcance) + `<div class="acc-rap">${boton('verescanear', 'Escanear equipos', 'codigo', '', 'primary small')}</div>` +
         `<div class="field"><label for="evSerial">O escribe el serial</label><div class="con-scan"><input id="evSerial" type="text" maxlength="40" autocomplete="off" placeholder="Ej: DEMO-0001"><button type="button" class="btn small" data-accion="veragregar" data-id="">Agregar</button></div></div><div id="evLista"></div>`,
-      primario: 'Guardar la verificación', icono: 'check', listo: 'Listo: equipos verificados.', esVerif: true,
+      primario: 'Guardar la verificación', icono: 'check', listo: 'Listo: equipos verificados.', esVerif: true, alGuardar: borrarVerif,
       ops: () => {
         const ids = Array.from(verif.hechos).map(eqPorId).filter(e => e && e.estado !== 'baja');
         if (!ids.length) return fallar('Escanea o escribe al menos un equipo.');
-        if (ids.length > 400) return fallar('Son muchos equipos para guardar de una vez: guarda esta parte y sigue con la otra.');
         accion.listo = `Listo: Verificados ${ids.length} · Sin encontrar ${esperados().filter(e => !verif.hechos.has(e.id)).length}.`;
         return ids.map(e => ['mezclar', 'equipos', e.id, { verificadoEn: hoy(), verificadoPor: persona().nombre }]);
       } });
@@ -696,21 +717,28 @@
     pintarVerif();
   }
   /** Marca un equipo como verificado (por escáner o escrito a mano). */
-  function agregarVerif(s) {
-    if (!verif || !accion || !accion.esVerif) return;
+  function agregarVerif(s, enCamara) {
+    if (!verif || !accion || !accion.esVerif) return { estado: 'no', texto: 'La verificación ya se cerró' };
+    const dec = (estado, texto) => { if (!enCamara) A().toast(texto); return { estado, texto }; };   // con la cámara abierta el aviso sale dentro de la cámara
     const e = porSerial(s);
-    if (!e) { A().toast(`No hay un equipo con el serial ${s}`); return; }
-    if (e.estado === 'baja') { A().toast(`El ${e.serial} está de baja: no se verifica.`); return; }
-    if (verif.hechos.has(e.id)) { A().toast(`${e.serial} ya estaba verificado.`); return; }
-    verif.hechos.add(e.id); pintarVerif();
-    A().toast(`Verificado: ${e.serial}`);
+    if (!e) return dec('no', `No hay un equipo con el serial ${s}`);
+    if (e.estado === 'baja') return dec('no', `El ${e.serial} está de baja: no se verifica.`);
+    if (verif.hechos.has(e.id)) return dec('repetido', `${e.serial} ya estaba verificado.`);
+    // Fuera de lo que se iba a revisar (por ejemplo, uno asignado cuando se escogió «los de bodega»): se anota igual, pero se dice.
+    const fuera = !esperados().some(x => x.id === e.id);
+    verif.hechos.add(e.id); pintarVerif(); guardarVerif();
+    return fuera ? dec('fuera', `${e.serial} no está en lo que escogiste revisar (${ALCANCES.find(a => a[0] === verif.alcance)[1].toLowerCase()}). Se anotó igual.`) : dec('ok', `Verificado: ${e.serial}`);
   }
-  /** Escanea uno tras otro hasta que se cierre la cámara. */
+  /** Escanea uno tras otro con la cámara abierta todo el rato (sin cerrarla ni reiniciarla): cuenta, avisa de cada lectura y se cierra con «Terminar». */
   async function escanearVerif() {
     while (accion && accion.esVerif && !$('shEq').hidden) {
-      const s = await leerSerial('Escanear un equipo para verificarlo', activos().map(e => e.serial));
-      if (!s || !accion || !accion.esVerif || $('shEq').hidden) break;
-      agregarVerif(s);
+      const r = await leerSerial('Verificar equipos', activos().map(e => e.serial), {
+        continuo: true, alLeer: s => agregarVerif(s, true),
+        resumen: () => { const n = verif ? verif.hechos.size : 0, falta = verif ? esperados().filter(e => !verif.hechos.has(e.id)).length : 0; return { linea: `Verificados ${n} · Faltan ${falta}`, n }; }
+      });
+      // Un lector sin modo continuo (o una prueba) entrega un solo serial: se anota y se sigue pidiendo.
+      if (typeof r !== 'string' || !r || !accion || !accion.esVerif || $('shEq').hidden) break;
+      agregarVerif(r);
     }
     return true;
   }
@@ -719,7 +747,8 @@
   const TIPO_PASO = { entrega: 'Entrega', devolucion: 'Devolución', mantenimiento: 'Mantenimiento', backup: 'Backup', bodega: 'A bodega', registro: 'Registro', revision: 'Revisión', correccion: 'Corrección del acta', compra: 'Compra y garantía', 'baja-pedida': 'Baja pedida', baja: 'De baja', 'baja-no': 'Baja no aprobada' };
   function ver(e) {
     const App = A(), st = EST[e.estado] || ['Sin estado', 'none'], hs = hojasDe(e.id), ts = D().tareasEq.filter(t => t.equipoId === e.id && t.estado === 'pendiente');
-    const pasos = historial(e).slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+    // Lo más nuevo primero; si dos cosas son del mismo día, va primero la que se anotó después.
+    const pasos = historial(e).map((x, i) => ({ x, i })).sort((a, b) => String(b.x.fecha).localeCompare(String(a.x.fecha)) || b.i - a.i).map(o => o.x);
     // El historial de un equipo crece con cada mantenimiento y backup: se muestra de 30 en 30.
     const pgH = UI.pagina('hist-eq-' + e.id, pasos.map(x => `<li><b>${esH(TIPO_PASO[x.tipo] || x.tipo)}${x.persona ? ': ' + esH(x.persona) : ''}</b><span class="meta">${esH(App.fechaCorta(x.fecha))}${x.nota ? ' · ' + esH(x.nota) : ''}</span></li>`), { n: 30, reiniciar: true });
     const bts = [], b = bajaDe(e), enBaja = e.estado === 'baja', gd = dias(e.garantiaHasta);
@@ -728,6 +757,7 @@
       if (e.estado === 'asignado') { const p = personas().find(x => x.equipos.some(y => y.id === e.id)); if (p) bts.push(boton('devolver', 'Recibir (devolución)', 'devolucion', '', 'small', ` data-clave="${esH(p.clave)}"`)); }
       if (e.estado === 'recibido' && pend(e).mtto) bts.push(boton('mtto', 'Mantenimiento hecho', 'mantenimiento', e.id, 'primary small'));
       if (e.estado === 'recibido' && pend(e).backup) bts.push(boton('backup', 'Backup hecho', 'backup', e.id, 'small'));
+      if (e.estado === 'recibido' && !pend(e).mtto && !pend(e).backup && !b) bts.push(boton('abodega', 'Pasar a bodega', 'bolsa', e.id, 'primary small'));
       if (['bodega', 'recibido'].includes(e.estado) && !b) bts.push(boton('pedirbaja', apruebaBajas() ? 'Dar de baja' : 'Pedir la baja', 'borrar', e.id, 'ghost small'));
       bts.push(boton('datoscompra', 'Compra y garantía', 'lapiz', e.id, 'ghost small'));
     }
@@ -768,7 +798,7 @@
       <div class="acta-dev"><b>FECHA DE DEVOLUCIÓN</b><span>${esH(devs.map(d => App.fechaCorta(d.fecha)).join(' · '))}</span></div>
       ${devs.length ? devs.map(d => `<div class="acta-firma"><span>Firma recibido:</span>${firma(d.firma) ? `<img src="${esH(firma(d.firma))}" alt="Firma de la devolución">` : '<i></i>'}<span>CC ${esH(h.cedula || '')} · ${esH(App.fechaCorta(d.fecha))}${Array.isArray(d.equipos) && d.equipos.length < eqs.length ? ' · ' + esH(eqs.filter(x => d.equipos.includes(x.id)).map(x => x.serial).join(', ')) : ''}</span></div>${d.obs ? `<p class="acta-nota">${esH(d.obs)}</p>` : ''}`).join('')
         : '<div class="acta-firma"><span>Firma recibido:</span><i></i><span>CC</span></div>'}
-      <p class="acta-pie">Entregó: ${esH(h.encargado || h.por)} (Encargado de equipos)${devs.length ? ' · Recibió la devolución: ' + esH(devs.map(d => d.recibio).join(', ')) : ''} · Documento de prueba</p>
+      <p class="acta-pie">Entregó: ${esH(h.encargado || h.por)} (${esH(((window.DEMO.rolDe(h.porRol) || {}).rolTxt) || 'Encargado de equipos')})${devs.length ? ' · Recibió la devolución: ' + esH(devs.map(d => d.recibio).join(', ')) : ''} · Documento de prueba</p>
     </article>`;
   }
   function verActa(h) {
@@ -801,21 +831,33 @@
      codigos.js (lector con la cámara) se descarga solo cuando se toca «Escanear». Si la cámara no sirve, queda escribir a mano. */
   const normSerial = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   const porSerial = s => equipos().find(e => normSerial(e.serial) === normSerial(s));
-  async function leerSerial(titulo, conocidos) {
-    try { await UI.cargarScript('codigos.js?v=1'); }
+  async function leerSerial(titulo, conocidos, extra) {
+    try { await UI.cargarScript('codigos.js?v=2'); }
     catch (e) { A().toast('No se pudo abrir el lector de códigos. Revisa la conexión o escribe el serial.'); return null; }
-    return window.Codigos.leer({ titulo, conocidos });
+    return window.Codigos.leer(Object.assign({ titulo, conocidos }, extra || {}));
   }
   /** Quién tiene el equipo, para decirlo cuando no se puede entregar. */
   const dondeEsta = e => (e.estado === 'baja' ? 'está de baja' : bajaDe(e) ? 'tiene una baja pedida' : e.estado === 'asignado' ? `lo tiene ${e.asignadoA || 'alguien'}` : e.estado === 'recibido' ? 'está en Recibidos y falta su mantenimiento o backup' : 'no está en bodega');
   async function escanear(modo) {
     if (modo === 'entrega' || modo === 'devolucion') return escanearEnActa(modo);
+    if (modo === 'nuevo') return escanearNuevo();
     const s = await leerSerial('Escanear el serial del equipo', equipos().map(e => e.serial));
     if (!s) return true;
     const e = porSerial(s);
     if (e) { ver(e); return true; }
     buscar = s; pintar();
     A().toast(`No hay un equipo con el serial ${s}`);
+    return true;
+  }
+  /** En «Registrar equipo nuevo»: el serial leído se escribe en el campo (sin recortarlo; si es muy largo o ya existe, se avisa). */
+  async function escanearNuevo() {
+    const s = await leerSerial('Escanear el serial del equipo nuevo', []);
+    if (!s || !accion || $('shEq').hidden || !$('ehSerial')) return true;
+    $('ehSerial').value = s; $('ehSerial').dispatchEvent(new Event('input', { bubbles: true }));
+    const ya = porSerial(s);
+    if (ya) A().toast(`Ojo: ya hay un equipo con el serial ${ya.serial}.`);
+    else if (s.length > 30 || !/^[A-Z0-9-]{4,30}$/.test(s.toUpperCase())) A().toast(`El serial leído es «${s}»: solo se aceptan letras, números y guiones, de 4 a 30. Corrígelo en el campo.`);
+    else A().toast(`Serial leído: ${s}`);
     return true;
   }
   /** En el acta de entrega marca el equipo escaneado; en la de devolución marca el que llega (y cambia de persona si es de otra). */
@@ -856,7 +898,7 @@
     const desde = $('eqCampos').contains(b) && accion ? accion.volverA : '';
     const mapa = {
       ver: () => eq && ver(eq), veracta: () => h && verActa(h), persona: () => verPersona(b.dataset.clave),
-      borrarfirma: () => (accion ? borrarFirma(id) : null), imprimir: () => imprimir(),
+      borrarfirma: () => (accion ? borrarFirma(id) : null), deshacerfirma: () => (accion ? deshacerFirma(id) : null), imprimir: () => imprimir(),
       entregar: () => (esEncargado() ? entrega(eq ? eq.id : '') : null), devolver: () => (esEncargado() ? devolucion(b.dataset.clave) : null),
       mtto: () => (eq && esEncargado() && pend(eq).mtto ? trabajo(eq, 'mtto') : null), backup: () => (eq && esEncargado() && pend(eq).backup ? trabajo(eq, 'backup') : null),
       abodega: () => (eq && esEncargado() && eq.estado === 'recibido' && !pend(eq).mtto && !pend(eq).backup ? aBodega(eq) : null),
@@ -874,6 +916,7 @@
       noaprobarbaja: () => (eq && apruebaBajas() && bajaDe(eq) && ['bodega', 'recibido'].includes(eq.estado) ? noAprobarBaja(eq) : null),
       datoscompra: () => (eq && esEncargado() && eq.estado !== 'baja' ? datosCompra(eq) : null),
       verbaja: () => { bajasAbiertas = !bajasAbiertas; pintar(); return true; },
+      verquitar: () => { if (!accion || !accion.esVerif || !verif) return null; verif.hechos.delete(id); pintarVerif(); guardarVerif(); return true; },
       verificar: () => (programa() ? verificar() : null), verescanear: () => (accion && accion.esVerif ? escanearVerif() : null),
       veragregar: () => { if (!accion || !accion.esVerif) return null; agregarVerif(valor('evSerial')); if ($('evSerial')) { $('evSerial').value = ''; $('evSerial').focus(); } return true; },
       programar: () => (programa() ? programar(eq) : null), hecha: () => (t && t.estado === 'pendiente' && esEncargado() ? hecha(t) : null)
@@ -881,13 +924,18 @@
     const fn = mapa[b.dataset.accion]; if (!fn) return;
     const r = fn();
     if (r === null) { A().toast('Eso ya cambió o no te toca. Revisa otra vez.'); return; }
-    if (desde && accion && !['borrarfirma', 'imprimir'].includes(b.dataset.accion)) accion.volver = desde;
+    if (desde && accion && !['borrarfirma', 'deshacerfirma', 'imprimir'].includes(b.dataset.accion)) accion.volver = desde;
   }
   const ponerCC = () => { const cc = $('ehFirmaPCC'); if (cc && $('ehCedula')) cc.textContent = $('ehCedula').value.replace(/\D/g, '') || '—'; };
   $('eqContenido').addEventListener('click', alTocar);
   // Lo escrito se guarda al instante, pero la lista se repinta 300 ms después de la última tecla.
   let cajaBuscando = 'qEq';
-  const buscarLuego = UI.retardar(() => { const q = $(cajaBuscando), pos = q ? q.selectionStart : 0; pintar(); const n = $(cajaBuscando); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} } }, 300);
+  const buscarLuego = UI.retardar(() => {
+    // Solo se le devuelve el foco al buscador si la persona sigue escribiendo ahí (si ya tocó un resultado y se abrió una hoja, no se le roba el foco).
+    const q = $(cajaBuscando), pos = q ? q.selectionStart : 0, seguia = !!q && document.activeElement === q;
+    pintar();
+    const n = $(cajaBuscando); if (n && seguia && $('shEq').hidden) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} }
+  }, 300);
   $('eqContenido').addEventListener('input', e => {
     const id = e.target.id;
     if (id === 'qEq') buscar = e.target.value; else if (id === 'qAc') buscarActa = e.target.value; else if (id === 'qPe') buscarPers = e.target.value; else return;
@@ -899,7 +947,7 @@
   $('eqCampos').addEventListener('input', e => { if (e.target.id === 'ehCedula' && $('ehQuien') === null) ponerCC(); });
   $('eqCampos').addEventListener('change', e => {
     if (e.target.id === 'ehQuien') pintarListaDevolucion();
-    if (e.target.id === 'evAlcance' && verif) { verif.alcance = e.target.value; pintarVerif(); }
+    if (e.target.id === 'evAlcance' && verif) { verif.alcance = e.target.value; pintarVerif(); guardarVerif(); }
     if (e.target.id === 'ehProy') { const p = PROYECTOS.find(x => x[0] === e.target.value); if (p && $('ehCodigo')) $('ehCodigo').value = p[1]; }
     // Al marcar un equipo se abren sus observaciones; si es un portátil, se suma un cargador en «Otros».
     const c = e.target.closest('input[data-eq]');
@@ -919,7 +967,8 @@
     clave: 'equipos', hoja: 'Equipos', titulo: 'Base de datos: equipos', sub: 'Una fila por equipo', archivo: 'Base de datos Equipos',
     acciones: ['Agregar', 'Cambiar', 'Eliminar'], puedeSubir: esEncargado, puedeEliminar: esJefe,
     columnas: [
-      { t: 'Serial', k: 'serial', clave: true, obligatoria: true, fija: true, unico: true, mayus: true, max: 30, ancho: 18 },
+      { t: 'Serial', k: 'serial', clave: true, obligatoria: true, fija: true, unico: true, mayus: true, max: 30, ancho: 18,
+        normaliza: normSerial, tambien: () => equipos().filter(e => e.estado === 'baja').map(e => e.serial) },   // «DEMO-0001» y «DEMO0001» son el mismo, y el serial de un equipo de baja no se vuelve a registrar
       { t: 'Tipo', k: 'tipo', obligatoria: true, fija: true, lista: TIPOS_EQ, ancho: 24 },
       { t: 'Marca', k: 'marca', obligatoria: true, fija: true, max: 40, ancho: 18 },
       { t: 'Modelo', k: 'modelo', fija: true, max: 60, ancho: 22 },

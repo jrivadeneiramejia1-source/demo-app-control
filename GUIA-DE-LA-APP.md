@@ -155,7 +155,7 @@ La Jefe es la única que puede **hacer casi todo**. En cada módulo tiene el niv
 | **Personas y permisos** | Solo ella lo ve (y solo con cuenta propia). Ver 4.4. |
 
 **Lo único que NO puede hacer la Jefe:**
-- **Autorizar compras** (ya no es de la Jefe: las autoriza la Coordinadora de compras y, las de más de 5 millones, el Gerente general).
+- **Autorizar compras** (ya no es de la Jefe: las autorizal Coordinador de compras y, las de más de 5 millones, el Gerente general).
 - Tocar a **otra Jefe** o a **un Gerente** (cambiar su rol, pausarlo, cambiarle permisos). Eso solo se hace desde la consola de Firebase.
 - Cambiarse permisos a sí misma.
 - Crear códigos de Gerente o Jefe (se crean a mano en Firebase).
@@ -250,7 +250,7 @@ Cómo entra el Gerente:
 | **Reuniones** | Solo ver (Resumen, Próximas, Realizadas y canceladas). |
 
 **Quién autoriza las compras ahora:**
-1. La **Coordinadora de compras** (Mauricio Giraldo en la demo) autoriza las compras de **5.000.000 o menos**, y revisa las hechas sin autorización. La Jefe **ya no** autoriza.
+1. La **Coordinador de compras** (Mauricio Giraldo en la demo) autoriza las compras de **5.000.000 o menos**, y revisa las hechas sin autorización. La Jefe **ya no** autoriza.
 2. Las de **más de 5.000.000**: la Coordinadora las pasa y quedan en «Falta el Gerente general»; las autoriza el **Gerente general** (Oscar Muñoz).
 3. Lo que **pide la Coordinadora** lo decide siempre el Gerente general. Lo que **pide el Gerente general nace autorizado**.
 4. El Gerente general también puede decidir **cualquier pedido** sin esperar a la Coordinadora (acceso total). Los demás Gerentes (Santiago Valencia, Alejandro Giraldo) solo ven los resúmenes y el detalle de cada cosa.
@@ -287,7 +287,8 @@ Cómo entra el Gerente:
 
 ### Camino 2: código por rol
 **Lo hace la Jefe:** Personas y permisos > **Códigos por rol** > **Crear código** > **Copiar** > se lo pasa a la persona.
-**Lo hace la persona:** «Es mi primera vez» > abre **«Tengo un código de rol»** > lo escribe.
+**Lo hace la persona:** «Es mi primera vez» > abre **«Tengo un código de rol»** > escribe su nombre y el código, y crea su cuenta.
+- La app **primero pide confirmar el correo** (el enlace que llega) y solo después aplica el código: Firebase no deja crear el perfil con el correo sin confirmar. La persona toca **«Ya toqué el enlace»** y entra sola, sin volver a escribir el código. (El nombre y el código se guardan solo en la pantalla mientras tanto: si cierra la página antes de confirmar, al volver le sale el cuadro para escribirlos otra vez.)
 - Lo pueden usar varias personas del mismo rol.
 - Si se filtra, la Jefe toca **Cambiar** y el viejo muere.
 
@@ -339,7 +340,7 @@ En Equipos, Vehículos e Inventario, si escribiste algo (o tomaste una foto o di
 | **Jefe** | La Jefe | Panorama, Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras, Proveedores, Conteo, Resumen |
 | **Bodega** | Bodega (Andrés Beltrán) | Qué hay que hacer, Existencias, Movimientos, Pedidos de material, Compras, Proveedores (solo ver, salvo con el extra «compra»), Conteo, Resumen |
 | **Compra** | Compras | Qué hay que hacer, Existencias, Compras, Proveedores, Pedidos de material, Movimientos, Resumen |
-| **Coordina** | Coordinadora de compras (Mauricio Giraldo) | Qué hay que hacer, Compras, Proveedores (solo ver), Existencias, Pedidos de material, Movimientos, Resumen |
+| **Coordina** | Coordinador de compras (Mauricio Giraldo) | Qué hay que hacer, Compras, Proveedores (solo ver), Existencias, Pedidos de material, Movimientos, Resumen |
 | **Gerente** | Los Gerentes | Resumen, Compras, Proveedores (solo ver), Existencias, Pedidos de material |
 | **Finanzas** | Financieros (3 personas) | Existencias, Movimientos, Pedidos, Compras, Proveedores (solo ver), Resumen |
 | **Ver** | Consulta | Existencias, Movimientos, Pedidos, Compras, Resumen (solo mirar) |
@@ -509,6 +510,9 @@ Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin au
 8. **Las actas no se borran** (solo la Jefe).
 
 ### 9.3.1 Escanear el serial con la cámara
+**Lector continuo (Fase 2 de mejoras).** En **Verificar equipos**, el botón **«Escanear equipos»** abre la cámara **una sola vez** y deja escanear uno tras otro: arriba de la cámara sale el contador **«Verificados X · Faltan Y»**, una píldora con lo último leído (**verde** = verificado, **amarillo** = ya estaba o está fuera de lo que escogiste, **rojo** = no existe o está de baja), y el botón **«Terminar (X)»**. Cada lectura **suena (pitido corto) y vibra**; el mismo serial no se vuelve a leer hasta 2,5 segundos después. El avance de la verificación **queda guardado en el teléfono un día** (se puede cerrar y seguir), cada equipo se puede quitar con la **×**, y si son más de 400 se guardan en varios lotes.
+En **Registrar equipo nuevo** hay un botón **«Escanear»** junto al serial: lo escribe tal cual (si es muy largo o ya existe, lo avisa).
+Detalles del lector: el último zoom usado se recuerda (ya no abre siempre en 2×); al cambiar de lente se suelta la anterior y dice «Cámara 2 de 3»; la linterna solo sale si esa lente la tiene; **Escape** cierra el lector sin cerrar lo que hay detrás; un serial real que empieza con «SN» (SN8472910) ya no pierde esas letras; con una foto muy grande se lee más rápido; y el lector queda guardado para abrir **sin internet** (el service worker lo guarda la primera vez que se usa).
 El **Encargado de equipos** puede tocar el botón de **códigos de barras** que está junto al buscador de Equipos: la cámara lee el código o QR del serial y abre la hoja de vida de ese equipo (si no existe, lo dice y deja el serial escrito en el buscador). También hay **«Escanear un equipo»** en la **Entrega** (marca el equipo y abre sus observaciones; si lo tiene otra persona, dice quién) y en la **Devolución** (marca el equipo que llega; si es de otra persona, cambia la lista a su nombre). La primera vez el navegador pide permiso para la cámara. Si no sirve, queda **Tomar foto** o **Escribir a mano**. Funciona sin internet.
 
 ---
@@ -810,3 +814,41 @@ Las personas de prueba usan una **clave pública**. Cualquiera que la conozca po
 ---
 
 *Fin de la guía. Si algo no queda claro, o quieres que agregue un capítulo (por ejemplo, un paso a paso de cómo probar cada rol uno por uno), dímelo.*
+
+---
+
+## Mejoras de la etapa de pruebas (plan de 5 fases)
+Estas mejoras no cambian cómo se entra ni la seguridad (siguen las personas de prueba y los códigos de rol); solo quitan fallos y pulen el uso.
+
+**Guardar sin trabas**
+- Firebase guarda en el **disco del teléfono** (si el navegador no lo deja, usa el modo normal).
+- **Conteo físico** y **Excel de Bodega** se guardan en lotes de máximo 5 artículos con movimiento (así no se pasan del límite de Firebase).
+- Si dos personas mueven el mismo artículo a la vez, la segunda recibe un aviso («Otra persona movió este artículo…») y **no se guarda nada**: así el kárdex (saldo, valor y costo) no se desajusta. Esos movimientos necesitan señal.
+- Las fotos se achican hasta un tope seguro (cotización 110 KB, factura 250 KB, fotos de salida de carros 100 KB) porque Firebase solo guarda 1 MB por documento.
+- Al cambiar de persona en el mismo teléfono se borran los datos de la anterior y lo que tenía a medias (vistas previas de Excel, fotos).
+
+**Inventario**
+- El nombre de un artículo no se repite aunque cambien tildes, mayúsculas o espacios. Al **editar** solo se manda lo que la persona cambió (no se pisa lo que otra cambió). Hay aviso si se cambia la **unidad** (no convierte la cantidad).
+- En la ficha: **Salida** y **Trasladar** solo si hay existencias; **Crear en otra bodega** copia el artículo con sus datos; la Jefe puede **Eliminar artículo** (no si tiene compra o pedido en curso).
+- Los **traslados** no cuentan como consumo del mes; las fechas se miran en hora de Colombia; en Movimientos los ajustes que restan llevan «-»; **«Te toca contar hoy»** da hasta 10 por bodega; las tarjetas **«Cómo está cada bodega»** se tocan para ver sus existencias.
+- Compras: las líneas 2 a 5 con artículo nuevo dejan escoger unidad y categoría; al recibir, si llega **más** de lo comprado hay que confirmar y no se cierra una compra con 0 en todo; «Lo mío» sale por cuenta (no por nombre); la **Orden de compra** se puede reimprimir ya recibida (con la fecha real y el NIT); el NIT se escribe sin guion y se arregla solo si ya trae su dígito.
+- Excel de Bodega: columna **Código** (de barras, distinta del ID), sin números negativos, **Estado** y **Valor en bodega** usan la cantidad real si está escrita; el Excel de Compras no repite una compra ya pedida.
+
+**Equipos y Vehículos**
+- Firma con **Deshacer** y **Borrar** (que ya funciona al volver a firmar). Un acta lleva hasta 20 equipos. Al corregir un acta se limpia la nota de revisión y el proyecto se sincroniza con los equipos. Los equipos de ejemplo asignados ya tienen su acta abierta.
+- Carros: el **costo** de una novedad acepta «150.000» (o avisa, nunca queda en $ 0 en silencio); las placas en el Excel no se repiten sin importar espacios o guiones; las fotos se abren a **pantalla completa** (con anterior/siguiente en las 5 de salida); la Jefe puede **corregir y borrar tanqueos**; los tramos raros o demasiado altos no estropean el promedio; «Reportar y no salir» pide una foto propia; la revisión dice **«Faltan N de 15 puntos»** con un botón al primero; **«Editar tarea»** del plan conserva lo ya hecho; una tarea que vence hoy dice **«Toca ya»**; un carro con falla grave sin revisar no sale como libre; el mismo conductor no tiene dos viajes el mismo día; las reservas vencidas sin respuesta se cierran solas; la hoja de vida muestra las **reservas próximas**; el Excel de reportes trae la hoja **Reservas**.
+
+**Reuniones y avisos**
+- Al reprogramar se borran los informes viejos (pueden informar otra vez); si un conductor dice «No puedo», el carro del otro conductor **sigue vigente**; no se cancela ni se reprograma con un carro en ruta; el nivel «Solo ver» no informa ni decide; se pregunta «¿Salir sin guardar?»; las reuniones del Excel también mandan aviso al teléfono; el gráfico del Resumen se entiende («3 tareas» por persona).
+- Tocar una notificación con la app ya abierta **abre ese módulo**; cada aviso lleva su propia etiqueta (no se pisan); si cambia la llave VAPID, el teléfono se vuelve a suscribir solo.
+- Buzón (`Codigo.gs`): ya no daña fechas con hora, no corta los correos reenviados, reintenta si el token vence y no bloquea un hilo por un fallo.
+
+## Lista antes de pasar a uso real con datos de la empresa
+Esto **no se hizo a propósito** en la etapa de pruebas (para no complicar el ingreso). Hay que hacerlo **justo antes** de usar datos reales:
+1. **Apagar las cuentas de prueba** en las reglas de Firebase y en los Workers (`avisos/worker.js`, `agente/worker.js`): hoy la clave de las personas de prueba es pública a propósito.
+2. **Cerrar `codigosDireccion`** (códigos de Gerente y Jefe) y revisar quién puede crear códigos de rol.
+3. **Limitar los permisos de Push** (qué rol puede avisar a cuál) y cerrar la lectura de `avisos` por destinatario.
+4. **Separar las fotos** de los documentos (Firebase Storage) en vez de guardarlas dentro de cada documento, y crear una **copia privada** de la app con **otro proyecto de Firebase**.
+5. **Pegar las reglas nuevas** (`firestore.rules`): hay dos ajustes de esta etapa para pegar a mano en Firebase: (a) la baja directa de un equipo cuya solicitud fue rechazada, y (b) corregir un acta deja vacía la nota de revisión.
+6. Subir el SDK de Firebase (hoy 10.12.2), activar **App Check** y probar todo con el Firebase real (ver SEGURIDAD.md).
+

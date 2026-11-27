@@ -16,6 +16,7 @@
   const esH = v => A().esH(v);
   const MAX_FILAS = 300, MAX_BYTES = 1048576;
   const estados = {};
+  window.addEventListener('app:persona-cambio', () => { Object.keys(estados).forEach(k => delete estados[k]); });
   const st = k => (estados[k] = estados[k] || { previa: null, error: '', aplicando: false });
   const norm = t => String(t == null ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   // Texto limpio (sin caracteres raros); el apostrofo con que Excel protege un texto que empieza con = + - @ se quita.
@@ -142,8 +143,9 @@
     });
     // Lo que debe ser único (serial, placa…) no se puede repetir entre las filas nuevas, ni con lo que ya está.
     cfg.columnas.filter(c => c.unico).forEach(col => {
-      const quita = new Set(filas.filter(x => x.tipo === 'eliminar' && !x.errores.length).map(x => x.id)), cuenta = new Map(), n = v => norm(v);
+      const quita = new Set(filas.filter(x => x.tipo === 'eliminar' && !x.errores.length).map(x => x.id)), cuenta = new Map(), n = v => (col.normaliza ? col.normaliza(v) : norm(v));
       cfg.filas().filter(f => !quita.has(f.id)).forEach(f => cuenta.set(n(f.v[col.k]), (cuenta.get(n(f.v[col.k])) || 0) + 1));
+      if (col.tambien) col.tambien().forEach(v => cuenta.set(n(v), (cuenta.get(n(v)) || 0) + 1));   // valores que ya no están en la lista pero siguen ocupados (por ejemplo, equipos dados de baja)
       filas.filter(x => x.tipo === 'agregar' && !x.errores.length).forEach(x => cuenta.set(n(x.v[col.k]), (cuenta.get(n(x.v[col.k])) || 0) + 1));
       filas.forEach(x => { if (x.tipo === 'agregar' && !x.errores.length && cuenta.get(n(x.v[col.k])) > 1) x.errores.push(`${col.t}: ya hay uno con «${x.v[col.k]}» (en la app o repetido en el Excel).`); });
     });
@@ -291,7 +293,8 @@
       const cfg = cfgs[a.dataset.xbdArchivo](), e = st(cfg.clave);
       if (!cfg.puedeSubir()) return;
       e.error = '';
-      try { const filas = await leerArchivo(cfg, a.files && a.files[0]); e.previa = filas ? { crudas: filas } : null; }
+      const archivo = a.files && a.files[0]; a.value = '';   // se limpia para poder subir el mismo archivo otra vez
+      try { const filas = await leerArchivo(cfg, archivo); e.previa = filas ? { crudas: filas } : null; }
       catch (er) { e.previa = null; e.error = er && er.message === 'xlsx' ? 'No se pudo cargar el lector de Excel. Revisa la conexión y vuelve a intentar.' : (er && er.message) || 'No se pudo leer el archivo.'; }
       repintar();
     });

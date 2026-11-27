@@ -34,7 +34,7 @@
   const bordes = { top: lado, left: lado, bottom: lado, right: lado };
   const limpio = v => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ') : v);
   // Un texto que empieza con = + - @ se volvería fórmula al abrirlo en Excel: se guarda como texto.
-  const seguro = v => (typeof v === 'string' && /^[=+\-@]/.test(v) ? "'" + v : v);
+  const seguro = v => (typeof v === 'string' && /^[\s\u0000-\u001f]*[=+\-@]/.test(v) ? "'" + v : v);   // también si antes hay espacios o tabuladores
 
   function armarHoja(libro, h) {
     const cols = h.columnas, n = cols.length, ws = libro.addWorksheet(String(h.nombre).slice(0, 31), { properties: { tabColor: { argb: COLOR.encabezado } } });

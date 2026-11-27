@@ -14,6 +14,7 @@
   const esJefeReal = () => !!yo() && yo().real === true && yo().rol === 'jefe';
   const esDireccion = rol => ['gerente', 'jefe'].includes(rol);
   const MAX_FILAS = 200, MAX_BYTES = 1000000;
+  window.addEventListener('app:persona-cambio', () => { previa = null; });
   let ocupado = false, previa = null;   // previa: las filas del Excel ya entendidas, esperando el «Guardar»
 
   /* ---------- entender el Excel ---------- */
@@ -351,7 +352,8 @@
     const arch = e.target.closest('#genteArchivo');
     if (arch) {
       const err = $('genteErr'); err.hidden = true;
-      try { previa = await leerArchivo(arch.files && arch.files[0]); pintar(); }
+      const archivo = arch.files && arch.files[0]; arch.value = '';   // se limpia para poder subir el mismo archivo otra vez
+      try { previa = await leerArchivo(archivo); pintar(); }
       catch (er) { previa = null; pintar(); const x = $('genteErr'); x.textContent = er && er.message === 'xlsx' ? 'No se pudo cargar el lector de Excel. Revisa la conexión y vuelve a intentar.' : (er && er.message) || 'No se pudo leer el archivo.'; x.hidden = false; }
       return;
     }

@@ -5,7 +5,7 @@
 (function () {
   'use strict';
   const BASE = document.currentScript && document.currentScript.src ? new URL('.', document.currentScript.src) : new URL('../', location.href);
-  const FOCO = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  const FOCO = 'a[href], summary, button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
   const esH = v => String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   const ico = n => (window.ico ? window.ico(n) : '');
   const abiertos = [];   // pila de diálogos abiertos: { el, volver }
@@ -14,7 +14,9 @@
   // «Ver más»: agrega las siguientes filas al final de la lista que está justo antes del botón.
   document.addEventListener('click', e => {
     const b = e.target.closest && e.target.closest('[data-mas]'); if (!b) return;
-    const p = PAGINAS.get(b.dataset.mas), lista = b.previousElementSibling;
+    let lista = b.previousElementSibling;
+    if (lista && lista.classList.contains('tabla-scroll')) lista = lista.querySelector('table') || lista;   // la tabla puede ir dentro de su contenedor de desplazamiento
+    const p = PAGINAS.get(b.dataset.mas);
     if (!p || !lista) { b.remove(); return; }
     const cont = lista.tagName === 'TABLE' ? lista.tBodies[0] : lista, n = Number(b.dataset.n) || 50, desde = cont.children.length;
     p.mostradas = Math.min(p.filas.length, desde + n);
@@ -40,10 +42,18 @@
     }
   }
   function cajaDe(el) { return el.classList.contains('backdrop') ? el.querySelector('.sheet') : el; }
+  /** Con una hoja abierta, el fondo (encabezado, contenido, pestañas) y las hojas de abajo quedan «inertes»: no reciben foco ni toques
+      y el lector de pantalla no los lee. Solo la hoja de arriba se toca. */
+  function fondoInerte() {
+    const arriba = abiertos.length ? abiertos[abiertos.length - 1].el : null;
+    document.querySelectorAll('a.saltar, header.top, main, nav.tabs').forEach(x => { if (arriba) x.setAttribute('inert', ''); else x.removeAttribute('inert'); });
+    abiertos.forEach(a => { if (a.el === arriba) a.el.removeAttribute('inert'); else a.el.setAttribute('inert', ''); });
+  }
   function alAbrir(el) {
     if (abiertos.some(a => a.el === el)) return;
     abiertos.push({ el, volver: document.activeElement });
     document.body.classList.add('con-hoja');
+    fondoInerte();
     // El foco va a la hoja (no a un campo) para que el teclado del teléfono no tape el contenido.
     requestAnimationFrame(() => {
       if (!visible(el)) return;
@@ -54,7 +64,9 @@
   function alCerrar(el) {
     const i = abiertos.findIndex(a => a.el === el); if (i < 0) return;
     const [a] = abiertos.splice(i, 1);
+    el.removeAttribute('inert');
     if (!abiertos.length) document.body.classList.remove('con-hoja');
+    fondoInerte();   // antes de devolver el foco: un elemento inerte no lo recibe
     const destino = a.volver && a.volver.isConnected && !a.volver.closest('[hidden]') ? a.volver : null;
     if (destino && (!document.activeElement || document.activeElement === document.body || el.contains(document.activeElement))) {
       try { destino.focus({ preventScroll: true }); } catch (e) {}
@@ -91,7 +103,7 @@
     { k: 'light', n: 'claro', ico: 'temaSol' },
     { k: 'dark', n: 'oscuro', ico: 'temaLuna' }
   ];
-  const HERO = { light: '#0A5A4E', dark: '#0D3B37' };
+  const HERO = { light: '#0B4058', dark: '#0D3B37' };   // el azul Caribe del encabezado (antes era verde: no coincidía con la barra de la app)
   const leerTema = () => { try { const t = localStorage.getItem('cp_tema'); return t === 'light' || t === 'dark' ? t : 'auto'; } catch (e) { return 'auto'; } };
   function ponerTema(t, avisar) {
     const raiz = document.documentElement;
@@ -203,8 +215,32 @@
 
   const MAL = /^(no |sin conexi|la base de datos|solo lectura|ya hay|falta|ese |esa |todav[ií]a no|el escáner|hay una versi|primero|la fecha|tu cuenta|se cort|el nombre no)/i;
   const BIEN = /(guardad|marcad|registrad|agregad|eliminad|listo|conectada|descargad|importad|recortad|escanead|archivo listo|^equipos:|actualizad)/i;
+  /* Índices en memoria: buscar por id (o agrupar por un campo) sin recorrer toda la lista cada vez. Se rehacen solos cuando llega una lista nueva. */
+  const indices = new WeakMap();
+  function indiceDe(lista, campo, agrupa) {
+    const llave = (agrupa ? 'g:' : 'i:') + campo, guardado = indices.get(lista) || {};
+    let m = guardado[llave];
+    if (!m || m.n !== lista.length) {
+      const mapa = new Map();
+      lista.forEach(x => { const k = x[campo]; if (agrupa) { const l = mapa.get(k); if (l) l.push(x); else mapa.set(k, [x]); } else if (!mapa.has(k)) mapa.set(k, x); });
+      m = guardado[llave] = { n: lista.length, mapa };
+      indices.set(lista, guardado);
+    }
+    return m.mapa;
+  }
+  const indice = (lista, campo) => indiceDe(lista, campo || 'id', false);
+  const agrupar = (lista, campo) => indiceDe(lista, campo, true);
+  /** Marca un campo con error para los lectores de pantalla (aria-invalid y aria-describedby al mensaje) y lo desmarca en cuanto se corrige. */
+  function marcarInvalido(campo, idMensaje) {
+    document.querySelectorAll('[aria-invalid="true"][data-err-marcado]').forEach(x => { if (x !== campo) { x.removeAttribute('aria-invalid'); x.removeAttribute('data-err-marcado'); if (x.dataset.errDesc) { x.removeAttribute('aria-describedby'); delete x.dataset.errDesc; } } });
+    if (!campo || !campo.setAttribute) return;
+    campo.setAttribute('aria-invalid', 'true'); campo.setAttribute('data-err-marcado', '1');
+    if (idMensaje && !campo.getAttribute('aria-describedby')) { campo.setAttribute('aria-describedby', idMensaje); campo.dataset.errDesc = '1'; }
+    const quitar = () => { campo.removeAttribute('aria-invalid'); campo.removeAttribute('data-err-marcado'); if (campo.dataset.errDesc) { campo.removeAttribute('aria-describedby'); delete campo.dataset.errDesc; } campo.removeEventListener('input', quitar); campo.removeEventListener('change', quitar); };
+    campo.addEventListener('input', quitar); campo.addEventListener('change', quitar);
+  }
   window.UI = Object.freeze({
-    contar,
+    contar, marcarInvalido, indice, agrupar,
     /** Una cifra del tablero. Con filtro, es un botón que filtra la lista al tocarlo. */
     cifra: ({ k, n, lbl, icono, tono, filtro, activo }) => {
       const dentro = `<span class="sum-ico" aria-hidden="true">${ico(icono)}</span><span class="num" data-k="${esH(k)}">${Number(n) || 0}</span><span class="sum-lbl">${esH(lbl)}</span>`;

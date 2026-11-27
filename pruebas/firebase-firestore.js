@@ -70,6 +70,11 @@ function mezclar(destino, origen) {
 
 // ---------- Referencias ----------
 export function getFirestore(_app) { return db; }
+// Caché en disco: en el falso no hace falta, pero la app la pide así.
+export function initializeFirestore(_app, _opciones) { return db; }
+export function persistentLocalCache(o) { return { tipo: 'persistente', o }; }
+export function persistentMultipleTabManager() { return { tipo: 'varias-pestanas' }; }
+export function memoryLocalCache() { return { tipo: 'memoria' }; }
 const db = { type: 'firestore' };
 
 export function collection(_db, nombre) {
@@ -133,6 +138,12 @@ export function getDocs(colRef) {
 // Copia de la regla de firestore.rules para crear un perfil: el código debe existir, estar activo y ser del mismo rol.
 function revisarPerfilNuevo(datos, ref, data) {
   if (ref.parent.id !== 'usuarios' || (datos.usuarios && datos.usuarios[ref.id])) return;
+  // Igual que las reglas reales (request.auth.token.email_verified): el perfil nuevo solo se crea con el correo ya confirmado.
+  try {
+    const uid = localStorage.getItem('__fb_actual') || '', us = JSON.parse(localStorage.getItem('__fb_usuarios') || '{}');
+    const yo = Object.values(us).find(u => u.uid === uid);
+    if (!yo || !yo.verificado) throw crearError('permission-denied', 'Missing or insufficient permissions.');
+  } catch (e) { if (e && e.code === 'permission-denied') throw e; throw crearError('permission-denied', 'Missing or insufficient permissions.'); }
   // Con invitación: la de su correo tiene que existir y decir el mismo nombre y rol (lo demás lo revisan las reglas reales).
   if (data && data.codigo === 'invitacion') {
     const inv = (datos.invitaciones || {})[String(data.correo || '').toLowerCase()];
@@ -180,6 +191,7 @@ function aplicarDelete(datos, ref) {
 
 // Aplica una lista de operaciones de forma atomica (todo o nada) y notifica una vez.
 function escribir(ops) {
+  window.__fbEscrituras = (window.__fbEscrituras || 0) + 1;   // cuántas escrituras (lotes) se han hecho: las pruebas lo leen
   const antes = leer();
   const despues = copia(antes);
   for (const op of ops) op(despues); // si alguna lanza, no se guarda nada
@@ -211,6 +223,23 @@ export function writeBatch(_db) {
     },
   };
   return lote;
+}
+
+// Transacción: lee y escribe de forma atómica. Aquí el navegador es un solo hilo entre el get y el commit, así que
+// basta con leer el estado actual. (Las pruebas simulan «otra persona cambió el artículo» escribiendo en '__fb_datos' sin avisar a la pantalla.)
+export function runTransaction(_db, fn) {
+  return operacion(() => null).then(async () => {
+    const ops = [];
+    const tx = {
+      get: async (ref) => { exigirDoc(ref); return snapDoc(ref, (leer()[ref.parent.id] || {})[ref.id]); },
+      set(ref, data, opciones) { ops.push((d) => aplicarSet(d, ref, data, opciones)); return tx; },
+      update(ref, data) { ops.push((d) => aplicarUpdate(d, ref, data)); return tx; },
+      delete(ref) { ops.push((d) => aplicarDelete(d, ref)); return tx; },
+    };
+    const r = await fn(tx);
+    escribir(ops);
+    return r;
+  });
 }
 
 // ---------- Oyentes (onSnapshot) ----------

@@ -147,6 +147,10 @@
       ac3: acta(3, -25, 'Camilo Suárez', 'Proyecto Costa Norte', 'PCN-01', [['eq-005']], [['Cable USB', 1]], 'problema', { notaRevision: 'La cédula no coincide con la del contrato. Hay que corregirla.' }),
       ac4: acta(4, -130, 'Liliana Torres', 'Proyecto Ruta Alta', 'PRA-02', [['eq-010']], [['Cargador', 1], ['Mouse', 1]], 'pendiente', { devoluciones: [dev(-2, ['eq-010'], 'Liliana Torres', 'DEMO-0010: una tecla floja')] }),
       ac5: acta(5, -45, 'Jorge Ibarra', 'Proyecto Costa Norte', 'PCN-01', [['eq-011']], [['Cargador', 1]], 'pendiente', { devoluciones: [dev(-1, ['eq-011'], 'Jorge Ibarra', 'DEMO-0011: no carga bien')] }),
+      // Las actas de entrega que faltaban para los equipos que ya están asignados (así «Recibir» siempre encuentra su acta abierta).
+      ac7: acta(7, -150, 'Paola Ríos', 'Proyecto Costa Norte', 'PCN-01', [['eq-002']], [['Cargador', 1]], 'ok'),
+      ac8: acta(8, -90, 'Andrés Mendoza', 'Proyecto Ruta Alta', 'PRA-02', [['eq-003']], [['Cargador', 1]], 'ok'),
+      ac9: acta(9, -50, 'Oscar Farfán', 'Proyecto Costa Norte', 'PCN-01', [['eq-006']], [['Cargador', 1]], 'ok'),
       ac6: acta(6, -170, 'Andrés Mendoza', 'Proyecto Ruta Alta', 'PRA-02', [['eq-012']], [['Cargador', 1], ['Morral', 1], ['Diadema', 1]], 'pendiente', { devoluciones: [dev(0, ['eq-012'], 'Andrés Mendoza', 'DEMO-0012: pantalla con una raya y se calienta')] })
     };
     // ---------- AGENDA DE EQUIPOS (mantenimientos y backups que Soporte o la Jefe le programan al Encargado) ----------
@@ -161,7 +165,7 @@
 
     // ---------- COMPRAS ----------
     // Rol de quien pide (sirve para que nadie autorice su propio pedido). Mismos nombres de personas.js.
-    // Autoriza la Coordinadora de compras (Mauricio G.); lo que pide ella y lo que vale más de 5 millones lo autoriza el Gerente general (Oscar M.). Compra Fredy y recibe Andrés.
+    // Autorizal Coordinador de compras (Mauricio G.); lo que pide ella y lo que vale más de 5 millones lo autoriza el Gerente general (Oscar M.). Compra Fredy y recibe Andrés.
     const ROL_DE = { 'Oscar Muñoz': 'gerente', 'Carolina Castillo': 'jefe', 'Mauricio Giraldo': 'coordcompras', 'Fredy Torres': 'compras', 'Ángel Ortiz': 'soporte', 'Wilson Muñoz': 'carros', 'Oscar Farfán': 'conductor', 'Andrés Beltrán': 'asistente' };
     function compra(que, cantidad, unidad, categoria, valorAprox, paraQue, pide, autoriza, estado, extra) {
       return Object.assign({
@@ -507,5 +511,5 @@
     return { equipos, hojas, tareasEq, compras, proveedores, vehiculos, novedades, entregas, tanqueos, reservas, reuniones, necesidades, avisos, articulos, movimientos, solicitudes };
   }
 
-  window.DatosDemo = Object.freeze({ VERSION: 20, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
+  window.DatosDemo = Object.freeze({ VERSION: 21, generar, ITEMS_LOG: ['Sonido y micrófono', 'Sillas', 'Mesas', 'Refrigerios recibidos'] });
 })();

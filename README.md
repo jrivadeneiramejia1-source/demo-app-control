@@ -131,7 +131,7 @@ Firebase revisa los permisos extra en las reglas, no solo la pantalla.
 - `comun.css`, `comun.js`, `iconos.js`, `fuentes/`, `codigos.js`, `lib/codigos/`: copiados de `apps-consulta-previa` (ver `DESIGN.md`). En `iconos.js` se agregaron iconos Phosphor (licencia MIT): inicio, carro, carrito, reunión, cambiar, pagada, correo y llave.
 - `gente.js`: panel «Personas y permisos» (solo la Jefe): invitaciones por Excel, personas registradas, rol, acceso, niveles por módulo, permisos extra, códigos y el interruptor de las personas de prueba.
 - `buzon/Codigo.gs`: Apps Script del Gmail de prueba. Cada minuto pasa a la app los correos sin leer que hablen de reuniones (solo asunto, texto y fecha; no guarda quién lo mandó).
-- `pruebas/`: Firebase falso (`firebase-*.js`) y pruebas con Playwright.
+- `pruebas/`: Firebase falso (`firebase-*.js`, con `runTransaction` y la regla de «perfil solo con el correo confirmado») y pruebas con Playwright. `prueba.mjs` es la larga (recorre toda la app); `mejoras.mjs` es la corta y rápida de las 5 fases de mejoras (usa una cámara falsa de Chrome para probar el escáner).
 
 ## Rendimiento (frontend)
 - **Esqueletos** (`UI.esqueleto`, `UI.esqueletoCifras`): mientras llegan los datos se ven tarjetas, renglones y cuadritos fantasma; el tablero ya no muestra un «0» falso.
@@ -148,7 +148,7 @@ Colecciones de primer nivel: `reuniones` y `necesidades` (una tarea por document
 
 ## Permisos (los hace cumplir Firebase, no solo la pantalla)
 Las reglas (`firestore.rules`) no preguntan «¿qué rol tiene?» sino «¿qué **nivel** tiene en este módulo?» (el de su rol, o el que le puso la Jefe). Cada nivel solo lee lo que le toca: sin acceso no lee nada del módulo, y quien solo pide material no ve los movimientos de la bodega y, con cuenta propia, solo ve **sus** pedidos y compras.
-- **Compras**: alguien pide → la **Coordinadora de compras** autoriza → Compras la compra → Bodega la recibe. Nadie autoriza su propio pedido. La Jefe ya **no** autoriza.
+- **Compras**: alguien pide → la **Coordinador de compras** autoriza → Compras la compra → Bodega la recibe. Nadie autoriza su propio pedido. La Jefe ya **no** autoriza.
   - Si la compra vale **más del monto del Gerente** (por defecto **5.000.000**; lo cambia solo el Gerente general con su cuenta, así la Jefe no lo puede subir), después de la Coordinadora la autoriza el **Gerente general** (estado «Falta el Gerente general»). Lo que pide la Coordinadora lo decide siempre el Gerente general. **Lo que pide el Gerente general nace autorizado** (nadie lo autoriza). El Gerente general también puede decidir cualquier pedido sin esperar (acceso total). Los demás Gerentes y la Jefe **no autorizan**. Cada compra guarda el correo de quien la pidió y la hora del servidor, así no se pueden inventar.
   - **Gerente general:** es un permiso extra («general») que **no marca la Jefe**: se pone a mano en la consola de Firebase (`usuarios/<uid>`, campo `extras` = `["general"]`), igual que los códigos de Gerente. En la demo, Oscar Muñoz lo trae fijo.
   - Antes de decidir se ve todo: cada artículo con su precio, el total, a quién se compra, para qué, las cotizaciones (hasta 3 fotos), lo que hay en bodega y el último precio pagado.
@@ -186,4 +186,4 @@ npm run lint
 npm run pruebas        # corre todo: reglas de Firebase, Workers y la app con navegador
 npm run reglas         # solo las reglas, contra el emulador de Firestore (gratis; necesita Java)
 ```
-Las capturas quedan en `capturas/`. **Cifras:** las pruebas de reglas son **265** (todas bien); las de navegador son **789** (todas bien). Las reglas de Firebase se prueban con el emulador (`pruebas/reglas.mjs`): cada persona intenta lo permitido y lo prohibido (incluidos ataques) y Firebase debe dejar o negar. Después de pegar las reglas en Firebase conviene entrar una vez con cada nivel.
+Las capturas quedan en `capturas/`. **Cifras:** las pruebas de reglas son **267** (todas bien); las de navegador son **809** (`prueba.mjs`) más **197** (`mejoras.mjs`, las de las 5 fases de mejoras), todas bien; además pasan las del Firebase falso, los Workers (96), el agente (43), el buzón (21) y los avisos (38). Las reglas de Firebase se prueban con el emulador (`pruebas/reglas.mjs`): cada persona intenta lo permitido y lo prohibido (incluidos ataques) y Firebase debe dejar o negar. Después de pegar las reglas en Firebase conviene entrar una vez con cada nivel.
