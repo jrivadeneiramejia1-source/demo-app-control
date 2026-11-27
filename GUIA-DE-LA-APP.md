@@ -386,30 +386,37 @@ Quien decide deja su **correo** en la compra (para que nadie se haga pasar por o
 
 **Paso 4. Recibir.**
 - Quién: **Bodega** (y la Jefe).
-- Cómo: «**Recibir en bodega**» (si es un artículo de bodega, se suma solo a las existencias) o «**Recibir la compra**» (si trae varios artículos, se dice cuánto llegó de cada uno).
+- Cómo: «**Recibir en bodega de Guamal**» (si es un artículo de bodega, se suma solo a las existencias; el botón dice la bodega a la que va) o «**Recibir la compra**» (si trae varios artículos, se dice cuánto llegó de cada uno).
 - Si llegó **menos** de lo comprado, avisa a la Jefe.
+- **Recibir en otra bodega.** Cada artículo trae **«Llegó a la bodega»** (por defecto la pedida). Si de verdad llegó a otra, se escoge esa y se escribe **«¿Por qué llegó a otra bodega?»** (mínimo 5 letras; lo ve quien pidió). Entra al mismo artículo de esa bodega (mismo nombre y unidad) o se crea allí, el movimiento queda en la bodega donde llegó, el historial de la compra lo dice y el cuadro «Recibido» escribe «llegó a Bogotá». Si dos líneas de la compra serían el mismo artículo en esa bodega, la app dice **«Recíbelos de a uno»**.
+- **La bodega de cada línea.** Cada línea de una compra guarda su bodega (`bodega`; vacía si no va a bodega) y la compra puede guardar el pedido del que nació (`solicitudId`). En la lista de compras hay un filtro **«Todas las bodegas · Riohacha · Guamal · Bogotá»**, y cada tarjeta dice «va a Guamal».
 
 **Cada paso queda en el historial de la compra**, y el historial **solo crece**: no se puede borrar ni cambiar lo que ya está.
 
 **El cuadro «Autorizado · Pagado · Recibido».** En **Ver detalle** de una compra ya pagada o recibida, cada artículo trae lo que se autorizó, lo que se pagó y lo que llegó, lado a lado. Lo que se pagó **más del 10 %** de lo autorizado, o lo que **llegó menos**, sale en rojo con un ícono de aviso (por ejemplo «+25 %» o «faltan 2»), y la fila de abajo suma el total. El pago se anota por toda la compra; en las de varios artículos, la app lo reparte entre ellos según lo que valía cada uno al pedirlo. Lo recibido sale de los movimientos de bodega, así que quien no ve movimientos ve «—».
 
-**Orden de compra para el proveedor.** En **Ver detalle** de una compra **autorizada o ya comprada** hay un botón **«Orden de compra (imprimir o PDF)»**. Arma un papel con el logo, el número **OC-** (el código corto de la compra, por ejemplo OC-006), la fecha, el proveedor, para qué es, cada artículo con su cantidad y valor, el total, quién pidió y quién autorizó, y la nota «Documento de prueba». En el computador se imprime; en el celular, la opción **«Guardar como PDF»** (Save as PDF) lo deja listo para mandarlo por WhatsApp o correo. No lleva número seguido (OC-0001, OC-0002…): eso necesitaría un cambio en las reglas de Firebase, como las actas de Equipos.
+**Orden de compra para el proveedor.** En **Ver detalle** de una compra **autorizada o ya comprada** hay un botón **«Orden de compra (imprimir o PDF)»**. Arma un papel con el logo, el número **OC-** (el código corto de la compra, por ejemplo OC-006), la fecha, el proveedor, para qué es, **«ENTREGAR EN:»** (la bodega, o «No va a bodega»; si hay varias bodegas, cada artículo lleva la suya entre paréntesis), cada artículo con su cantidad y valor, el total, quién pidió y quién autorizó, y la nota «Documento de prueba». En el computador se imprime; en el celular, la opción **«Guardar como PDF»** (Save as PDF) lo deja listo para mandarlo por WhatsApp o correo. No lleva número seguido (OC-0001, OC-0002…): eso necesitaría un cambio en las reglas de Firebase, como las actas de Equipos.
 
 **Pedir compra de todo lo bajo.** En **Qué hay que hacer**, cuando hay **dos o más** artículos agotados o bajos del mínimo sin compra en curso, sale el botón **«Pedir compra de todo lo bajo (N)»**: abre **una sola compra** con esos artículos ya puestos (el agotado primero, con la cantidad que falta para llegar al máximo y su valor). Una compra lleva hasta 5 artículos: si hay más, van los 5 más urgentes y después se hace otra con el resto. Se revisa y se envía como cualquier compra.
 
 ### 8.3 Pedidos de material (cosas de la bodega)
-1. Cualquiera con nivel de pedir: botón **«Pedir material»**: escoge el artículo, cantidad, para qué y proyecto.
-2. **Bodega** ve el pedido en «Qué hay que hacer» o «Pedidos de material».
+1. Cualquiera con nivel de pedir: botón **«Pedir material»**: escoge **«¿Para qué bodega?»** (el teléfono recuerda la última), el artículo (primero los de esa bodega y, aparte, «Solo en otras bodegas»), cantidad, para qué y proyecto. El pedido guarda su bodega (`bodega`).
+2. **Bodega** ve el pedido en «Qué hay que hacer» o «Pedidos de material» (con filtro por bodega y su etiqueta gris).
 3. Bodega lo **entrega** (también puede entregar **parcial** lo que haya) o **no lo entrega** con un motivo.
 4. Al entregar, el stock baja y queda el movimiento.
-5. Si el artículo no alcanza, la app propone **pedir una compra**.
+5. Si el artículo no alcanza **en la bodega pedida**, la tarjeta dice «No alcanza: en Riohacha hay 0 pares. En Bogotá hay 10 pares.» y trae **«Entregar desde Bogotá»**; también puede proponer **pedir una compra**.
+6. **«Sale de la bodega».** La hoja «Entregar material» trae este selector con cada bodega que tiene el artículo y cuánto hay (propone la pedida si alcanza; si no, la primera que alcanza). Si sale de una bodega **distinta de la pedida**, aparece **«¿Por qué sale de otra bodega?»** (ya escrito con «En Riohacha no había»; mínimo 5 letras, obligatorio: si no, «Escribe por qué sale de otra bodega (lo verá quien pidió y queda en el registro).»).
+7. **Cómo queda registrado:** una sola salida en el kárdex de la bodega que entregó, con «pedido para Riohacha» y el motivo (no hay traslado automático; la cantidad de Riohacha no cambia); el pedido queda «Entregado» con `bodegaSurte`, `articuloSurteId` y `motivoBodega` y la tarjeta dice «Salió de Bogotá: motivo»; y quien pidió recibe el aviso «salió de la bodega de Bogotá».
+8. **«Ver detalle»** muestra el recorrido del pedido (pidió, salió de, se entregó, compras que nacieron de él), armado con los datos del propio pedido: quien solo pide lo ve sin necesidad de ver los movimientos.
 
 ### 8.4 La bodega (Existencias y Movimientos)
 - **Existencias:** cada artículo con su cantidad, mínimo, máximo, ubicación y estado (**Bien · Bajo del mínimo · Agotado**). Arriba de la lista está **«Escanear código»** y, en pantallas anchas, el botón **Tarjetas · Tabla** (ver más abajo).
 - **Código del artículo (opcional).** Al **agregar o editar** un artículo se puede escribir su **código de barras o el que cada quien use**: **de 3 a 30 letras o números, sin espacios ni guiones** (la app lo pasa a mayúsculas). El campo trae un botón para **escanearlo con la cámara**. En una bodega no puede haber dos artículos con el mismo código (la app dice cuál lo tiene). Con el código, el artículo sale en el buscador y en **«Escanear código»**: abre su hoja; si el mismo código está en dos bodegas, deja las dos en el buscador para escoger. Al trasladar un artículo a una bodega donde no existía, el código viaja con él si allá nadie lo usa. **El código todavía no va en el Excel de base de datos** (la columna «ID» del Excel es otra cosa: es el número interno del artículo y no se cambia).
 - **Tabla de existencias (solo en pantalla de 900 px o más).** El botón **Tarjetas · Tabla** cambia cómo se ven los artículos; la elección **se recuerda en ese navegador**. La tabla ensancha la ventana de Inventario y tiene: código, artículo, categoría, bodega, ubicación, cuánto hay, mínimo, máximo, **valor en bodega** (hay × precio), **ABC** y estado. **Cada encabezado ordena** (tocar otra vez lo invierte; la flecha dice cómo está). El **encabezado queda fijo** al bajar y el **pie suma el valor** de lo que se ve. Sirven el buscador, los botones de bodega y las cifras de arriba. En pantallas angostas (teléfono) siempre salen tarjetas. Quien solo pide material no ve la columna ABC.
 - **Clase ABC.** Dice qué artículos mueven más plata. Se calcula con **lo que salió de la bodega en los últimos 90 días** (entregas y daños; los traslados no cuentan), **valorizado** (cantidad × costo). **A** = los que suman el **80 %** de ese valor, **B** = el **15 %** siguiente y **C** = el resto (también lo que no salió nada). Si no hay ninguna salida en 90 días, no hay clase. Se ve en la tabla, en la hoja del artículo y en «Te toca contar hoy».
-- **Movimientos:** cada entrada, salida y ajuste (del más nuevo al más viejo). Quien solo pide **no los ve**.
+- **Movimientos:** cada entrada, salida y ajuste (del más nuevo al más viejo), **cada uno con la etiqueta gris de su bodega** (`bodega`). Filtros de tipo y, aparte, **«Todas las bodegas · Riohacha · Guamal · Bogotá»** con número: **empieza en «Todas»** aunque en Bodega esté escogida otra. Un traslado se lee «Traslado de Riohacha a Guamal» en las dos bodegas; la salida de Bogotá que atendió un pedido para Riohacha sale en «Bogotá» y no en «Riohacha». Los movimientos viejos sin bodega toman la de su artículo (o salen sin bodega, solo en «Todas»). Quien solo pide **no los ve**.
+- **Registrar entrada o salida:** primero se escoge la **Bodega** y luego el artículo de esa bodega.
+- **Historial completo del artículo:** en la hoja de cada artículo, de 30 en 30, con el porqué de cada movimiento, orden («Lo más nuevo primero» / «Desde el comienzo»), la fila **«En otras bodegas»** y el botón **«Ver también las otras bodegas»**. Se arma en pantalla; no escribe nada nuevo. Si el artículo está agotado o bajo y en otra bodega sobra, trae **«Traer de Bogotá»** (abre el traslado ya llenado).
 - **Quién mueve la bodega:** Bodega y la Jefe.
 - Bodega puede: registrar **entradas** (al tocar «Registrar entrada» la app pregunta qué entra: una **devolución**, donde se escribe quién la devolvió, o **«Llegó una compra»**, que lista las compras por recibir y abre su formulario de «Recibir») y **salidas** (entrega, daño o pérdida), **crear y editar artículos** y hacer el **conteo**. Cada movimiento queda con su motivo: *Cantidad inicial, Compra recibida, Entrega, Devolución, Ajuste por conteo* o *Daño o pérdida*.
 - **Conteo físico** (en tres pasos, siempre de **una bodega**):
@@ -418,7 +425,7 @@ Quien decide deja su **correo** en la compra (para que nadie se haga pasar por o
   3. **Revisar:** recién ahora aparece, por cada artículo, lo contado, lo que decía la app y la diferencia (las que no cuadran van primero y en rojo). Si hay diferencias se escribe el **motivo** y se guarda; la app ajusta y deja un movimiento por cada una. Si mientras se revisaba alguien movió la cantidad de un artículo, la app avisa y muestra la revisión otra vez sin guardar.
   - Un conteo que cuadra del todo no deja ajustes, así que no aparece en «último ajuste por conteo». Pero **cada artículo contado, cuadre o no, queda con la fecha de hoy como su «último conteo»** (se ve en su hoja).
 - **«Te toca contar hoy»** (tarjeta arriba en Conteo, para Bodega y la Jefe). Es el conteo por clases: lo de **clase A se cuenta cada 30 días, lo B cada 90 y lo C cada 180**. La tarjeta lista, de a **10**, lo que ya toca (lo que **nunca se contó** o pasó su plazo; primero la clase A y, dentro de cada clase, lo más viejo), con su estante y cuándo se contó por última vez. Trae un botón por bodega, **«Contar en Riohacha (5)»**, que abre el conteo con **solo esos artículos**. Lo escrito se suma al borrador de la bodega sin borrar lo que ya había de otros artículos. Los datos viejos, sin fecha de conteo, usan la fecha de su último ajuste por conteo.
-- **Kárdex:** el historial de **un** artículo con lo que quedó después de cada movimiento (y su Excel).
+- **Kárdex:** el historial de **un** artículo con lo que quedó después de cada movimiento (y su Excel, con columna «Bodega»; el título dice «Kárdex: X (Bodega Y)»).
 - **Kárdex con plata (costo promedio ponderado):** cada movimiento guarda a cuánto entró o salió cada unidad (**costo unitario**), cuánto vale el movimiento (**valor**) y cuánto vale lo que quedó (**valor que quedó**). El Excel del kárdex trae esas tres columnas y el título dice cuánto vale hoy lo que hay.
   - Cuando se **recibe una compra**, cada unidad entra a lo que se pagó por ella (total pagado ÷ cantidad comprada; en las compras de varios artículos, lo pagado se reparte según lo que valía cada línea al pedirla) y el **costo del artículo se recalcula con el promedio** de lo que había y lo que entra. Ejemplo: había 10 a $1.000 y llegan 5 a $1.300 → el costo pasa a **$1.100** (hay 15, valen $16.500). Si después salen 3, el movimiento vale **$3.300** y lo que queda (12) vale **$13.200**.
   - Las **salidas, las entregas, los daños, los conteos y los traslados** usan el costo promedio de ese momento. Un traslado lleva el mismo costo a la otra bodega (si allá ya había, se promedia).
@@ -439,16 +446,18 @@ La parte **Proveedores** es la lista de a quién se le compra. Cada tarjeta dice
 - El Excel del Resumen trae una hoja **Proveedores** (NIT, contacto, compras hechas, pagado este año y última compra).
 
 ### 8.5 El Panorama (solo la Jefe)
-Lo urgente en un solo lugar: artículos agotados, compras que esperan a la Jefe y al Gerente, compras hechas sin autorización, compras pagadas con más de lo autorizado, pedidos de material que llevan más de 2 días esperando, artículos bajos del mínimo, compras por comprar y por recibir. Más gráficos: gastado este mes, por persona que pidió, por categoría, por proyecto.
+Lo urgente en un solo lugar: artículos agotados, compras que esperan a la Jefe y al Gerente, compras hechas sin autorización, compras pagadas con más de lo autorizado, pedidos de material que llevan más de 2 días esperando, artículos bajos del mínimo, compras por comprar y por recibir. Más gráficos: gastado este mes, por persona que pidió, por categoría, por proyecto. Trae **«Cómo está cada bodega»**: una tarjeta por bodega con su valor, artículos, agotados, bajos del mínimo, pedidos por entregar, compras en curso y último conteo.
 
 ### 8.6 El Resumen
-Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin autorizar»), compras por etapa, y botón de **descargar Excel**.
+Para quien lo ve: valor de lo que hay en bodega, gastado este mes (y lo «sin autorizar»), compras por etapa, las mismas **tarjetas por bodega** del Panorama y botón de **descargar Excel**. Con el filtro **«Todas las bodegas · Riohacha · Guamal · Bogotá»** cambian el valor, lo comprado y lo que salió del mes (en una compra de varias líneas solo cuentan las de esa bodega).
 
 ### 8.7 Lo que nadie puede hacer en Inventario
 - Borrar compras ni movimientos (son el rastro de lo gastado).
 - Editar una compra ya autorizada.
 - Borrar un proveedor que ya tiene compras (solo la Jefe borra uno sin compras).
 - Autorizar lo suyo.
+- Crear un pedido o un movimiento sin bodega, o cambiar la bodega de un pedido (las reglas de Firebase lo niegan).
+- Entregar un pedido desde otra bodega, o recibir una compra en otra bodega, sin escribir por qué.
 - Ver lo de otros, si solo tiene nivel «Pide».
 
 ---
@@ -534,6 +543,9 @@ Para un viaje que no es una reunión (por ejemplo, llevar documentos a Maicao o 
 - **Lo que revisan las reglas de Firebase:** que quien pide tenga nivel de trabajo, que el pedido nazca «pedido» a su nombre y con su correo, que nadie decida lo suyo y que el carro exista, no esté en el taller y tenga los papeles vigentes ese día. Que **no haya dos reservas o reuniones con el mismo carro el mismo día** lo revisa la app (las reglas no pueden contar documentos): si dos personas aprueban al mismo tiempo, podrían chocar; la segunda verá el cambio al abrir de nuevo.
 - Lo reservado se cuenta por **día completo** (la hora es para avisar al conductor): igual que en las reuniones, un carro reservado un día no sale para otra cosa ese día.
 - El Excel de Vehículos no trae todavía una hoja de reservas.
+
+### 10.2.2 La hoja de vida: «Quién lo ha tenido» y el historial completo
+La hoja de vida de cada carro ya no muestra solo 8 líneas: al final trae **«Quién lo ha tenido»** (por conductor: veces, km recorridos y última vez; «Lo tiene ahora» si lo tiene) y el **«Historial completo»**: historial del carro, cada salida y llegada («Salió con Oscar Farfán»), novedades reportadas y revisadas, tanqueos y reservas aprobadas o canceladas. Filtros: **Todo · Viajes · Mantenimiento y llantas · Novedades · Combustible · Papeles y taller · Reservas**. Orden: **«Lo más nuevo primero»** o **«Desde el comienzo»**; dice «N registros desde el …» y va de 30 en 30 («Ver más»). El botón **«Bajar el historial en Excel»** (Jefe, Transporte, Bodega y Gerente) baja todo sin filtro. **Se arma en pantalla con datos que ya existen: no escribe nada nuevo**, así que las reglas de Vehículos no cambiaron. No salen las reservas rechazadas o canceladas antes de aprobarse (no tenían carro). El mismo estilo de historial ya está en Equipos e Inventario.
 
 ### 10.3 Reglas que se cumplen
 - **Novedad:** siempre con **foto**. Tipos: llanta, choque, rayón, mantenimiento, otro. El conductor **no puede poner costo**; lo pone quien la revisa.
@@ -664,8 +676,9 @@ Piden **material** de la bodega y **compras** a su nombre, ven **sus** pedidos y
 | Dónde | Qué baja | Quién lo ve |
 |---|---|---|
 | **Personas y permisos > Descargar plantilla** | La plantilla de personas | Solo la Jefe |
-| **Inventario > Resumen** | Existencias, Movimientos, Compras, Proveedores (solo para quien ve esa parte), Pedidos de material | Quien ve el Resumen |
-| **Inventario > un artículo > Kárdex** | El historial de ese artículo | Quien ve los movimientos |
+| **Inventario > Resumen** | Existencias, Movimientos (con Bodega, Traslado: otra bodega, Pedido para y Motivo de la bodega), Compras (con Bodega destino), Proveedores (solo para quien ve esa parte), Pedidos de material (con Bodega pedida, Salió de y Motivo de la bodega) | Quien ve el Resumen |
+| **Inventario > un artículo > Kárdex** | El historial de ese artículo, con columna Bodega | Quien ve los movimientos |
+| **Vehículos > un carro > Bajar el historial en Excel** | Historial completo del carro y quién lo ha tenido | Jefe, Transporte, Bodega y Gerente |
 | **Vehículos > Reportes** | Carros (con costo de mantenimientos, combustible, total y km por galón), Salidas y llegadas, Novedades, Tanqueos, Por conductor | Transporte, Bodega, Jefe, Gerente |
 | **Equipos** (botón abajo) | Equipos (con verificación, compra, garantía y motivo de baja) y Actas de entrega (sin cédulas ni firmas) | Quien ve Equipos |
 | **Reuniones** (botón abajo) | Reuniones y Tareas | Quien ve Reuniones |
@@ -721,6 +734,8 @@ Las personas de prueba usan una **clave pública**. Cualquiera que la conozca po
 - **El servidor de avisos nuevo** se probó con piezas falsas. Con Cloudflare real hay que crear el KV `AVISOS`, volver a pegar el Worker y volver a activar los avisos en cada teléfono.
 - **Los avisos de la campana** todavía los puede **leer** cualquiera con sesión (no los puede crear a nombre de otro). Falta cerrarlo por destinatario.
 - **El respaldo del Gerente a los 2 días** no se puede probar «en vivo»: hay que esperar 2 días (o probarlo en el emulador).
+- **Las 3 bodegas, sin probar de verdad:** las reglas nuevas con el Firebase real, los Excel nuevos abiertos en Excel o LibreOffice reales, imprimir la orden de compra en un celular real, el historial con cientos de registros reales y los avisos al teléfono con textos nuevos.
+- **Reglas y app se publican juntas:** reglas nuevas con la app vieja = no se crean pedidos ni movimientos; app nueva con reglas viejas = falla «Entregar» desde otra bodega. Además, los **datos de ejemplo versión 20** se recargan la primera vez que entre la Jefe de prueba (se pierde lo cambiado en la demo).
 - **Pedidos de material con varias líneas** y **préstamo de herramientas** (que queden «por devolver»): no se hicieron.
 - **Reuniones:** la Jefe solo puede subir o bajar a «solo ver» o «sin acceso». Logística y acta siguen **por rol** (no por persona).
 - **Bodega** es un supuesto mío (Andrés Beltrán).
