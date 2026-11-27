@@ -193,7 +193,7 @@ try {
   await t.page.fill('#qInventario', '');
   // Código del artículo, clase ABC, tabla en pantalla ancha y «Te toca contar hoy» (Fase 13), con los datos de ejemplo todavía sin tocar
   log('Existencias: las tarjetas dicen el código de los artículos que lo tienen («Cód. BOT040»)', await hasta(t.page, () => { const c = [...document.querySelectorAll('#invContenido .card.art')].find(x => /Botas de seguridad talla 40/.test(x.textContent)); return !!c && /Cód\. BOT040/.test(c.textContent); }));
-  log('en la pantalla angosta no sale el botón Tabla/Tarjetas, pero sí «Escanear código»', await hasta(t.page, () => !document.querySelector('#invContenido .vista-toggle') && !!document.querySelector('#invContenido [data-accion="escanear"]')));
+  log('en la pantalla angosta también sale el botón Tabla/Tarjetas, y sigue «Escanear código»', await hasta(t.page, () => !!document.querySelector('#invContenido .vista-toggle') && !!document.querySelector('#invContenido [data-accion="escanear"]')));
   await t.page.fill('#qInventario', 'bot042');
   log('buscar por código: «bot042» encuentra solo las botas talla 42', await hasta(t.page, () => { const c = document.querySelectorAll('#invContenido .card.art'); return c.length === 1 && /talla 42/.test(c[0].textContent); }));
   await t.page.fill('#qInventario', '7700000000013');
@@ -237,7 +237,7 @@ try {
   log('tocar un artículo de la tabla abre su hoja, con el código, la clase ABC y el último conteo', await hasta(t.page, () => { const x = document.getElementById('acCampos').textContent; return /Clase ABC/.test(x) && /Último conteo/.test(x); }), await texto(t.page, '#acCampos'));
   await t.page.keyboard.press('Escape'); await hasta(t.page, () => document.getElementById('shAccion').hidden);
   await t.page.setViewportSize({ width: 412, height: 860 });
-  log('al achicar la ventana a 412 px la tabla se vuelve tarjetas y desaparece el botón Tabla/Tarjetas', await hasta(t.page, () => !document.querySelector('#invContenido .tabla-inv') && !document.querySelector('#invContenido .vista-toggle') && document.querySelectorAll('#invContenido .card.art').length === 20));
+  log('al achicar la ventana a 412 px la tabla sigue (se mueve de lado con el dedo) y el botón Tabla/Tarjetas también', await hasta(t.page, () => !!document.querySelector('#invContenido .tabla-inv-wrap .tabla-inv') && !!document.querySelector('#invContenido .vista-toggle') && document.documentElement.scrollWidth <= window.innerWidth + 1));
   await t.page.evaluate(() => localStorage.removeItem('inv.vista'));
   for (const [sec, re] of [['movimientos', /Registró/], ['solicitudes', /En espera/], ['compras', /En curso/], ['conteo', /conteo/i], ['resumen', /Cómo van las compras[\s\S]*Valor de lo que hay en bodega/]]) {
     await t.page.click(`#invSecciones [data-sec="${sec}"]`);
@@ -876,7 +876,8 @@ try {
   await abrirHojaInv('#btnPedirCompra');
   await t.page.fill('#acQue', 'Taladro percutor'); await t.page.fill('#acCant', '2'); await t.page.fill('#acValor', '4700000');
   await t.page.click('#acCampos [data-accion="masLinea"]');
-  await t.page.selectOption('#lxArt0', 'ar-009');
+  log('«¿Va a la bodega?» empieza en No y no muestra la lista de artículos hasta decir Sí', await t.page.evaluate(() => document.getElementById('lxVa0').value === 'no' && document.getElementById('lxBox0').hidden && document.getElementById('acArtBox').hidden));
+  await t.page.selectOption('#lxVa0', 'si'); await t.page.selectOption('#lxArt0', 'ar-009');
   await t.page.fill('#lxCant0', '10'); await t.page.fill('#lxVal0', '1300000');
   await t.page.fill('#acProvSug', 'Ferretería El Faro'); await t.page.fill('#acPara', 'Para la cuadrilla de campo');
   await t.page.setInputFiles('#acCot', [IMGP, IMGP]);
@@ -1525,7 +1526,7 @@ try {
     log('el filtro de bodega de Compras funciona: Guamal trae co-003 y Riohacha no', idsG.includes('co-003') && idsG.length < 14 && !idsR.includes('co-003') && idsR.length >= 1, JSON.stringify([idsG, idsR]));
     await t.page.click('#invContenido .chip[data-sub="bodCom"][data-val="todas"]');
     await t.page.click('#btnPedirCompra'); await hojaAb();
-    await t.page.selectOption('#acArt', 'ar-018'); await esp(200); await t.page.click('#acPrimario'); await hojaCerrada();
+    await t.page.selectOption('#acVa', 'si'); await t.page.selectOption('#acArt', 'ar-018'); await esp(200); await t.page.click('#acPrimario'); await hojaCerrada();
     const cN = Object.values((await datosApp()).compras).find(c => c.que === 'Linterna recargable' && c.pide === 'Carolina Castillo');
     log('una compra nueva de un artículo de Bogotá guarda la bodega en su línea', !!cN && cN.lineas.length === 1 && cN.lineas[0].bodega === 'Bogotá' && cN.lineas[0].articuloId === 'ar-018', JSON.stringify(cN));
     // Compra recibida en otra bodega (compra creada aquí)
